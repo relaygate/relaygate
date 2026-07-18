@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.Python
+.venv/
+venv/
+backups/
+docs/BASELINE.runtime.txt
+*.log
+.DS_Store
+Thumbs.db

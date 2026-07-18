@@ -1,0 +1,67 @@
+#!/usr/sbin/nft -f
+# gateway-01 语义化防火墙
+# 使用前：
+#   1. python scripts/render_config.py   # 生成 game-ports.nft
+#   2. nft -c -f firewall/gateway.nft   # 语法检查
+#   3. 确认 SSH 30455 放行后再 apply
+#
+# 警告：错误应用可能导致 SSH 断开。请保留现有会话并准备控制台。
+
+flush ruleset
+
+include "./generated/game-ports.nft"
+
+define SSH_PORT = 30455
+# 可选：限制管理面来源（示例，按需取消注释并修改）
+# define OPS_IPV4 = { 203.0.113.10 }
+
+table inet gateway {
+  chain input {
+    type filter hook input priority filter; policy drop;
+
+    # 基础
+    ct state established,related accept
+    iifname "lo" accept
+    ct state invalid drop
+
+    # ICMP / ICMPv6（排障）
+    ip protocol icmp accept
+    ip6 nexthdr ipv6-icmp accept
+
+    # SSH 运维入口（必须保留）
+    tcp dport $SSH_PORT ct state new limit rate 10/second burst 20 packets accept comment "allow-ops-ssh"
+
+    # 游戏 TCP 入口 + 新建连接限速
+    tcp dport $GAME_TCP_PORTS jump allow-game-tcp
+    # 游戏 UDP 入口 + 每 IP PPS 限速
+    udp dport $GAME_UDP_PORTS jump allow-game-udp
+
+    # 管理面仅本机（host network 下由服务本身 bind 127.0.0.1）
+    # 若误暴露，这里再拒绝一次公网访问
+    tcp dport { 3000, 9090, 9100, 9901 } ip saddr != 127.0.0.1 drop comment "deny-public-mgmt"
+  }
+
+  chain forward {
+    type filter hook forward priority filter; policy drop;
+  }
+
+  chain output {
+    type filter hook output priority filter; policy accept;
+  }
+
+  chain allow-game-tcp {
+    # 每源 IP 新建连接限速：超速丢弃，其余放行
+    ct state new meter tcp-new-per-ip size 65535 {
+      ip saddr limit rate over 30/second burst 60 packets
+    } counter drop comment "limit-new-tcp"
+    accept comment "allow-game-tcp"
+  }
+
+  chain allow-game-udp {
+    # 每源 IP UDP PPS 限速（防扫描/小流量洪泛；大流量仍需高防）
+    meter udp-pps-per-ip size 65535 {
+      ip saddr limit rate over 500/second burst 1000 packets
+    } counter drop comment "limit-udp-pps"
+    accept comment "allow-game-udp"
+  }
+}

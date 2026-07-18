@@ -1,0 +1,5 @@
+# 由 scripts/render_config.py 自动生成，勿手改
+# TCP game ports
+define GAME_TCP_PORTS = { 11001 }
+# UDP game ports
+define GAME_UDP_PORTS = { 11001 }
