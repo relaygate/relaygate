@@ -1,5 +1,5 @@
 # 唯一资产源：语义化主机 / 端口 / 规则
-# 修改本文件后执行: python scripts/render_config.py
+# 修改本文件后执行: ./bin/gateway-render
 
 meta:
   gateway_name: gateway-01

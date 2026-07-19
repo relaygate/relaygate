@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# 受控部署：备份 -> 校验 -> 启动/热更新
 set -euo pipefail
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 BACKUP_DIR="${BACKUP_DIR:-$ROOT/backups}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_PATH="$BACKUP_DIR/$STAMP"
+COMPOSE=(docker compose -f deploy/compose.yaml --env-file .env)
 
 if [[ ! -f .env ]]; then
   echo "ERROR: 缺少 .env，请先: cp .env.example .env && 编辑密码"
@@ -18,12 +17,13 @@ fi
 set -a
 source .env
 set +a
+GATEWAY_PUBLIC_IP="${GATEWAY_PUBLIC_IP:-107.149.191.37}"
+GATEWAY_SSH_PORT="${GATEWAY_SSH_PORT:-30455}"
 
 mkdir -p "$BACKUP_PATH"
-
-echo "==> 备份当前配置到 $BACKUP_PATH"
-[[ -f envoy/generated/envoy.yaml ]] && cp -a envoy/generated/envoy.yaml "$BACKUP_PATH/"
-[[ -f compose.yaml ]] && cp -a compose.yaml "$BACKUP_PATH/"
+echo "==> 备份到 $BACKUP_PATH"
+[[ -f gateway/generated/envoy.yaml ]] && cp -a gateway/generated/envoy.yaml "$BACKUP_PATH/"
+[[ -f deploy/compose.yaml ]] && cp -a deploy/compose.yaml "$BACKUP_PATH/"
 [[ -f config/resources.yaml ]] && cp -a config/resources.yaml "$BACKUP_PATH/"
 echo "$STAMP" > "$BACKUP_DIR/latest"
 
@@ -31,8 +31,7 @@ echo "==> 校验"
 bash scripts/validate.sh
 
 echo "==> 应用内核参数（若存在）"
-# 仓库内用语义名 gateway-01.conf；安装到 /etc/sysctl.d/ 时加 99- 前缀以保证晚于系统默认加载
-SYSCTL_SRC="sysctl/gateway-01.conf"
+SYSCTL_SRC="deploy/sysctl/gateway-01.conf"
 SYSCTL_DST="/etc/sysctl.d/99-gateway-01.conf"
 if [[ -f "$SYSCTL_SRC" ]]; then
   if [[ "$(id -u)" -eq 0 ]]; then
@@ -40,13 +39,13 @@ if [[ -f "$SYSCTL_SRC" ]]; then
     sysctl --system >/dev/null
     echo "sysctl applied: $SYSCTL_DST"
   else
-    echo "WARN: 非 root，跳过 sysctl；请手动: sudo cp $SYSCTL_SRC $SYSCTL_DST && sudo sysctl --system"
+    echo "WARN: 非 root，跳过 sysctl；sudo cp $SYSCTL_SRC $SYSCTL_DST && sudo sysctl --system"
   fi
 fi
 
-echo "==> 启动 / 更新 compose 服务"
-docker compose pull
-docker compose up -d
+echo "==> compose up"
+"${COMPOSE[@]}" pull || true
+"${COMPOSE[@]}" up -d --build
 
 echo "==> 等待 Envoy ready"
 for i in $(seq 1 30); do
@@ -55,18 +54,16 @@ for i in $(seq 1 30); do
     break
   fi
   if [[ "$i" -eq 30 ]]; then
-    echo "ERROR: Envoy 未在超时内 ready"
-    docker compose ps
+    echo "ERROR: Envoy 未 ready"
+    "${COMPOSE[@]}" ps
     exit 1
   fi
   sleep 2
 done
 
-echo "==> 服务状态"
-docker compose ps
+"${COMPOSE[@]}" ps
 echo
 echo "部署完成。"
-echo "Grafana: SSH 隧道后访问 http://127.0.0.1:3000"
-echo "  ssh -p 30455 -L 3000:127.0.0.1:3000 root@107.149.191.37"
-echo "Prometheus: ssh -p 30455 -L 9090:127.0.0.1:9090 root@107.149.191.37"
+echo "Panel:   ssh -p ${GATEWAY_SSH_PORT} -L 8080:127.0.0.1:8080 root@${GATEWAY_PUBLIC_IP}"
+echo "Grafana: ssh -p ${GATEWAY_SSH_PORT} -L 3000:127.0.0.1:3000 root@${GATEWAY_PUBLIC_IP}"
 echo "回滚: bash scripts/rollback.sh"

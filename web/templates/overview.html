@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Overview · RelayGate</title>
+  <link rel="stylesheet" href="/static/app.css"/>
+</head>
+<body>
+{{template "nav" .}}
+<main>
+  <h1>Overview</h1>
+  <section class="cards">
+    <article>
+      <h3>Envoy</h3>
+      <p class="big">{{if .Envoy.Ready}}READY{{else}}DOWN{{end}}</p>
+      <p class="muted">{{.Envoy.ReadyBody}}</p>
+      {{if .Envoy.Error}}<p class="error">{{.Envoy.Error}}</p>{{end}}
+    </article>
+    <article>
+      <h3>Healthy clusters</h3>
+      <p class="big">{{.Envoy.HealthyClusters}}</p>
+    </article>
+    <article>
+      <h3>TCP active</h3>
+      <p class="big">{{printf "%.0f" .Traffic.TCPActiveConnections}}</p>
+    </article>
+    <article>
+      <h3>UDP sessions</h3>
+      <p class="big">{{printf "%.0f" .Traffic.UDPActiveSessions}}</p>
+    </article>
+    <article>
+      <h3>Rate-limit (5m)</h3>
+      <p class="big">{{printf "%.0f" .Traffic.LocalRateLimited5m}}</p>
+      {{if .Traffic.Error}}<p class="muted">{{.Traffic.Error}}</p>{{end}}
+    </article>
+  </section>
+
+  <section>
+    <h2>最近 Apply</h2>
+    <pre>{{if .LastApply}}{{.LastApply}}{{else}}尚无{{end}}</pre>
+  </section>
+
+  <section>
+    <h2>访问说明</h2>
+    <ul>
+      <li>Panel: <code>ssh -p 30455 -L 8080:127.0.0.1:8080 root@&lt;gateway-ip&gt;</code> → http://127.0.0.1:8080</li>
+      <li>Grafana: <code>-L 3000:127.0.0.1:3000</code> → http://127.0.0.1:3000</li>
+    </ul>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

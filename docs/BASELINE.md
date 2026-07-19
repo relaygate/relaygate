@@ -1,7 +1,7 @@
-# gateway-01 系统基线
+# RelayGate 系统基线
 
 > 首次部署前在目标主机上只读采集并回填本文件。  
-> 主机语义名：`gateway-01`（gateway + observability panel）
+> 产品：RelayGate；主机语义名：`gateway-01`（gateway + observability panel）
 
 ## 1. 主机身份
 
@@ -103,7 +103,7 @@ nft list ruleset 2>/dev/null || iptables -S 2>/dev/null || true
 ## 7. 内核建议参数（部署时应用）
 
 ```bash
-# 仓库: sysctl/gateway-01.conf
+# 仓库: deploy/sysctl/gateway-01.conf
 # 安装: /etc/sysctl.d/99-gateway-01.conf  （99- = sysctl.d 加载顺序，越大越晚生效）
 net.core.somaxconn = 65535
 net.core.netdev_max_backlog = 250000

@@ -1,0 +1,22 @@
+# Build gateway-panel for Linux (host network on gateway-01)
+FROM golang:1.22-bookworm AS build
+WORKDIR /src
+ENV GOPROXY=https://goproxy.cn,direct
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/gateway-panel ./cmd/gateway-panel \
+ && CGO_ENABLED=0 GOOS=linux go build -o /out/gateway-render ./cmd/gateway-render
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends bash ca-certificates curl docker.io \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY --from=build /out/gateway-panel /usr/local/bin/gateway-panel
+COPY --from=build /out/gateway-render /usr/local/bin/gateway-render
+COPY web /workspace/web
+ENV PANEL_ROOT=/workspace
+ENV PANEL_BIND=127.0.0.1:8080
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/gateway-panel"]

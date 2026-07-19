@@ -1,17 +1,18 @@
-# 分批迁移手册（server-01 → server-10）
+# RelayGate 分批迁移手册（server-01 → server-10）
 
 ## 前置条件
 
 1. 已在 `config/resources.yaml` 填入真实后端 IP
 2. 已更换暴露过的 root 密码，并配置 SSH 密钥
-3. `bash scripts/collect_baseline.sh` 已执行，基线写入 `docs/BASELINE.runtime.txt`
-4. canary 规则（11001）已通过游戏客户端验证
+3. `bash scripts/build.sh` 已生成 `bin/gateway-render`
+4. `bash scripts/collect_baseline.sh` 已执行
+5. canary 规则（11001）已通过游戏客户端验证
 
 ## 阶段 A：旁路 canary（默认已启用）
 
 ```bash
-pip3 install -r requirements.txt
-cp .env.example .env && chmod 600 .env   # 改 Grafana 密码
+bash scripts/build.sh
+cp .env.example .env && chmod 600 .env   # 改 Grafana / Panel 密码
 bash scripts/deploy.sh
 bash scripts/canary_test.sh 127.0.0.1
 bash scripts/canary_test.sh 107.149.191.37
@@ -24,16 +25,15 @@ bash scripts/canary_test.sh 107.149.191.37
 - 长连接不掉
 - 人为 `iptables -I OUTPUT -d <server-01-ip> -j DROP` 后，健康检查变红、告警触发
 - 恢复规则后集群恢复 healthy
-- Grafana 面板有连接/会话/吞吐数据
+- Panel Overview / Grafana 有连接/会话/吞吐数据
 
 ## 阶段 B：逐台启用 production
 
 对每台服（从 server-01 开始）：
 
 ```bash
-# 1. 确认后端可达
-python3 scripts/enable_server.py server-01
-python3 scripts/render_config.py
+./bin/gateway-render enable server-01
+./bin/gateway-render
 bash scripts/deploy.sh
 
 # 2. 客户端改连 gateway-01:10001（TCP/UDP）
@@ -41,11 +41,13 @@ bash scripts/deploy.sh
 # 4. 通过后再 enable server-02 ...
 ```
 
+或通过 Panel：`Rules` 开关 → `Apply`。
+
 启用全部：
 
 ```bash
-python3 scripts/enable_server.py server-01 --all-production
-python3 scripts/render_config.py
+./bin/gateway-render enable --all-production
+./bin/gateway-render
 bash scripts/deploy.sh
 ```
 
@@ -60,8 +62,7 @@ sudo bash scripts/apply_firewall.sh
 ## 回滚
 
 ```bash
-# 禁用某台 production
-python3 scripts/enable_server.py server-03 --disable
+./bin/gateway-render disable server-03
 bash scripts/deploy.sh
 
 # 或整包回滚最近备份

@@ -1,4 +1,4 @@
-# gateway-01 安全清单
+# RelayGate 安全清单
 
 ## 上线前必做
 
@@ -16,25 +16,28 @@
    PasswordAuthentication no
    PubkeyAuthentication yes
    ```
-4. `.env` 权限 `600`，永不提交仓库
-5. 确认管理端口仅本机监听：`9901 / 9090 / 3000 / 9100`
+4. `.env` 权限 `600`，永不提交仓库（含 `GRAFANA_ADMIN_PASSWORD`、`PANEL_ADMIN_PASSWORD`）
+5. 确认管理端口仅本机监听：`8080 / 9901 / 9090 / 3000 / 9100`
 6. 游戏后端防火墙仅允许 `gateway-01` 公网/内网 IP
 
 ## 防火墙
 
-- 使用 `sudo bash scripts/apply_firewall.sh`
+- 使用 `sudo bash scripts/apply_firewall.sh`（规则在 `deploy/firewall/`）
 - 应用前保留现有 SSH 会话 + 云控制台
 - SSH `30455` 必须放行
 
 ## 日志
 
 - Compose 已限制 json-file 大小
-- 可选安装 `logrotate/envoy-gateway` 到 `/etc/logrotate.d/`
+- 可选安装 `deploy/logrotate/envoy-gateway` 到 `/etc/logrotate.d/`
 
-## 访问 Grafana
+## 访问 Panel / Grafana
 
 ```bash
-ssh -p 30455 -L 3000:127.0.0.1:3000 root@107.149.191.37
+ssh -p 30455 \
+  -L 8080:127.0.0.1:8080 \
+  -L 3000:127.0.0.1:3000 \
+  root@107.149.191.37
 ```
 
-不要把 Grafana 直接暴露到 `0.0.0.0:3000`。
+不要把 Panel / Grafana 直接暴露到 `0.0.0.0`。

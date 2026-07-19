@@ -1,50 +1,30 @@
 #!/usr/bin/env bash
-# 回滚到最近一次部署备份的 Envoy / resources 配置
 set -euo pipefail
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-
 BACKUP_DIR="${BACKUP_DIR:-$ROOT/backups}"
 
 if [[ $# -ge 1 ]]; then
   TARGET="$BACKUP_DIR/$1"
 else
-  if [[ ! -f "$BACKUP_DIR/latest" ]]; then
-    echo "ERROR: 没有可用备份（$BACKUP_DIR/latest 不存在）"
-    exit 1
-  fi
-  STAMP="$(cat "$BACKUP_DIR/latest")"
-  TARGET="$BACKUP_DIR/$STAMP"
+  [[ -f "$BACKUP_DIR/latest" ]] || { echo "ERROR: 无备份"; exit 1; }
+  TARGET="$BACKUP_DIR/$(cat "$BACKUP_DIR/latest")"
 fi
-
-if [[ ! -d "$TARGET" ]]; then
-  echo "ERROR: 备份目录不存在: $TARGET"
-  echo "可用备份:"
-  ls -1 "$BACKUP_DIR" 2>/dev/null || true
-  exit 1
-fi
+[[ -d "$TARGET" ]] || { echo "ERROR: 备份不存在: $TARGET"; exit 1; }
 
 echo "==> 回滚自 $TARGET"
-if [[ -f "$TARGET/resources.yaml" ]]; then
-  cp -a "$TARGET/resources.yaml" config/resources.yaml
-fi
+[[ -f "$TARGET/resources.yaml" ]] && cp -a "$TARGET/resources.yaml" config/resources.yaml
 if [[ -f "$TARGET/envoy.yaml" ]]; then
-  mkdir -p envoy/generated
-  cp -a "$TARGET/envoy.yaml" envoy/generated/envoy.yaml
+  mkdir -p gateway/generated
+  cp -a "$TARGET/envoy.yaml" gateway/generated/envoy.yaml
 else
-  echo "WARN: 备份中无 envoy.yaml，尝试重新渲染"
-  python3 scripts/render_config.py
+  RENDER="${RENDER_BIN:-$ROOT/bin/gateway-render}"
+  "$RENDER"
 fi
 
-if [[ ! -f .env ]]; then
-  echo "ERROR: 缺少 .env"
-  exit 1
-fi
-
-echo "==> 校验并重启 Envoy"
+[[ -f .env ]] || { echo "ERROR: 缺少 .env"; exit 1; }
 bash scripts/validate.sh
-docker compose up -d envoy
+docker compose -f deploy/compose.yaml --env-file .env up -d --force-recreate --no-deps envoy
 
 for i in $(seq 1 30); do
   if curl -fsS "http://127.0.0.1:9901/ready" >/dev/null 2>&1; then
@@ -53,6 +33,4 @@ for i in $(seq 1 30); do
   fi
   sleep 2
 done
-
-echo "ERROR: 回滚后 Envoy 未 ready"
 exit 1

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Apply · RelayGate</title>
+  <link rel="stylesheet" href="/static/app.css"/>
+</head>
+<body>
+{{template "nav" .}}
+<main>
+  <h1>Apply</h1>
+  <p class="muted">将校验 resources.yaml → 备份 → 渲染 Envoy/nft → 调用 reload_envoy.sh</p>
+  {{if .Message}}<div class="error">{{.Message}}</div>{{end}}
+  <pre>{{.Summary}}</pre>
+  <button id="do-apply">一键应用</button>
+  <pre id="msg">{{.LastApply}}</pre>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Login · RelayGate</title>
+  <link rel="stylesheet" href="/static/app.css"/>
+</head>
+<body class="login-body">
+  <form class="login-card" method="post" action="/login">
+    <h1>RelayGate</h1>
+    <p class="muted">gateway-01 · 配置运维 + 状态摘要（监控曲线请用 Grafana）</p>
+    {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+    <label>Password
+      <input type="password" name="password" required autofocus/>
+    </label>
+    <button type="submit">登录</button>
+  </form>
+</body>
+</html>

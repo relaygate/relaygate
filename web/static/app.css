@@ -1,0 +1,95 @@
+:root {
+  --bg: #0f1419;
+  --card: #1a2332;
+  --text: #e7ecf3;
+  --muted: #9aa7b8;
+  --accent: #3d8bfd;
+  --danger: #f07178;
+  --ok: #7fd962;
+  --line: #2a3545;
+  --font: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: var(--font);
+  background: linear-gradient(160deg, #101820 0%, #162033 50%, #0f1419 100%);
+  color: var(--text);
+  min-height: 100vh;
+}
+a { color: var(--accent); text-decoration: none; }
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--line);
+  background: rgba(0,0,0,.25);
+}
+.brand { font-weight: 700; letter-spacing: .02em; }
+nav a { margin-left: 1rem; }
+main { padding: 1.5rem; max-width: 1200px; margin: 0 auto; }
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+}
+article, .login-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+}
+.big { font-size: 2rem; font-weight: 700; margin: .4rem 0; }
+.muted { color: var(--muted); }
+.error { color: var(--danger); }
+pre {
+  background: #0b1017;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1rem;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border-radius: 12px;
+  overflow: hidden;
+}
+th, td {
+  border-bottom: 1px solid var(--line);
+  padding: .65rem .7rem;
+  text-align: left;
+  font-size: .92rem;
+}
+input[type="text"], input[type="number"], input[type="password"], input.addr, input.tcp, input.udp, input.health {
+  width: 100%;
+  min-width: 5rem;
+  background: #0b1017;
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 6px;
+  padding: .4rem .5rem;
+}
+button, #do-apply {
+  background: var(--accent);
+  color: white;
+  border: 0;
+  border-radius: 8px;
+  padding: .55rem 1rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+.login-body {
+  display: grid;
+  place-items: center;
+}
+.login-card {
+  width: min(380px, 92vw);
+  display: grid;
+  gap: .8rem;
+}
+.login-card label { display: grid; gap: .35rem; }
+code { color: #c3e88d; }

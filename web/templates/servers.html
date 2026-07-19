@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Servers · RelayGate</title>
+  <link rel="stylesheet" href="/static/app.css"/>
+</head>
+<body>
+{{template "nav" .}}
+<main>
+  <h1>Servers</h1>
+  <p class="muted">修改后不会自动生效，请到 Apply 页面渲染并热重载 Envoy。</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th><th>Address</th><th>TCP</th><th>UDP</th><th>Health</th><th>Enabled</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Servers}}
+      <tr data-name="{{.Name}}">
+        <td>{{.Name}}</td>
+        <td><input class="addr" value="{{.Address}}"/></td>
+        <td><input class="tcp" type="number" value="{{.TCPPort}}"/></td>
+        <td><input class="udp" type="number" value="{{.UDPPort}}"/></td>
+        <td><input class="health" type="number" value="{{.HealthCheckPort}}"/></td>
+        <td><input class="en" type="checkbox" {{if .Enabled}}checked{{end}}/></td>
+        <td><button class="save-server">保存</button></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <pre id="msg"></pre>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>
