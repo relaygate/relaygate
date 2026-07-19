@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
-# 在 gateway-01 上只读采集基线，输出到 docs/BASELINE.runtime.txt
+# 在当前网关主机上只读采集基线，输出到 docs/BASELINE.runtime.txt
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${1:-$ROOT/docs/BASELINE.runtime.txt}"
 
+if [[ -f "$ROOT/.env" ]]; then
+  # shellcheck disable=SC1091
+  set -a
+  # shellcheck disable=SC1090
+  source "$ROOT/.env"
+  set +a
+fi
+GATEWAY_NAME="${GATEWAY_NAME:-gateway-01}"
+
 {
-  echo "# gateway-01 runtime baseline collected at $(date -Is)"
+  echo "# ${GATEWAY_NAME} runtime baseline collected at $(date -Is)"
   echo
   echo "## uname"
   uname -a || true
@@ -36,6 +45,9 @@ OUT="${1:-$ROOT/docs/BASELINE.runtime.txt}"
   echo "## docker"
   docker --version 2>/dev/null || echo "docker not installed"
   systemctl is-active docker 2>/dev/null || true
+  echo
+  echo "## containers"
+  docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true
   echo
   echo "## sysctl"
   sysctl net.core.somaxconn net.ipv4.ip_local_port_range net.core.rmem_max net.core.wmem_max fs.file-max 2>/dev/null || true

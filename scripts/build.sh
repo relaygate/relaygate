@@ -7,12 +7,13 @@ mkdir -p bin
 
 GOOS="${GOOS:-$(go env GOOS)}"
 GOARCH="${GOARCH:-$(go env GOARCH)}"
+GOEXE="${GOEXE:-}"
+if [[ "$GOOS" == "windows" && -z "$GOEXE" ]]; then
+  GOEXE=".exe"
+fi
 
-echo "==> build gateway-render (${GOOS}/${GOARCH})"
-CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -o "bin/gateway-render${GOEXE:-}" ./cmd/gateway-render
+echo "==> build relaygate (${GOOS}/${GOARCH})"
+CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -o "bin/relaygate${GOEXE}" ./cmd/relaygate
 
-echo "==> build gateway-panel (${GOOS}/${GOARCH})"
-CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" go build -o "bin/gateway-panel${GOEXE:-}" ./cmd/gateway-panel
-
-echo "OK: bin/gateway-render bin/gateway-panel"
+echo "OK: bin/relaygate${GOEXE}"
 echo "Linux 服务器交叉编译示例: GOOS=linux GOARCH=amd64 bash scripts/build.sh"

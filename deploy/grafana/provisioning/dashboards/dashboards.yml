@@ -1,9 +1,9 @@
 apiVersion: 1
 
 providers:
-  - name: gateway-01
+  - name: relaygate
     orgId: 1
-    folder: Game Gateway
+    folder: RelayGate
     type: file
     disableDeletion: false
     editable: true

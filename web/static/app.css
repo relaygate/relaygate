@@ -82,6 +82,52 @@ button, #do-apply {
   cursor: pointer;
   font-weight: 600;
 }
+button.danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+button.danger:hover { background: rgba(240, 113, 120, .12); }
+.row-actions {
+  display: flex;
+  gap: .4rem;
+  flex-wrap: wrap;
+}
+.add-server {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  margin-bottom: 1.25rem;
+}
+.add-server h2 {
+  margin: 0 0 .75rem;
+  font-size: 1.05rem;
+}
+.add-server-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: .75rem;
+  align-items: end;
+}
+.add-server-form label {
+  display: grid;
+  gap: .35rem;
+  font-size: .85rem;
+  color: var(--muted);
+}
+.add-server-form label.check {
+  align-content: center;
+}
+.add-server-form input {
+  width: 100%;
+  background: #0b1017;
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 6px;
+  padding: .4rem .5rem;
+}
+.add-server-form button { justify-self: start; }
 .login-body {
   display: grid;
   place-items: center;

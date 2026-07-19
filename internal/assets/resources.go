@@ -6,17 +6,21 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
+var serverNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+var serverNumRe = regexp.MustCompile(`(?i)^server-(\d+)$`)
+
 type Resources struct {
-	Meta     Meta      `yaml:"meta"`
-	Gateway  Gateway   `yaml:"gateway"`
-	Defaults Defaults  `yaml:"defaults"`
-	Servers  []Server  `yaml:"servers"`
-	Rules    []Rule    `yaml:"rules"`
+	Meta     Meta     `yaml:"meta"`
+	Gateway  Gateway  `yaml:"gateway"`
+	Defaults Defaults `yaml:"defaults"`
+	Servers  []Server `yaml:"servers"`
+	Rules    []Rule   `yaml:"rules"`
 }
 
 type Meta struct {
@@ -35,15 +39,15 @@ type Gateway struct {
 }
 
 type Defaults struct {
-	BackendTCPPort            int         `yaml:"backend_tcp_port"`
-	BackendUDPPort            int         `yaml:"backend_udp_port"`
-	TCPIdleTimeout            string      `yaml:"tcp_idle_timeout"`
-	UDPIdleTimeout            string      `yaml:"udp_idle_timeout"`
-	MaxConnections            int         `yaml:"max_connections"`
-	MaxPendingRequests        int         `yaml:"max_pending_requests"`
-	TCPLocalRateLimitPerSec   int         `yaml:"tcp_local_rate_limit_per_sec"`
-	TCPLocalRateLimitBurst    int         `yaml:"tcp_local_rate_limit_burst"`
-	HealthCheck               HealthCheck `yaml:"health_check"`
+	BackendTCPPort          int         `yaml:"backend_tcp_port"`
+	BackendUDPPort          int         `yaml:"backend_udp_port"`
+	TCPIdleTimeout          string      `yaml:"tcp_idle_timeout"`
+	UDPIdleTimeout          string      `yaml:"udp_idle_timeout"`
+	MaxConnections          int         `yaml:"max_connections"`
+	MaxPendingRequests      int         `yaml:"max_pending_requests"`
+	TCPLocalRateLimitPerSec int         `yaml:"tcp_local_rate_limit_per_sec"`
+	TCPLocalRateLimitBurst  int         `yaml:"tcp_local_rate_limit_burst"`
+	HealthCheck             HealthCheck `yaml:"health_check"`
 }
 
 type HealthCheck struct {
@@ -108,21 +112,20 @@ func (r *Resources) EnabledRules() []Rule {
 }
 
 func (r *Resources) Validate() error {
-	servers := r.ServerMap()
-	if len(servers) == 0 {
+	if len(r.Servers) == 0 {
 		return fmt.Errorf("servers 不能为空")
 	}
-	for name, s := range servers {
-		if ip := net.ParseIP(s.Address); ip == nil {
-			return fmt.Errorf("%s address 无效: %s", name, s.Address)
+	seenNames := map[string]struct{}{}
+	for _, s := range r.Servers {
+		if err := validateServerFields(s); err != nil {
+			return err
 		}
-		if s.TCPPort < 1 || s.TCPPort > 65535 {
-			return fmt.Errorf("%s.tcp_port 端口越界: %d", name, s.TCPPort)
+		if _, ok := seenNames[s.Name]; ok {
+			return fmt.Errorf("server 名称重复: %s", s.Name)
 		}
-		if s.UDPPort < 1 || s.UDPPort > 65535 {
-			return fmt.Errorf("%s.udp_port 端口越界: %d", name, s.UDPPort)
-		}
+		seenNames[s.Name] = struct{}{}
 	}
+	servers := r.ServerMap()
 
 	seen := map[string]string{}
 	for _, rule := range r.EnabledRules() {
@@ -150,6 +153,151 @@ func (r *Resources) Validate() error {
 		return fmt.Errorf("没有启用的 rules；至少启用 canary 规则后再渲染")
 	}
 	return nil
+}
+
+func validateServerFields(s Server) error {
+	name := strings.TrimSpace(s.Name)
+	if name == "" {
+		return fmt.Errorf("server name 不能为空")
+	}
+	if !serverNameRe.MatchString(name) {
+		return fmt.Errorf("server name 无效: %s（仅允许字母数字、_、-，且不能以符号开头）", name)
+	}
+	if ip := net.ParseIP(strings.TrimSpace(s.Address)); ip == nil {
+		return fmt.Errorf("%s address 无效: %s", name, s.Address)
+	}
+	if s.TCPPort < 1 || s.TCPPort > 65535 {
+		return fmt.Errorf("%s.tcp_port 端口越界: %d", name, s.TCPPort)
+	}
+	if s.UDPPort < 1 || s.UDPPort > 65535 {
+		return fmt.Errorf("%s.udp_port 端口越界: %d", name, s.UDPPort)
+	}
+	if s.HealthCheckPort < 1 || s.HealthCheckPort > 65535 {
+		return fmt.Errorf("%s.health_check_port 端口越界: %d", name, s.HealthCheckPort)
+	}
+	return nil
+}
+
+// AddServer appends a server and creates matching production TCP/UDP rule templates.
+// New production rules default to enabled=false.
+func (r *Resources) AddServer(s Server) (created []Rule, err error) {
+	s.Name = strings.TrimSpace(s.Name)
+	s.Address = strings.TrimSpace(s.Address)
+	if err := validateServerFields(s); err != nil {
+		return nil, err
+	}
+	for _, existing := range r.Servers {
+		if existing.Name == s.Name {
+			return nil, fmt.Errorf("server 已存在: %s", s.Name)
+		}
+	}
+	listenPort, err := r.allocateProductionListenPort(s.Name)
+	if err != nil {
+		return nil, err
+	}
+	created = productionRuleTemplates(s.Name, listenPort)
+	for _, rule := range created {
+		if conflict := r.ruleNameConflict(rule.Name); conflict != "" {
+			return nil, fmt.Errorf("规则名称冲突: %s 已存在", conflict)
+		}
+	}
+	r.Servers = append(r.Servers, s)
+	r.Rules = append(r.Rules, created...)
+	return created, nil
+}
+
+// DeleteServer removes a server and all rules that reference it (production, canary, etc.).
+func (r *Resources) DeleteServer(name string) (removedRules int, err error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return 0, fmt.Errorf("server name 不能为空")
+	}
+	idx := -1
+	for i, s := range r.Servers {
+		if s.Name == name {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return 0, fmt.Errorf("server not found: %s", name)
+	}
+	if len(r.Servers) == 1 {
+		return 0, fmt.Errorf("不能删除最后一台 server")
+	}
+	r.Servers = append(r.Servers[:idx], r.Servers[idx+1:]...)
+	kept := r.Rules[:0]
+	for _, rule := range r.Rules {
+		if rule.Server == name {
+			removedRules++
+			continue
+		}
+		kept = append(kept, rule)
+	}
+	r.Rules = kept
+	return removedRules, nil
+}
+
+func productionRuleTemplates(serverName string, listenPort int) []Rule {
+	return []Rule{
+		{
+			Name:       "rule-" + serverName + "-tcp-game",
+			Kind:       "production",
+			Server:     serverName,
+			Protocol:   "TCP",
+			ListenPort: listenPort,
+			Enabled:    false,
+		},
+		{
+			Name:       "rule-" + serverName + "-udp-game",
+			Kind:       "production",
+			Server:     serverName,
+			Protocol:   "UDP",
+			ListenPort: listenPort,
+			Enabled:    false,
+		},
+	}
+}
+
+func (r *Resources) ruleNameConflict(name string) string {
+	for _, rule := range r.Rules {
+		if rule.Name == name {
+			return name
+		}
+	}
+	return ""
+}
+
+func (r *Resources) allocateProductionListenPort(serverName string) (int, error) {
+	used := map[int]struct{}{}
+	for _, rule := range r.Rules {
+		if rule.ListenPort > 0 {
+			used[rule.ListenPort] = struct{}{}
+		}
+	}
+	if preferred, ok := preferredListenPort(serverName); ok {
+		if _, taken := used[preferred]; !taken {
+			return preferred, nil
+		}
+	}
+	for port := 10001; port <= 65535; port++ {
+		if _, taken := used[port]; !taken {
+			return port, nil
+		}
+	}
+	return 0, fmt.Errorf("无法分配 production listen_port")
+}
+
+func preferredListenPort(serverName string) (int, bool) {
+	m := serverNumRe.FindStringSubmatch(serverName)
+	if m == nil {
+		return 0, false
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil || n < 1 || n > 55535 {
+		return 0, false
+	}
+	return 10000 + n, true
 }
 
 func (r *Resources) UpdateServer(name string, address string, tcpPort, udpPort, healthPort int, enabled bool) error {
@@ -214,7 +362,7 @@ func Save(path string, r *Resources) error {
 	if err != nil {
 		return err
 	}
-	header := "# 由 gateway-panel / gateway-render 写入\n# 源文件可继续手工编辑后重新 apply\n"
+	header := "# 由 relaygate 写入\n# 源文件可继续手工编辑后重新 apply\n"
 	return os.WriteFile(path, append([]byte(header), b...), 0o644)
 }
 

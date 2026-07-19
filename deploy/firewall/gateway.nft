@@ -1,9 +1,9 @@
 #!/usr/sbin/nft -f
-# gateway-01 语义化防火墙
+# RelayGate 网关防火墙（所有网关实例共用）
 # 使用前：
-#   1. python scripts/render_config.py   # 生成 game-ports.nft
-#   2. nft -c -f firewall/gateway.nft   # 语法检查
-#   3. 确认 SSH 30455 放行后再 apply
+#   1. ./bin/relaygate render            # 生成 game-ports.nft
+#   2. nft -c -f deploy/firewall/gateway.nft
+#   3. 确认 SSH 端口放行后再 apply
 #
 # 警告：错误应用可能导致 SSH 断开。请保留现有会话并准备控制台。
 

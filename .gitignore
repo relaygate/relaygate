@@ -1,7 +1,10 @@
 .env
 .env.*
 !.env.example
+!deploy/env/*.env.example
+!deploy/monitoring/.env.central.example
 bin/
+.tools/
 backups/
 docs/BASELINE.runtime.txt
 *.log
@@ -12,3 +15,13 @@ __pycache__/
 .venv/
 venv/
 *.exe
+
+# Terraform local state / secrets
+deploy/terraform/**/.terraform/
+deploy/terraform/**/*.tfstate
+deploy/terraform/**/*.tfstate.*
+deploy/terraform/**/terraform.tfvars
+deploy/terraform/**/crash.log
+
+# Local inventory (may contain hosts)
+deploy/inventory/gateways.env

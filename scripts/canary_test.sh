@@ -25,4 +25,4 @@ if [[ "$TARGET" == "127.0.0.1" || "$TARGET" == "localhost" ]]; then
   curl -fsS "http://127.0.0.1:9901/clusters" | grep -E 'cluster-server-01' | head -n 20 || true
 fi
 
-echo "下一步: ./bin/gateway-render enable server-01 && bash scripts/deploy.sh"
+echo "下一步: ./bin/relaygate server enable server-01 && bash scripts/deploy.sh"

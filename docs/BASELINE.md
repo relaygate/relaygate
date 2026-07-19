@@ -96,15 +96,15 @@ nft list ruleset 2>/dev/null || iptables -S 2>/dev/null || true
 - [ ] 已更换此前在聊天中暴露的 root 密码
 - [ ] 已配置 SSH 公钥登录，并禁用密码登录（或至少禁用 root 密码）
 - [ ] Envoy Admin / Prometheus / Grafana / node_exporter 仅监听 127.0.0.1
-- [ ] 游戏后端防火墙仅允许 `gateway-01` 访问
+- [ ] 游戏后端防火墙仅允许网关回源 IP（双活时为全部网关）
 - [ ] 部署 nftables 前已确认 SSH `30455` 放行规则存在
 - [ ] `.env` 仅存在于服务器，权限 `600`，未提交仓库
 
 ## 7. 内核建议参数（部署时应用）
 
 ```bash
-# 仓库: deploy/sysctl/gateway-01.conf
-# 安装: /etc/sysctl.d/99-gateway-01.conf  （99- = sysctl.d 加载顺序，越大越晚生效）
+# 仓库: deploy/sysctl/gateway.conf
+# 安装: /etc/sysctl.d/99-${GATEWAY_NAME}.conf  （99- = sysctl.d 加载顺序，越大越晚生效）
 net.core.somaxconn = 65535
 net.core.netdev_max_backlog = 250000
 net.core.rmem_max = 16777216
@@ -119,7 +119,7 @@ fs.file-max = 2097152
 
 | 风险 | 影响 | 缓解 |
 |------|------|------|
-| 单机 `gateway-01` 单点 | 主机故障全站不可用 | 首期接受；稳定后扩 `gateway-02` |
-| 后端源 IP 变为网关 IP | 游戏反作弊/封禁失效 | 后续 TPROXY / PROXY Protocol |
-| UDP 无主动健康检查 | 故障发现偏慢 | 监控丢包/超时并告警 |
+| 单机单点 | 主机故障全站不可用 | 演进双活 + L4 LB：见 [`HA.md`](HA.md) |
+| 后端源 IP 变为网关 IP | 游戏反作弊/封禁失效 | 后续 TPROXY / PROXY Protocol；双活时放行全部网关 IP |
+| UDP 无主动健康检查 | 故障发现偏慢 | 监控丢包/超时并告警；LB 用 Envoy `/ready` |
 | 无云厂商高防 | 大流量 DDoS 打满带宽 | 采购高防 IP / 清洗 |

@@ -1,22 +1,24 @@
 # RelayGate
 
-基于 Envoy 的游戏网关产品（主机语义名 `gateway-01`）。单机 `gateway + panel` 落地（Go 工具链）：
+基于 Envoy 的游戏网关产品。支持单机起步，并演进为 **双活网关 + 云 L4 LB**（见 [`docs/HA.md`](docs/HA.md)）。Go 工具链：
 
 - **数据面**：Envoy v1.39.0（TCP / UDP 固定目标转发）
-- **配置面板**：`gateway-panel`（Go，`127.0.0.1:8080`）
-- **监控面**：Prometheus + Grafana + node_exporter（仅监听 127.0.0.1）
+- **产品二进制**：`relaygate`（渲染、规则切换与 Panel，Panel 监听 `127.0.0.1:8080`）
+- **监控面**：Prometheus + Grafana + node_exporter（仅监听 127.0.0.1；可接集中监控）
 - **限流**：Envoy TCP 本地连接限速 + nftables UDP PPS / TCP 新建连接限速
-- **资产源**：[`config/resources.yaml`](config/resources.yaml)
+- **资产源**：[`config/resources.yaml`](config/resources.yaml)（GitOps 单一配置源）
+- **实例身份**：由 `.env` 中 `GATEWAY_NAME` / `GATEWAY_PUBLIC_IP` 驱动（同一套 compose 模板可部署多台）
 
 ## 拓扑
 
 ```text
 玩家
-  → gateway-01:10001–10010 (TCP/UDP)
+  → [可选] Cloud L4 LB (TCP+UDP)
+  → gateway-01 / gateway-02:10001–10010 (TCP/UDP)
   → Envoy
   → server-01 … server-10
 
-管理面（本机）
+管理面（本机，建议仅 primary 开 Panel）
   Panel         :8080
   Envoy Admin   :9901
   Prometheus    :9090
@@ -28,8 +30,7 @@
 
 ```text
 config/resources.yaml          # 唯一资产源
-cmd/gateway-render             # 渲染 Envoy + nft / enable|disable
-cmd/gateway-panel              # Web 配置 + 状态摘要
+cmd/relaygate                  # 唯一入口：render / server / panel / version
 internal/                      # Go 业务包
 web/                           # Panel 模板与静态资源
 gateway/generated/envoy.yaml   # 生成的 Envoy 配置
@@ -43,7 +44,7 @@ panel/README.md                # Panel 说明
 
 | 名称 | 含义 |
 |------|------|
-| `gateway-01` | 当前网关主机 |
+| `gateway-01` / `gateway-02` | 网关主机（由 `GATEWAY_NAME` 指定） |
 | `server-01`…`server-10` | 游戏后端 |
 | `listener-rule-…` | Envoy Listener |
 | `cluster-server-NN-tcp/udp-game` | Envoy Cluster |
@@ -74,9 +75,9 @@ Server 指真正跑游戏逻辑的机器（`server-01` … `server-10`）。网�
 配置原则：
 
 1. 游戏进程监听 `0.0.0.0` 或内网网卡（不要只绑 `127.0.0.1`，否则网关连不上）。
-2. **防火墙只放行来自 `GATEWAY_IP` 的游戏端口**，禁止公网直连 Server。
+2. **防火墙只放行来自网关回源 IP 的游戏端口**，禁止公网直连 Server。双活时必须放行 **所有** 网关 IP（见 [`docs/HA.md`](docs/HA.md)）。
 3. 游戏日志里看到的客户端源 IP 通常是网关 IP（当前未开 TPROXY / PROXY Protocol）。
-4. 在网关的 `config/resources.yaml` 填入该 Server 的真实 IP，并执行 `./bin/gateway-render` 后 Apply/部署。
+4. 在网关的 `config/resources.yaml` 填入该 Server 的真实 IP，并执行 `./bin/relaygate render` 后 Apply/部署（仅在 primary Panel / Git 写入，避免双写）。
 
 ---
 
@@ -255,7 +256,7 @@ servers:
 然后：
 
 ```bash
-./bin/gateway-render
+./bin/relaygate render
 # 或 Panel → Apply
 bash scripts/deploy.sh   # 或 bash scripts/reload_envoy.sh
 ```
@@ -268,7 +269,7 @@ bash scripts/deploy.sh   # 或 bash scripts/reload_envoy.sh
 | Canary 验证 | `GATEWAY_IP:11001` |
 | 不要再直连 | `server-01:7777/7778` |
 
-## 快速开始（网关 gateway-01）
+## 快速开始（单台网关）
 
 ### 1. 填资产
 
@@ -284,7 +285,8 @@ bash scripts/build.sh
 # Windows: powershell -File scripts/validate.ps1
 
 cp .env.example .env
-# 编辑 GRAFANA_ADMIN_PASSWORD、PANEL_ADMIN_PASSWORD
+# 或双活：cp deploy/env/gateway-01.env.example .env
+# 编辑 GATEWAY_NAME、GRAFANA_ADMIN_PASSWORD、PANEL_ADMIN_PASSWORD
 chmod 600 .env
 ```
 
@@ -293,6 +295,7 @@ chmod 600 .env
 ```bash
 bash scripts/validate.sh
 bash scripts/deploy.sh
+bash scripts/smoke_test.sh
 bash scripts/collect_baseline.sh
 bash scripts/canary_test.sh 127.0.0.1
 ```
@@ -302,6 +305,8 @@ Compose 约定（仓库根）：
 ```bash
 docker compose -f deploy/compose.yaml --env-file .env up -d --build
 ```
+
+多网关高可用、L4 LB、GitOps 分批与回滚：见 [`docs/HA.md`](docs/HA.md)。
 
 ### 4. 访问 Panel / Grafana
 
@@ -316,7 +321,7 @@ ssh -p 30455 -L 8080:127.0.0.1:8080 -L 3000:127.0.0.1:3000 root@107.149.191.37
 见 [`docs/MIGRATE.md`](docs/MIGRATE.md)。
 
 ```bash
-./bin/gateway-render enable server-01
+./bin/relaygate server enable server-01
 bash scripts/deploy.sh
 ```
 
@@ -325,10 +330,15 @@ bash scripts/deploy.sh
 | 操作 | 命令 |
 |------|------|
 | 构建二进制 | `bash scripts/build.sh` |
-| 重新渲染 | `./bin/gateway-render` |
-| 仅校验 | `./bin/gateway-render --check-only` |
-| 启用 production | `./bin/gateway-render enable server-01` |
+| 重新渲染 | `./bin/relaygate render` |
+| 仅校验 | `./bin/relaygate render --check-only` |
+| 启用 production | `./bin/relaygate server enable server-01` |
+| 启动 Panel | `PANEL_ADMIN_PASSWORD=... ./bin/relaygate panel` |
+| 查看版本 | `./bin/relaygate version` |
 | 部署 | `bash scripts/deploy.sh` |
+| 冒烟 | `bash scripts/smoke_test.sh` |
+| Drain / Undrain | `bash scripts/drain_gateway.sh fail\|ok` |
+| 分批双活部署 | `bash scripts/deploy_multi.sh` |
 | 回滚 | `bash scripts/rollback.sh` |
 | 应用防火墙 | `sudo bash scripts/apply_firewall.sh` |
 | Canary 探测 | `bash scripts/canary_test.sh <ip>` |
@@ -345,4 +355,4 @@ bash scripts/deploy.sh
 - 固定目标：无跨服负载均衡；熔断只停止向故障服转发
 - UDP 无可靠主动健康检查：靠错误指标与告警
 - 后端默认看到网关源 IP；保留玩家源 IP 需后续 TPROXY / PROXY Protocol
-- 当前 `gateway-01` 为单点，稳定后再扩 `gateway-02`
+- 双活依赖云 L4 LB + 两台网关回源放行；`PANEL_ROLE` 仅为运维约定（Panel 不读），standby 通过不启 `with-panel` 防双写（详见 [`docs/HA.md`](docs/HA.md)）

@@ -3,24 +3,41 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-RENDER="${RENDER_BIN:-$ROOT/bin/gateway-render}"
-if [[ ! -x "$RENDER" ]]; then
+RELAYGATE="${RELAYGATE_BIN:-$ROOT/bin/relaygate}"
+if [[ ! -x "$RELAYGATE" ]] && command -v relaygate >/dev/null 2>&1; then
+  RELAYGATE="$(command -v relaygate)"
+fi
+if [[ ! -x "$RELAYGATE" ]]; then
   if command -v go >/dev/null 2>&1; then
     bash scripts/build.sh
   else
-    echo "ERROR: 缺少 $RENDER，请先 bash scripts/build.sh"
+    echo "ERROR: 缺少 $RELAYGATE，请先 bash scripts/build.sh"
     exit 1
   fi
 fi
 
-echo "==> gateway-render --check-only"
-"$RENDER" --check-only
-echo "==> gateway-render"
-"$RENDER"
+if [[ -f .env ]]; then
+  # shellcheck disable=SC1091
+  set -a
+  source .env
+  set +a
+fi
+export GATEWAY_NAME="${GATEWAY_NAME:-gateway-01}"
+export ENVOY_ADMIN_PORT="${ENVOY_ADMIN_PORT:-9901}"
+
+echo "==> render observability (gateway=${GATEWAY_NAME})"
+bash scripts/render_observability.sh "${ENV_FILE:-.env}"
+
+echo "==> relaygate render --check-only"
+"$RELAYGATE" render --check-only
+echo "==> relaygate render"
+"$RELAYGATE" render
 
 echo "==> 检查生成文件"
 test -f gateway/generated/envoy.yaml
 test -f deploy/firewall/generated/game-ports.nft
+test -f deploy/prometheus/prometheus.yml
+grep -q "gateway: ${GATEWAY_NAME}" deploy/prometheus/prometheus.yml
 echo "generated files OK"
 
 if command -v docker >/dev/null 2>&1; then
@@ -43,11 +60,13 @@ fi
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
   echo "==> compose 配置检查"
   if [[ ! -f .env ]]; then
+    GATEWAY_NAME="${GATEWAY_NAME}" \
     GRAFANA_ADMIN_PASSWORD=validate-only PANEL_ADMIN_PASSWORD=validate-only \
       docker compose -f deploy/compose.yaml config >/dev/null
   else
     docker compose -f deploy/compose.yaml --env-file .env config >/dev/null
   fi
+  echo "compose config OK"
 fi
 
 echo "全部校验通过"

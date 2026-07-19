@@ -29,9 +29,9 @@ type TrafficStatus struct {
 }
 
 type Client struct {
-	EnvoyAdmin  string
-	Prometheus  string
-	HTTP        *http.Client
+	EnvoyAdmin string
+	Prometheus string
+	HTTP       *http.Client
 }
 
 func New(envoyAdmin, prometheus string) *Client {

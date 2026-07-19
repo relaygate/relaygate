@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,21 +22,21 @@ import (
 )
 
 type Config struct {
-	Root           string
-	Bind           string
-	AdminPassword  string
-	EnvoyAdminURL  string
-	PrometheusURL  string
-	WebDir         string
-	SessionTTL     time.Duration
+	Root          string
+	Bind          string
+	AdminPassword string
+	EnvoyAdminURL string
+	PrometheusURL string
+	WebDir        string
+	SessionTTL    time.Duration
 }
 
 type Server struct {
-	cfg      Config
-	tmpl     *template.Template
-	status   *status.Client
-	mu       sync.Mutex
-	sessions map[string]time.Time
+	cfg       Config
+	tmpl      *template.Template
+	status    *status.Client
+	mu        sync.Mutex
+	sessions  map[string]time.Time
 	lastApply string
 }
 
@@ -86,7 +87,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/apply", s.handleApplyPage)
 
 	mux.HandleFunc("/api/servers", s.withAuth(s.apiServers))
-	mux.HandleFunc("/api/servers/", s.withAuth(s.apiServerPut))
+	mux.HandleFunc("/api/servers/", s.withAuth(s.apiServerByName))
 	mux.HandleFunc("/api/rules", s.withAuth(s.apiRules))
 	mux.HandleFunc("/api/rules/", s.withAuth(s.apiRulePatch))
 	mux.HandleFunc("/api/apply", s.withAuth(s.apiApply))
@@ -96,7 +97,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) ListenAndServe() error {
-	log.Printf("gateway-panel listening on http://%s", s.cfg.Bind)
+	log.Printf("relaygate panel listening on http://%s", s.cfg.Bind)
 	return http.ListenAndServe(s.cfg.Bind, s.Handler())
 }
 
@@ -253,23 +254,78 @@ func (s *Server) handleApplyPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) apiServers(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		res, err := s.load()
+		if err != nil {
+			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, res.Servers)
+	case http.MethodPost:
+		s.apiServerCreate(w, r)
+	default:
 		http.Error(w, "method not allowed", 405)
+	}
+}
+
+func (s *Server) apiServerByName(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPut:
+		s.apiServerPut(w, r)
+	case http.MethodDelete:
+		s.apiServerDelete(w, r)
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+func (s *Server) apiServerCreate(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name            string `json:"name"`
+		Address         string `json:"address"`
+		TCPPort         int    `json:"tcp_port"`
+		UDPPort         int    `json:"udp_port"`
+		HealthCheckPort int    `json:"health_check_port"`
+		Enabled         *bool  `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, 400, map[string]any{"error": err.Error()})
 		return
+	}
+	enabled := true
+	if body.Enabled != nil {
+		enabled = *body.Enabled
 	}
 	res, err := s.load()
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	writeJSON(w, 200, res.Servers)
+	created, err := res.AddServer(assets.Server{
+		Name:            body.Name,
+		Address:         body.Address,
+		TCPPort:         body.TCPPort,
+		UDPPort:         body.UDPPort,
+		HealthCheckPort: body.HealthCheckPort,
+		Enabled:         enabled,
+	})
+	if err != nil {
+		code := 400
+		if strings.Contains(err.Error(), "已存在") {
+			code = 409
+		}
+		writeJSON(w, code, map[string]any{"error": err.Error()})
+		return
+	}
+	if err := assets.Save(s.resourcesPath(), res); err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 201, map[string]any{"ok": true, "rules": created})
 }
 
 func (s *Server) apiServerPut(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPut {
-		http.Error(w, "method not allowed", 405)
-		return
-	}
 	name := filepath.Base(r.URL.Path)
 	var body struct {
 		Address         string `json:"address"`
@@ -296,6 +352,29 @@ func (s *Server) apiServerPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+func (s *Server) apiServerDelete(w http.ResponseWriter, r *http.Request) {
+	name := filepath.Base(r.URL.Path)
+	res, err := s.load()
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	removed, err := res.DeleteServer(name)
+	if err != nil {
+		code := 400
+		if strings.Contains(err.Error(), "not found") {
+			code = 404
+		}
+		writeJSON(w, code, map[string]any{"error": err.Error()})
+		return
+	}
+	if err := assets.Save(s.resourcesPath(), res); err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "removed_rules": removed})
 }
 
 func (s *Server) apiRules(w http.ResponseWriter, r *http.Request) {
@@ -359,14 +438,10 @@ func (s *Server) apiApply(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": err.Error()})
 		return
 	}
-	resourcesPath, envoyOut, nftOut := assets.DefaultPaths(s.cfg.Root)
+	resourcesPath, envoyOut, _ := assets.DefaultPaths(s.cfg.Root)
 	stamp := time.Now().Format("20060102-150405")
 	if _, err := assets.BackupFiles(s.cfg.Root, stamp, resourcesPath, envoyOut); err != nil {
 		writeJSON(w, 500, map[string]any{"error": "backup failed: " + err.Error()})
-		return
-	}
-	if err := envoygen.Write(envoyOut, nftOut, res); err != nil {
-		writeJSON(w, 500, map[string]any{"error": "render failed: " + err.Error()})
 		return
 	}
 	reload := filepath.Join(s.cfg.Root, "scripts", "reload_envoy.sh")

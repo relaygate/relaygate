@@ -4,11 +4,17 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 [[ "$(id -u)" -eq 0 ]] || { echo "ERROR: 需要 root"; exit 1; }
-SSH_PORT="${SSH_PORT:-30455}"
-RENDER="${RENDER_BIN:-$ROOT/bin/gateway-render}"
+if [[ -f .env ]]; then
+  # shellcheck disable=SC1091
+  set -a
+  source .env
+  set +a
+fi
+SSH_PORT="${SSH_PORT:-${GATEWAY_SSH_PORT:-30455}}"
+RELAYGATE="${RELAYGATE_BIN:-$ROOT/bin/relaygate}"
 
 echo "==> 渲染端口定义"
-"$RENDER"
+"$RELAYGATE" render
 
 echo "==> 语法检查"
 ( cd deploy/firewall && nft -c -f gateway.nft )

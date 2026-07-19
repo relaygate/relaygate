@@ -18,7 +18,9 @@
    ```
 4. `.env` 权限 `600`，永不提交仓库（含 `GRAFANA_ADMIN_PASSWORD`、`PANEL_ADMIN_PASSWORD`）
 5. 确认管理端口仅本机监听：`8080 / 9901 / 9090 / 3000 / 9100`
-6. 游戏后端防火墙仅允许 `gateway-01` 公网/内网 IP
+6. 游戏后端防火墙仅允许网关回源 IP；双活时放行 **全部** `GATEWAY_PUBLIC_IP`（见 [`HA.md`](HA.md)）
+7. 生产密钥走密钥管理 / CI Secrets，不要提交 `.env` / `terraform.tfvars`
+8. 容器镜像使用不可变 tag（git SHA），禁止生产 `latest`
 
 ## 防火墙
 

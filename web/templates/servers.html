@@ -10,7 +10,21 @@
 {{template "nav" .}}
 <main>
   <h1>Servers</h1>
-  <p class="muted">修改后不会自动生效，请到 Apply 页面渲染并热重载 Envoy。</p>
+  <p class="muted">修改后不会自动生效，请到 Apply 页面渲染并热重载 Envoy。添加 Server 时会自动生成对应 production 规则模板（默认关闭）。</p>
+
+  <section class="add-server">
+    <h2>添加 Server</h2>
+    <div class="add-server-form">
+      <label>Name <input id="new-name" type="text" placeholder="server-11" autocomplete="off"/></label>
+      <label>Address <input id="new-addr" type="text" placeholder="10.0.0.21" autocomplete="off"/></label>
+      <label>TCP <input id="new-tcp" type="number" value="7777"/></label>
+      <label>UDP <input id="new-udp" type="number" value="7778"/></label>
+      <label>Health <input id="new-health" type="number" value="7777"/></label>
+      <label class="check">Enabled <input id="new-en" type="checkbox" checked/></label>
+      <button id="add-server" type="button">添加 Server</button>
+    </div>
+  </section>
+
   <table>
     <thead>
       <tr>
@@ -26,7 +40,10 @@
         <td><input class="udp" type="number" value="{{.UDPPort}}"/></td>
         <td><input class="health" type="number" value="{{.HealthCheckPort}}"/></td>
         <td><input class="en" type="checkbox" {{if .Enabled}}checked{{end}}/></td>
-        <td><button class="save-server">保存</button></td>
+        <td class="row-actions">
+          <button class="save-server">保存</button>
+          <button class="delete-server danger" type="button">删除</button>
+        </td>
       </tr>
       {{end}}
     </tbody>
