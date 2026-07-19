@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/robot/proxy/internal/assets"
 	"github.com/robot/proxy/internal/envoygen"
@@ -165,10 +166,12 @@ func runPanel(args []string) int {
 	}
 	cfg := panel.Config{
 		Root:          env("PANEL_ROOT", ""),
-		Bind:          env("PANEL_BIND", "127.0.0.1:8080"),
+		Bind:          env("PANEL_BIND", "127.0.0.1:9000"),
 		AdminPassword: os.Getenv("PANEL_ADMIN_PASSWORD"),
 		EnvoyAdminURL: env("ENVOY_ADMIN_URL", "http://127.0.0.1:9901"),
 		PrometheusURL: env("PROMETHEUS_URL", "http://127.0.0.1:9090"),
+		// Unset → default local Grafana; explicit empty GRAFANA_URL= disables the proxy.
+		GrafanaURL: grafanaURLFromEnv(),
 	}
 	srv, err := panel.New(cfg)
 	if err != nil {
@@ -193,6 +196,15 @@ func env(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// grafanaURLFromEnv: unset → default loopback Grafana; GRAFANA_URL= (empty) disables proxy.
+func grafanaURLFromEnv() string {
+	v, ok := os.LookupEnv("GRAFANA_URL")
+	if !ok {
+		return "http://127.0.0.1:3000"
+	}
+	return strings.TrimSpace(v)
 }
 
 func fail(err error) int {

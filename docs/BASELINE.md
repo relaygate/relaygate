@@ -51,7 +51,8 @@ nft list ruleset 2>/dev/null || iptables -S 2>/dev/null || true
 | SSH | TCP | 30455 | 0.0.0.0 | 现有运维入口，部署防火墙时必须保留 |
 | Envoy Admin | TCP | 9901 | 127.0.0.1 | 仅本机，供 Prometheus 抓取 |
 | Prometheus | TCP | 9090 | 127.0.0.1 | 管理面 |
-| Grafana | TCP | 3000 | 127.0.0.1 | 首期 SSH 隧道访问 |
+| Grafana | TCP | 3000 | 127.0.0.1 | 仅本机；经 Panel `:9000/grafana/` 访问，勿单独隧道 |
+| Panel | TCP | 9000 | 127.0.0.1 | 唯一管理出口（SSH 隧道） |
 | node_exporter | TCP | 9100 | 127.0.0.1 | 主机指标 |
 | 游戏入口 TCP | TCP | 10001–10010 | 0.0.0.0 | 对应 server-01～server-10 |
 | 游戏入口 UDP | UDP | 10001–10010 | 0.0.0.0 | 与 TCP 同号，协议独立 |

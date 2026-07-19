@@ -3,6 +3,13 @@
 !.env.example
 !deploy/env/*.env.example
 !deploy/monitoring/.env.central.example
+
+# 真实业务资产（含后端真实 IP/端口，敏感）——仅示例模板入库
+config/resources.yaml
+
+# 渲染产物（由 relaygate render 生成，含真实后端地址，敏感）——不入库
+gateway/generated/
+deploy/firewall/generated/
 bin/
 .tools/
 backups/
@@ -25,3 +32,4 @@ deploy/terraform/**/crash.log
 
 # Local inventory (may contain hosts)
 deploy/inventory/gateways.env
+deploy/firewall/.gateway-*.nft

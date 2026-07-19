@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
 # 渲染后以 drain 方式重启 Envoy
-# - 宿主机：可用 compose
-# - Panel 容器内：通过 docker.sock 对 ${GATEWAY_NAME}-envoy 执行 restart
+# - 宿主机 root / 运维：直接 docker / compose
+# - Panel（systemd 用户 relaygate）：经 RELAYGATE_PRIVILEGED_HELPER + sudoers 提权，
+#   不把用户加入 docker 组，也不挂载 docker.sock 到 Panel 进程
 set -euo pipefail
+
+# Panel Apply: non-root + helper path → re-exec via sudo -n (exact whitelist).
+if [[ -n "${RELAYGATE_PRIVILEGED_HELPER:-}" && "$(id -u)" -ne 0 ]]; then
+  if [[ ! -x "$RELAYGATE_PRIVILEGED_HELPER" ]]; then
+    echo "ERROR: privileged helper 不可执行: $RELAYGATE_PRIVILEGED_HELPER" >&2
+    exit 1
+  fi
+  exec sudo -n "$RELAYGATE_PRIVILEGED_HELPER" "$@"
+fi
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 

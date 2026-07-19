@@ -3,7 +3,7 @@
 基于 Envoy 的游戏网关产品。支持单机起步，并演进为 **双活网关 + 云 L4 LB**（见 [`docs/HA.md`](docs/HA.md)）。Go 工具链：
 
 - **数据面**：Envoy v1.39.0（TCP / UDP 固定目标转发）
-- **产品二进制**：`relaygate`（渲染、规则切换与 Panel，Panel 监听 `127.0.0.1:8080`）
+- **产品二进制**：`relaygate`（渲染、规则切换与 Panel，Panel 监听 `127.0.0.1:9000`）
 - **监控面**：Prometheus + Grafana + node_exporter（仅监听 127.0.0.1；可接集中监控）
 - **限流**：Envoy TCP 本地连接限速 + nftables UDP PPS / TCP 新建连接限速
 - **资产源**：[`config/resources.yaml`](config/resources.yaml)（GitOps 单一配置源）
@@ -18,12 +18,12 @@
   → Envoy
   → server-01 … server-10
 
-管理面（本机，建议仅 primary 开 Panel）
-  Panel         :8080
-  Envoy Admin   :9901
-  Prometheus    :9090
-  Grafana       :3000
-  node_exporter  :9100
+管理面（本机，建议仅 primary 开 Panel；Grafana 经 Panel 反代）
+  Panel (systemd 二进制) :9000  ← 唯一管理出口（含 /monitoring、/grafana/）
+  Envoy Admin   :9901           ← Compose
+  Prometheus    :9090           ← Compose
+  Grafana       :3000           ← Compose；仅 loopback，勿单独隧道
+  node_exporter  :9100           ← Compose
 ```
 
 ## 目录
@@ -31,13 +31,14 @@
 ```text
 config/resources.yaml          # 唯一资产源
 cmd/relaygate                  # 唯一入口：render / server / panel / version
-internal/                      # Go 业务包
-web/                           # Panel 模板与静态资源
+internal/panel                 # Go Panel 服务（会话鉴权、Grafana 反代）
+web/                           # Panel 前端：templates + static（htmx/Alpine/Tailwind 本地 vendor）
+
 gateway/generated/envoy.yaml   # 生成的 Envoy 配置
-deploy/                        # compose + 监控 + 防火墙 + sysctl
-scripts/                       # Shell 编排
+deploy/                        # compose + systemd + 监控 + 防火墙 + sysctl
+scripts/                       # Shell 编排（含 install_panel_service.sh）
 docs/
-panel/README.md                # Panel 说明
+panel/README.md                # Panel 说明（前端栈 / vendor）
 ```
 
 命名约定：
@@ -269,13 +270,54 @@ bash scripts/deploy.sh   # 或 bash scripts/reload_envoy.sh
 | Canary 验证 | `GATEWAY_IP:11001` |
 | 不要再直连 | `server-01:7777/7778` |
 
-## 快速开始（单台网关）
+## 一键安装（推荐）
+
+在受支持的 Ubuntu/Debian、RHEL/Rocky/Alma/CentOS Stream 主机上：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh | sudo bash
+```
+
+安装器检测 systemd、发行版、`amd64/arm64`、容量、端口和现有安装，使用
+发行版包管理器及 Docker 官方仓库安装依赖和 Compose v2，然后构建、渲染、
+校验并执行健康检查。默认：Panel 以宿主二进制 + `relaygate-panel.service` 运行；
+数据面（Envoy/Prometheus/Grafana/node_exporter）用 Compose。默认安装到
+`/opt/relaygate`，默认**只生成并校验** nftables 规则，不应用含 `flush ruleset`
+的防火墙。
+
+非交互示例（目标 gateway-01）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh |
+  sudo env NONINTERACTIVE=1 \
+    RELAYGATE_VERSION=master \
+    GATEWAY_NAME=gateway-01 \
+    GATEWAY_PUBLIC_IP=107.149.191.37 \
+    GATEWAY_SSH_PORT=30455 \
+    APPLY_FIREWALL=0 bash
+```
+
+常用覆盖项包括 `RELAYGATE_INSTALL_DIR`、`RELAYGATE_VERSION`、
+`GATEWAY_NAME`、`GATEWAY_PUBLIC_IP`、`GATEWAY_SSH_PORT`、
+`ENABLE_PANEL`（systemd）、`ENABLE_GRAFANA`（Compose profile）、`NONINTERACTIVE` 和
+`APPLY_FIREWALL`。密码写入 `/etc/relaygate/secrets/`（panel 文件 `root:relaygate`
+0640；grafana 仅 root），不会打印或写入新安装的 `.env`。
+
+升级、卸载、dry-run、密钥和防火墙确认流程详见
+[`docs/INSTALL.md`](docs/INSTALL.md)。
+
+## 快速开始（手动）
 
 ### 1. 填资产
 
-编辑 `config/resources.yaml`，将 `server-01`～`server-10` 的 `address` 改为真实 IP（先完成上一节 Server 端放行）。
+真实后端地址属敏感业务配置，**不入库**：`config/resources.yaml` 已在 `.gitignore` 中，仓库只保留模板 `config/resources.example.yaml`。首次从模板生成，再填真实 IP：
 
-默认仅启用 **canary**（`11001/TCP+UDP → server-01`），production `10001–10010` 默认关闭。
+```bash
+cp config/resources.example.yaml config/resources.yaml
+# 编辑 config/resources.yaml，把 address/端口改为真实后端（先完成上一节 Server 端放行）
+```
+
+渲染产物（`gateway/generated/`、`deploy/firewall/generated/`）同样含真实后端地址，也已被忽略、不入库。模板默认仅启用 **canary**，production 端口默认关闭；用 `relaygate server enable <server-xx>` 或 Panel 开启。
 
 ### 2. 构建与准备
 
@@ -310,11 +352,25 @@ docker compose -f deploy/compose.yaml --env-file .env up -d --build
 
 ### 4. 访问 Panel / Grafana
 
+Panel 是唯一管理入口；Grafana 经 Panel 同源反代（`/monitoring` iframe 或 `/grafana/`），
+无需再隧道 3000。Grafana 本身绑定 `127.0.0.1:3000`，匿名 Viewer 仅在 Panel session
+之后可用；管理员编辑可在 iframe/新标签打开 `/grafana/login` 登录。
+
 ```bash
-ssh -p 30455 -L 8080:127.0.0.1:8080 -L 3000:127.0.0.1:3000 root@107.149.191.37
-# Panel   http://127.0.0.1:8080
-# Grafana http://127.0.0.1:3000
+ssh -p 30455 -L 9000:127.0.0.1:9000 root@107.149.191.37
+# Panel / Monitoring / Grafana → http://127.0.0.1:9000
 ```
+
+本地开发 Panel：
+
+```bash
+export PANEL_ADMIN_PASSWORD='dev-password'
+export PANEL_ROOT="$(pwd)"
+go run ./cmd/relaygate panel
+# http://127.0.0.1:9000
+```
+
+前端为 **htmx + Alpine.js + Tailwind**（服务端模板增强，非 SPA）。静态依赖在 `web/static/vendor/` 与已生成的 `web/static/app.css`，详见 [`panel/README.md`](panel/README.md)。
 
 ### 5. 分批上线
 
@@ -333,9 +389,11 @@ bash scripts/deploy.sh
 | 重新渲染 | `./bin/relaygate render` |
 | 仅校验 | `./bin/relaygate render --check-only` |
 | 启用 production | `./bin/relaygate server enable server-01` |
-| 启动 Panel | `PANEL_ADMIN_PASSWORD=... ./bin/relaygate panel` |
+| 启动 Panel（开发） | `PANEL_ADMIN_PASSWORD=... ./bin/relaygate panel` |
+| Panel 状态/日志 | `systemctl status relaygate-panel` / `journalctl -u relaygate-panel` |
+| 安装 Panel 服务 | `sudo bash scripts/install_panel_service.sh` |
 | 查看版本 | `./bin/relaygate version` |
-| 部署 | `bash scripts/deploy.sh` |
+| 部署数据面 | `bash scripts/deploy.sh` |
 | 冒烟 | `bash scripts/smoke_test.sh` |
 | Drain / Undrain | `bash scripts/drain_gateway.sh fail\|ok` |
 | 分批双活部署 | `bash scripts/deploy_multi.sh` |
@@ -355,4 +413,4 @@ bash scripts/deploy.sh
 - 固定目标：无跨服负载均衡；熔断只停止向故障服转发
 - UDP 无可靠主动健康检查：靠错误指标与告警
 - 后端默认看到网关源 IP；保留玩家源 IP 需后续 TPROXY / PROXY Protocol
-- 双活依赖云 L4 LB + 两台网关回源放行；`PANEL_ROLE` 仅为运维约定（Panel 不读），standby 通过不启 `with-panel` 防双写（详见 [`docs/HA.md`](docs/HA.md)）
+- 双活依赖云 L4 LB + 两台网关回源放行；`PANEL_ROLE` 仅为运维约定（Panel 不读），standby 通过 `ENABLE_PANEL=0`（不装 systemd Panel）防双写（详见 [`docs/HA.md`](docs/HA.md)）

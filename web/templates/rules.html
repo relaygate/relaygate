@@ -1,38 +1,7 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Rules · RelayGate</title>
-  <link rel="stylesheet" href="/static/app.css"/>
-</head>
-<body>
-{{template "nav" .}}
-<main>
-  <h1>Rules</h1>
-  <table>
-    <thead>
-      <tr><th>Name</th><th>Kind</th><th>Protocol</th><th>Listen</th><th>Server</th><th>Enabled</th></tr>
-    </thead>
-    <tbody>
-      {{range .Rules}}
-      <tr>
-        <td>{{.Name}}</td>
-        <td>{{.Kind}}</td>
-        <td>{{.Protocol}}</td>
-        <td>{{.ListenPort}}</td>
-        <td>{{.Server}}</td>
-        <td>
-          <label class="switch">
-            <input type="checkbox" class="rule-toggle" data-name="{{.Name}}" {{if .Enabled}}checked{{end}}/>
-          </label>
-        </td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
-  <pre id="msg"></pre>
-</main>
-<script src="/static/app.js"></script>
-</body>
-</html>
+{{template "page-start" .}}
+  <header class="mb-6">
+    <h1 class="text-2xl font-bold tracking-tight">Rules</h1>
+    <p class="mt-1 text-sm text-rg-muted">开关规则后需到 Apply 才会热重载 Envoy。</p>
+  </header>
+  {{template "rules-table" .}}
+{{template "page-end" .}}

@@ -1,54 +1,47 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Overview · RelayGate</title>
-  <link rel="stylesheet" href="/static/app.css"/>
-</head>
-<body>
-{{template "nav" .}}
-<main>
-  <h1>Overview</h1>
-  <section class="cards">
-    <article>
-      <h3>Envoy</h3>
-      <p class="big">{{if .Envoy.Ready}}READY{{else}}DOWN{{end}}</p>
-      <p class="muted">{{.Envoy.ReadyBody}}</p>
-      {{if .Envoy.Error}}<p class="error">{{.Envoy.Error}}</p>{{end}}
+{{template "page-start" .}}
+  <header class="mb-6">
+    <h1 class="text-2xl font-bold tracking-tight">Overview</h1>
+    <p class="mt-1 text-sm text-rg-muted">Envoy 与流量摘要；详细曲线见 Monitoring。</p>
+  </header>
+
+  <section class="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+    <article class="rg-card p-4">
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-rg-muted">Envoy</h3>
+      <p class="mt-2 text-3xl font-bold {{if .Envoy.Ready}}text-rg-ok{{else}}text-rg-danger{{end}}">
+        {{if .Envoy.Ready}}READY{{else}}DOWN{{end}}
+      </p>
+      <p class="mt-1 truncate text-xs text-rg-muted">{{.Envoy.ReadyBody}}</p>
+      {{if .Envoy.Error}}<p class="mt-2 text-sm text-rg-danger">{{.Envoy.Error}}</p>{{end}}
     </article>
-    <article>
-      <h3>Healthy clusters</h3>
-      <p class="big">{{.Envoy.HealthyClusters}}</p>
+    <article class="rg-card p-4">
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-rg-muted">Healthy clusters</h3>
+      <p class="mt-2 text-3xl font-bold">{{.Envoy.HealthyClusters}}</p>
     </article>
-    <article>
-      <h3>TCP active</h3>
-      <p class="big">{{printf "%.0f" .Traffic.TCPActiveConnections}}</p>
+    <article class="rg-card p-4">
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-rg-muted">TCP active</h3>
+      <p class="mt-2 text-3xl font-bold">{{printf "%.0f" .Traffic.TCPActiveConnections}}</p>
     </article>
-    <article>
-      <h3>UDP sessions</h3>
-      <p class="big">{{printf "%.0f" .Traffic.UDPActiveSessions}}</p>
+    <article class="rg-card p-4">
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-rg-muted">UDP sessions</h3>
+      <p class="mt-2 text-3xl font-bold">{{printf "%.0f" .Traffic.UDPActiveSessions}}</p>
     </article>
-    <article>
-      <h3>Rate-limit (5m)</h3>
-      <p class="big">{{printf "%.0f" .Traffic.LocalRateLimited5m}}</p>
-      {{if .Traffic.Error}}<p class="muted">{{.Traffic.Error}}</p>{{end}}
+    <article class="rg-card p-4">
+      <h3 class="text-xs font-semibold uppercase tracking-wide text-rg-muted">Rate-limit (5m)</h3>
+      <p class="mt-2 text-3xl font-bold">{{printf "%.0f" .Traffic.LocalRateLimited5m}}</p>
+      {{if .Traffic.Error}}<p class="mt-2 text-xs text-rg-muted">{{.Traffic.Error}}</p>{{end}}
     </article>
   </section>
 
-  <section>
-    <h2>最近 Apply</h2>
-    <pre>{{if .LastApply}}{{.LastApply}}{{else}}尚无{{end}}</pre>
+  <section class="mb-8">
+    <h2 class="mb-3 text-lg font-semibold">最近 Apply</h2>
+    <pre class="rg-card overflow-auto p-4 font-mono text-xs leading-relaxed text-rg-muted whitespace-pre-wrap">{{if .LastApply}}{{.LastApply}}{{else}}尚无{{end}}</pre>
   </section>
 
   <section>
-    <h2>访问说明</h2>
-    <ul>
-      <li>Panel: <code>ssh -p 30455 -L 8080:127.0.0.1:8080 root@&lt;gateway-ip&gt;</code> → http://127.0.0.1:8080</li>
-      <li>Grafana: <code>-L 3000:127.0.0.1:3000</code> → http://127.0.0.1:3000</li>
+    <h2 class="mb-3 text-lg font-semibold">访问说明</h2>
+    <ul class="rg-card space-y-2 p-4 text-sm text-rg-muted">
+      <li>SSH 隧道（仅 Panel）：<code>ssh -p 30455 -L 9000:127.0.0.1:9000 root@&lt;gateway-ip&gt;</code></li>
+      <li>Panel / Monitoring / Grafana：<a href="/monitoring">http://127.0.0.1:9000</a>（Grafana 经同源反代，无需单独隧道 3000）</li>
     </ul>
   </section>
-</main>
-<script src="/static/app.js"></script>
-</body>
-</html>
+{{template "page-end" .}}

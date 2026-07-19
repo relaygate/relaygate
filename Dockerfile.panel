@@ -1,5 +1,5 @@
-# Build RelayGate Panel image (host network on each gateway host)
-# Tag with immutable git SHA in CI; never use :latest in production
+# Build/extract Linux relaygate binary (install.sh uses this as builder).
+# Panel runtime default is host systemd — not this image as a long-running service.
 FROM golang:1.22-bookworm AS build
 WORKDIR /src
 ENV GOPROXY=https://goproxy.cn,direct
@@ -16,6 +16,6 @@ WORKDIR /workspace
 COPY --from=build /out/relaygate /usr/local/bin/relaygate
 COPY web /workspace/web
 ENV PANEL_ROOT=/workspace
-ENV PANEL_BIND=127.0.0.1:8080
-EXPOSE 8080
+ENV PANEL_BIND=127.0.0.1:9000
+EXPOSE 9000
 ENTRYPOINT ["/usr/local/bin/relaygate", "panel"]

@@ -1,21 +1,26 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Apply · RelayGate</title>
-  <link rel="stylesheet" href="/static/app.css"/>
-</head>
-<body>
-{{template "nav" .}}
-<main>
-  <h1>Apply</h1>
-  <p class="muted">将校验 resources.yaml → 备份 → 渲染 Envoy/nft → 调用 reload_envoy.sh</p>
-  {{if .Message}}<div class="error">{{.Message}}</div>{{end}}
-  <pre>{{.Summary}}</pre>
-  <button id="do-apply">一键应用</button>
-  <pre id="msg">{{.LastApply}}</pre>
-</main>
-<script src="/static/app.js"></script>
-</body>
-</html>
+{{template "page-start" .}}
+  <header class="mb-6">
+    <h1 class="text-2xl font-bold tracking-tight">Apply</h1>
+    <p class="mt-1 text-sm text-rg-muted">将校验 resources.yaml → 备份 → 渲染 Envoy/nft → 调用 reload_envoy.sh</p>
+  </header>
+
+  {{if .Message}}
+  <div class="mb-4 rounded-lg border border-rg-danger/40 bg-rg-danger/10 px-3 py-2 text-sm text-rg-danger">{{.Message}}</div>
+  {{end}}
+
+  <section class="rg-card p-5">
+    <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-rg-muted">变更摘要</h2>
+    <pre class="mb-4 overflow-auto rounded-lg border border-rg-line bg-rg-input p-4 font-mono text-xs leading-relaxed text-rg-muted whitespace-pre-wrap">{{.Summary}}</pre>
+    <button
+      id="do-apply"
+      type="button"
+      class="rg-btn"
+      hx-post="/hx/apply"
+      hx-target="#apply-result"
+      hx-swap="outerHTML"
+      hx-disabled-elt="this"
+    >一键应用</button>
+  </section>
+
+  {{template "apply-result" .}}
+{{template "page-end" .}}

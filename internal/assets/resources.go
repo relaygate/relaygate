@@ -405,9 +405,17 @@ func FindRoot() (string, error) {
 		return "", err
 	}
 	dir := wd
+	// 以稳定入库文件为根标记（真实 config/resources.yaml 可能因敏感而未入库/尚未创建）。
+	markers := []string{
+		filepath.Join("config", "resources.yaml"),
+		filepath.Join("config", "resources.example.yaml"),
+		"go.mod",
+	}
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "config", "resources.yaml")); err == nil {
-			return dir, nil
+		for _, m := range markers {
+			if _, err := os.Stat(filepath.Join(dir, m)); err == nil {
+				return dir, nil
+			}
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -418,7 +426,7 @@ func FindRoot() (string, error) {
 	if env := os.Getenv("PANEL_ROOT"); env != "" {
 		return env, nil
 	}
-	return "", fmt.Errorf("cannot locate repo root (config/resources.yaml)")
+	return "", fmt.Errorf("cannot locate repo root (config/resources.yaml 或 go.mod)")
 }
 
 func AbsJoin(root, rel string) string {

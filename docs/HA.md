@@ -13,7 +13,7 @@
 集中 Prometheus/Grafana ←─────┘（或边缘 remote_write）
 
 管理面（建议）
-  Panel 仅在 gateway-01（primary）写入配置
+  Panel 仅在 gateway-01（primary）以 systemd 二进制写入配置
   gateway-02 为 standby 数据面（不启 Panel）
 ```
 
@@ -23,8 +23,8 @@
 
 | 主机 | 示例 env | Panel | Grafana |
 |------|----------|-------|---------|
-| gateway-01 | `deploy/env/gateway-01.env.example` | `with-panel` | `with-grafana` |
-| gateway-02 | `deploy/env/gateway-02.env.example` | 关闭 | 关闭 |
+| gateway-01 | `deploy/env/gateway-01.env.example` | systemd（`ENABLE_PANEL=1`） | `with-grafana` |
+| gateway-02 | `deploy/env/gateway-02.env.example` | 关闭（`ENABLE_PANEL=0`） | 关闭 |
 
 ```bash
 # 在 gateway-01
@@ -32,6 +32,8 @@ cp deploy/env/gateway-01.env.example .env && chmod 600 .env
 # 编辑 GATEWAY_PUBLIC_IP / 密码（生产从密钥管理注入）
 bash scripts/build.sh
 bash scripts/deploy.sh
+# Panel（若手动部署）:
+sudo bash scripts/install_panel_service.sh
 bash scripts/smoke_test.sh
 
 # 在 gateway-02（同步同一 Git 提交）
@@ -121,11 +123,11 @@ GATEWAYS=gateway-01,gateway-02 bash scripts/deploy_multi.sh
 
 | 角色 | 建议 | 说明 |
 |------|------|------|
-| **primary**（gateway-01） | 启 Panel（`COMPOSE_PROFILES` 含 `with-panel`） | 唯一写入 `resources.yaml` 的入口；Apply 后走 Git 提交或同步脚本 |
-| **standby**（gateway-02） | **不启 Panel**（`COMPOSE_PROFILES` 留空） | 只跑 Envoy；配置靠 GitOps 下发，避免双写冲突 |
+| **primary**（gateway-01） | 启 Panel（`ENABLE_PANEL=1` → systemd `relaygate-panel`） | 唯一写入 `resources.yaml` 的入口；Apply 后走 Git 提交或同步脚本 |
+| **standby**（gateway-02） | **不启 Panel**（`ENABLE_PANEL=0`） | 只跑 Envoy；配置靠 GitOps 下发，避免双写冲突 |
 | 只读从节点（可选） | Panel 只读 | 若未来加只读模式，可挂从节点；当前未实现时勿开第二个写 Panel |
 
-**`PANEL_ROLE` 仅为运维约定**：`.env` 中的 `primary` / `standby` 供人与脚本识别角色；**Panel 进程不读取该变量**，也不据此拒绝写 API。防双写靠「standby 不启 Panel」（去掉 `with-panel`），而不是进程内开关。
+**`PANEL_ROLE` 仅为运维约定**：`.env` 中的 `primary` / `standby` 供人与脚本识别角色；**Panel 进程不读取该变量**，也不据此拒绝写 API。防双写靠「standby 不启 Panel」，而不是进程内开关。Compose 中已无 `with-panel` profile。
 
 **冲突风险**：若两台都开 Panel 并同时改 Server，会分叉本地 `resources.yaml`。请只在 primary 修改，再经 Git 推到各节点。
 

@@ -71,7 +71,7 @@ done
 "${COMPOSE[@]}" ps
 echo
 echo "部署完成: ${GATEWAY_NAME}"
-echo "Panel:   ssh -p ${GATEWAY_SSH_PORT} -L 8080:127.0.0.1:8080 root@${GATEWAY_PUBLIC_IP}"
-echo "Grafana: ssh -p ${GATEWAY_SSH_PORT} -L 3000:127.0.0.1:3000 root@${GATEWAY_PUBLIC_IP}"
+echo "Panel（含 Grafana）: ssh -p ${GATEWAY_SSH_PORT} -L 9000:127.0.0.1:9000 root@${GATEWAY_PUBLIC_IP}"
+echo "浏览器: http://127.0.0.1:9000/monitoring （无需隧道 3000）"
 echo "回滚: bash scripts/rollback.sh"
 echo "冒烟: bash scripts/smoke_test.sh"

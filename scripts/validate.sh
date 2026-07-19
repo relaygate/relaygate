@@ -61,7 +61,7 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
   echo "==> compose 配置检查"
   if [[ ! -f .env ]]; then
     GATEWAY_NAME="${GATEWAY_NAME}" \
-    GRAFANA_ADMIN_PASSWORD=validate-only PANEL_ADMIN_PASSWORD=validate-only \
+    GRAFANA_ADMIN_PASSWORD=validate-only \
       docker compose -f deploy/compose.yaml config >/dev/null
   else
     docker compose -f deploy/compose.yaml --env-file .env config >/dev/null

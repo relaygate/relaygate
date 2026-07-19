@@ -1,55 +1,45 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Servers · RelayGate</title>
-  <link rel="stylesheet" href="/static/app.css"/>
-</head>
-<body>
-{{template "nav" .}}
-<main>
-  <h1>Servers</h1>
-  <p class="muted">修改后不会自动生效，请到 Apply 页面渲染并热重载 Envoy。添加 Server 时会自动生成对应 production 规则模板（默认关闭）。</p>
+{{template "page-start" .}}
+  <header class="mb-6">
+    <h1 class="text-2xl font-bold tracking-tight">Servers</h1>
+    <p class="mt-1 text-sm text-rg-muted">修改后不会自动生效，请到 Apply 页面渲染并热重载 Envoy。添加 Server 时会自动生成对应 production 规则模板（默认关闭）。</p>
+  </header>
 
-  <section class="add-server">
-    <h2>添加 Server</h2>
-    <div class="add-server-form">
-      <label>Name <input id="new-name" type="text" placeholder="server-11" autocomplete="off"/></label>
-      <label>Address <input id="new-addr" type="text" placeholder="10.0.0.21" autocomplete="off"/></label>
-      <label>TCP <input id="new-tcp" type="number" value="7777"/></label>
-      <label>UDP <input id="new-udp" type="number" value="7778"/></label>
-      <label>Health <input id="new-health" type="number" value="7777"/></label>
-      <label class="check">Enabled <input id="new-en" type="checkbox" checked/></label>
-      <button id="add-server" type="button">添加 Server</button>
-    </div>
+  <section class="rg-card mb-6 p-5">
+    <h2 class="mb-4 text-base font-semibold">添加 Server</h2>
+    <form
+      class="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7"
+      hx-post="/hx/servers"
+      hx-target="#servers-table"
+      hx-swap="outerHTML"
+      hx-on::after-request="if(event.detail.successful) this.reset()"
+    >
+      <label class="space-y-1 text-xs text-rg-muted">
+        <span>Name</span>
+        <input class="rg-input" name="name" type="text" placeholder="server-11" required autocomplete="off"/>
+      </label>
+      <label class="space-y-1 text-xs text-rg-muted">
+        <span>Address</span>
+        <input class="rg-input" name="address" type="text" placeholder="10.0.0.21" required autocomplete="off"/>
+      </label>
+      <label class="space-y-1 text-xs text-rg-muted">
+        <span>TCP</span>
+        <input class="rg-input" name="tcp_port" type="number" value="7777"/>
+      </label>
+      <label class="space-y-1 text-xs text-rg-muted">
+        <span>UDP</span>
+        <input class="rg-input" name="udp_port" type="number" value="7778"/>
+      </label>
+      <label class="space-y-1 text-xs text-rg-muted">
+        <span>Health</span>
+        <input class="rg-input" name="health_check_port" type="number" value="7777"/>
+      </label>
+      <label class="flex items-center gap-2 pb-2 text-sm text-rg-muted">
+        <input class="h-4 w-4 accent-rg-accent" name="enabled" type="checkbox" value="on" checked/>
+        Enabled
+      </label>
+      <button class="rg-btn" type="submit">添加 Server</button>
+    </form>
   </section>
 
-  <table>
-    <thead>
-      <tr>
-        <th>Name</th><th>Address</th><th>TCP</th><th>UDP</th><th>Health</th><th>Enabled</th><th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {{range .Servers}}
-      <tr data-name="{{.Name}}">
-        <td>{{.Name}}</td>
-        <td><input class="addr" value="{{.Address}}"/></td>
-        <td><input class="tcp" type="number" value="{{.TCPPort}}"/></td>
-        <td><input class="udp" type="number" value="{{.UDPPort}}"/></td>
-        <td><input class="health" type="number" value="{{.HealthCheckPort}}"/></td>
-        <td><input class="en" type="checkbox" {{if .Enabled}}checked{{end}}/></td>
-        <td class="row-actions">
-          <button class="save-server">保存</button>
-          <button class="delete-server danger" type="button">删除</button>
-        </td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
-  <pre id="msg"></pre>
-</main>
-<script src="/static/app.js"></script>
-</body>
-</html>
+  {{template "servers-table" .}}
+{{template "page-end" .}}
