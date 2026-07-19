@@ -1,4 +1,4 @@
-module github.com/robot/proxy
+module github.com/relaygate/relaygate
 
 go 1.22
 

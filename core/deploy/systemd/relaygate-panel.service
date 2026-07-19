@@ -1,0 +1,58 @@
+# RelayGate Panel — host binary under systemd (default deploy mode).
+# Installer copies to /etc/systemd/system/relaygate-panel.service.
+# Override paths with a drop-in under /etc/systemd/system/relaygate-panel.service.d/
+# if RELAYGATE_INSTALL_DIR is not /opt/relaygate.
+#
+# Data plane (Envoy / Prometheus / Grafana / node_exporter) stays on Docker Compose.
+# Panel must NOT be in the docker group and must NOT mount docker.sock.
+# Apply uses a root-owned helper via sudoers (see relaygate-panel.sudoers).
+
+[Unit]
+Description=RelayGate Panel (management UI)
+Documentation=https://github.com/relaygate/relaygate
+After=network-online.target docker.service
+Wants=network-online.target
+# Soft dependency: Compose data plane may start separately.
+Wants=docker.service
+
+[Service]
+Type=simple
+User=relaygate
+Group=relaygate
+WorkingDirectory=/opt/relaygate
+UMask=0077
+
+Environment=PANEL_ROOT=/opt/relaygate
+Environment=PANEL_BIND=127.0.0.1:9000
+Environment=PANEL_ADMIN_PASSWORD_FILE=/etc/relaygate/secrets/panel_admin_password
+Environment=RELAYGATE_BIN=/opt/relaygate/bin/relaygate
+Environment=RELAYGATE_PRIVILEGED_HELPER=/usr/local/libexec/relaygate/apply
+Environment=ENVOY_ADMIN_URL=http://127.0.0.1:9901
+Environment=PROMETHEUS_URL=http://127.0.0.1:9090
+# GRAFANA_URL comes from /etc/relaygate/panel.env (empty disables reverse proxy).
+# Do not hardcode Environment=GRAFANA_URL=… in this unit (it would override EnvironmentFile).
+EnvironmentFile=-/etc/relaygate/panel.env
+
+ExecStart=/opt/relaygate/bin/relaygate panel
+Restart=on-failure
+RestartSec=3s
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Hardening — do NOT set NoNewPrivileges=true (breaks sudo helper for Apply).
+# do NOT set RestrictSUIDSGID=true (breaks sudo setuid).
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+SystemCallArchitectures=native
+ReadWritePaths=/opt/relaygate/data
+
+[Install]
+WantedBy=multi-user.target

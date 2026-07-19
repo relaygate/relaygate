@@ -1,0 +1,78 @@
+{{define "head"}}
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="csrf-token" content="{{.CSRFToken}}"/>
+<title>{{.Title}} · RelayGate</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
+<link rel="stylesheet" href="/static/app.css"/>
+{{end}}
+
+{{define "scripts"}}
+<script src="/static/vendor/htmx.min.js"></script>
+<script defer src="/static/vendor/alpine.min.js"></script>
+<script src="/static/app.js"></script>
+{{end}}
+
+{{define "toast"}}
+<div
+  id="toast"
+  class="pointer-events-none fixed right-4 top-4 z-50 max-w-sm"
+  x-data="{ open: false, msg: '', kind: 'ok', timer: null, flash(d) { clearTimeout(this.timer); this.msg = (d && d.message) || ''; this.kind = (d && d.kind) || 'ok'; this.open = !!this.msg; this.timer = setTimeout(() => this.open = false, 4200) } }"
+  @show-toast.window="flash($event.detail)"
+>
+  <div
+    x-show="open"
+    x-transition.opacity.duration.200ms
+    x-cloak
+    class="pointer-events-auto rounded-xl border px-4 py-3 text-sm shadow-lg backdrop-blur"
+    :class="kind === 'error' ? 'border-rg-danger/40 bg-rg-card text-rg-danger' : 'border-rg-ok/30 bg-rg-card text-rg-text'"
+  >
+    <p class="font-medium" x-text="msg"></p>
+  </div>
+</div>
+{{end}}
+
+{{define "sidebar"}}
+<aside class="flex w-56 shrink-0 flex-col border-r border-rg-line bg-black/25 backdrop-blur-md">
+  <div class="flex items-center gap-2.5 border-b border-rg-line px-4 py-4">
+    <img src="/static/favicon.svg" alt="" class="h-8 w-8 rounded-lg"/>
+    <div>
+      <div class="text-sm font-bold tracking-wide text-rg-text">RelayGate</div>
+      <div class="text-[11px] text-rg-muted">Panel</div>
+    </div>
+  </div>
+  <nav class="flex flex-1 flex-col gap-1 p-3">
+    <a href="/" class="rg-nav-link {{if eq .Nav "overview"}}rg-nav-link-active{{end}}">Overview</a>
+    <a href="/servers" class="rg-nav-link {{if eq .Nav "servers"}}rg-nav-link-active{{end}}">Servers</a>
+    <a href="/rules" class="rg-nav-link {{if eq .Nav "rules"}}rg-nav-link-active{{end}}">Rules</a>
+    <a href="/apply" class="rg-nav-link {{if eq .Nav "apply"}}rg-nav-link-active{{end}}">Apply</a>
+    <a href="/monitoring" class="rg-nav-link {{if eq .Nav "monitoring"}}rg-nav-link-active{{end}}">Monitoring</a>
+  </nav>
+  <div class="border-t border-rg-line p-3">
+    <a href="/logout" class="rg-nav-link text-rg-danger hover:text-rg-danger">Logout</a>
+  </div>
+</aside>
+{{end}}
+
+{{define "page-start"}}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+{{template "head" .}}
+</head>
+<body class="min-h-screen" hx-boost="false" hx-headers='{"X-CSRF-Token": "{{.CSRFToken}}"}'>
+{{template "toast" .}}
+<div class="flex min-h-screen">
+{{template "sidebar" .}}
+<div class="flex min-w-0 flex-1 flex-col">
+<main class="{{if .FullBleed}}flex flex-1 flex-col p-0{{else}}mx-auto w-full max-w-6xl flex-1 p-6 md:p-8{{end}}">
+{{end}}
+
+{{define "page-end"}}
+</main>
+</div>
+</div>
+{{template "scripts" .}}
+</body>
+</html>
+{{end}}
