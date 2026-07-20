@@ -1,15 +1,15 @@
 {{template "page-start" .}}
 {{if .GrafanaEnabled}}
   <div class="flex items-center justify-between gap-3 border-b border-rg-line bg-black/20 px-4 py-2.5">
-    <span class="text-sm text-rg-muted">Grafana ? Panel ??????????</span>
-    <a class="rg-btn text-xs" href="/grafana/" target="_blank" rel="noopener">?????</a>
+    <span class="text-sm text-rg-muted">Grafana 由 Panel 同源反代，无需单独隧道</span>
+    <a class="rg-btn text-xs" href="/grafana/" target="_blank" rel="noopener">新窗口打开</a>
   </div>
   <iframe class="min-h-0 w-full flex-1 border-0" src="/grafana/" title="Grafana"></iframe>
 {{else}}
   <div class="p-6 md:p-8">
     <h1 class="text-2xl font-bold tracking-tight">Monitoring</h1>
     <p class="mt-3 max-w-xl text-sm text-rg-muted">
-      ??? Grafana ???? <code>.env</code> ?? <code>GRAFANA_URL=http://127.0.0.1:3000</code>???? <code>with-grafana</code> profile ??? Panel?
+      未启用 Grafana。请配置 <code>.env</code> 中的 <code>GRAFANA_URL=http://127.0.0.1:3000</code>，并启用 <code>with-grafana</code> profile 后重启 Panel。
     </p>
   </div>
 {{end}}
