@@ -36,11 +36,11 @@ func setupPanel(t *testing.T) (*Server, string, string) {
 			{Name: "server-02", Address: "10.0.0.12", TCPPort: 7777, UDPPort: 7778, HealthCheckPort: 7777, Enabled: true},
 		},
 		Rules: []resources.Rule{
-			{Name: "server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
-			{Name: "server-01-production-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
-			{Name: "server-01-production-udp", Kind: "production", Server: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
-			{Name: "server-02-production-tcp", Kind: "production", Server: "server-02", Protocol: "TCP", ListenPort: 10002, Enabled: false},
-			{Name: "server-02-production-udp", Kind: "production", Server: "server-02", Protocol: "UDP", ListenPort: 10002, Enabled: false},
+			{Name: "rule-server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
+			{Name: "rule-server-01-production-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
+			{Name: "rule-server-01-production-udp", Kind: "production", Server: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
+			{Name: "rule-server-02-production-tcp", Kind: "production", Server: "server-02", Protocol: "TCP", ListenPort: 10002, Enabled: false},
+			{Name: "rule-server-02-production-udp", Kind: "production", Server: "server-02", Protocol: "UDP", ListenPort: 10002, Enabled: false},
 		},
 	}
 	if err := resources.Save(filepath.Join(cfgDir, "resources.yaml"), res); err != nil {
@@ -376,7 +376,7 @@ func TestHXServerCreateAndRulePatch(t *testing.T) {
 		t.Fatalf("missing HX-Trigger: %s", rec.Header().Get("HX-Trigger"))
 	}
 
-	req = httptest.NewRequest(http.MethodPatch, "/hx/rules/server-02-production-tcp", strings.NewReader("enabled=on"))
+	req = httptest.NewRequest(http.MethodPatch, "/hx/rules/rule-server-02-production-tcp", strings.NewReader("enabled=on"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	authedCSRF(req, token, csrf)
 	rec = httptest.NewRecorder()

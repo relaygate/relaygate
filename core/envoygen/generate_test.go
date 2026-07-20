@@ -36,9 +36,9 @@ func testResources() *resources.Resources {
 			{Name: "server-01", Address: "10.0.0.11", TCPPort: 7777, UDPPort: 7778, HealthCheckPort: 7777, Enabled: true},
 		},
 		Rules: []resources.Rule{
-			{Name: "server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
-			{Name: "server-01-canary-udp", Kind: "canary", Server: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
-			{Name: "server-01-production-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
+			{Name: "rule-server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
+			{Name: "rule-server-01-canary-udp", Kind: "canary", Server: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
+			{Name: "rule-server-01-production-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
 		},
 	}
 }
@@ -55,7 +55,7 @@ func TestRenderEnvoyResourceNames(t *testing.T) {
 		t.Fatalf("listeners=%d", len(listeners))
 	}
 	tcp := listeners[0].(map[string]any)
-	if tcp["name"] != "listener-server-01-canary-tcp" {
+	if tcp["name"] != "listener-rule-server-01-canary-tcp" {
 		t.Fatalf("listener name: %v", tcp["name"])
 	}
 	clusters := static["clusters"].([]any)

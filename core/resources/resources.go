@@ -276,10 +276,11 @@ func (r *Resources) DeleteServer(name string) (removedRules int, err error) {
 	return removedRules, nil
 }
 
-// RuleName is the canonical rule identifier: <server>-<kind>-<proto>.
-// Example: server-01-production-tcp, server-01-canary-udp.
+// RuleName is the canonical rule identifier: rule-<server>-<kind>-<proto>.
+// Example: rule-server-01-production-tcp, rule-server-01-canary-udp.
 func RuleName(server, kind, protocol string) string {
-	return fmt.Sprintf("%s-%s-%s", server, strings.ToLower(strings.TrimSpace(kind)), strings.ToLower(strings.TrimSpace(protocol)))
+	return fmt.Sprintf("rule-%s-%s-%s",
+		server, strings.ToLower(strings.TrimSpace(kind)), strings.ToLower(strings.TrimSpace(protocol)))
 }
 
 func productionRuleTemplates(serverName string, listenPort int) []Rule {

@@ -292,13 +292,13 @@ docker compose --env-file .env up -d
 |-----------|----------|------|
 | 网关产品/进程 | gateway / relaygate | `gateway-01`、nft 表 `inet relaygate` |
 | 后端节点 | server / upstream | `servers[].name` → `server-01` |
-| 用户入口（转发规则） | rule / listener / ingress | `server-01-production-tcp`、`server-01-canary-udp` |
+| 用户入口（转发规则） | rule / listener / ingress | `rule-server-01-production-tcp`、`rule-server-01-canary-udp` |
 | 上游集群 | cluster | `cluster-server-01-tcp` |
-| Envoy listener | listener | `listener-server-01-production-tcp` |
-| 指标 stat_prefix | 与 rule 对齐 | `rl_server_01_production_tcp`、`tcp_server_01_canary_tcp` |
+| Envoy listener | listener | `listener-rule-server-01-production-tcp` |
+| 指标 stat_prefix | 与 rule 对齐 | `rl_rule_server_01_production_tcp`、`tcp_rule_server_01_canary_tcp` |
 | 防火墙端口集 | forward-ports / FORWARD_* | `DataDir/firewall/forward-ports.nft` |
 
-规则名模式：`<server>-<kind>-<proto>`（kind = `production` \| `canary`）。禁止在基础设施命名中使用 `game`/`player`（`meta.game_name` 等产品域字段除外）。
+规则名模式：`rule-<server>-<kind>-<proto>`（kind = `production` \| `canary`）。禁止在基础设施命名中使用 `game`/`player`（`meta.game_name` 等产品域字段除外）。
 
 ## 已知边界
 
