@@ -43,6 +43,27 @@ func testResources() *resources.Resources {
 	}
 }
 
+func TestRenderEnvoyResourceNames(t *testing.T) {
+	r := testResources()
+	cfg, _, err := Render(r)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	static := cfg["static_resources"].(map[string]any)
+	listeners := static["listeners"].([]any)
+	if len(listeners) != 2 {
+		t.Fatalf("listeners=%d", len(listeners))
+	}
+	tcp := listeners[0].(map[string]any)
+	if tcp["name"] != "listener-server-01-canary-tcp" {
+		t.Fatalf("listener name: %v", tcp["name"])
+	}
+	clusters := static["clusters"].([]any)
+	if clusters[0].(map[string]any)["name"] != "cluster-server-01-tcp" {
+		t.Fatalf("cluster name: %v", clusters[0].(map[string]any)["name"])
+	}
+}
+
 func TestRenderNFTIncludesPortsAndRateLimits(t *testing.T) {
 	r := testResources()
 	_, nft, err := Render(r)

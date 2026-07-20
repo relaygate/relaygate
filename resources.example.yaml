@@ -67,20 +67,20 @@ servers:
 # 生产入口：production 端口固定映射到对应 server
 # 旁路 canary：11001 指向 server-01，验证通过后再启用 production
 rules:
-  - name: rule-canary-server-01-tcp
+  - name: server-01-canary-tcp
     kind: canary
     server: server-01
     protocol: TCP
     listen_port: 11001
     enabled: true
 
-  - name: rule-server-01-tcp
+  - name: server-01-production-tcp
     kind: production
     server: server-01
     protocol: TCP
     listen_port: 10001
     enabled: false
-  - name: rule-server-02-tcp
+  - name: server-02-production-tcp
     kind: production
     server: server-02
     protocol: TCP
