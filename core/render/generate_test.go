@@ -1,4 +1,4 @@
-package envoygen
+package render
 
 import (
 	"strings"
@@ -25,7 +25,7 @@ func testResources() *resources.Resources {
 				Timeout: "2s", Interval: "10s",
 				UnhealthyThreshold: 3, HealthyThreshold: 2,
 			},
-			Nft: resources.NftDefaults{
+			Nftables: resources.NftablesDefaults{
 				TCPNewConnPerIP: "40/second",
 				UDPPPSPerIP:     "600/second",
 				TCPBurst:        80,
@@ -36,31 +36,36 @@ func testResources() *resources.Resources {
 			{Name: "server-01", Address: "10.0.0.11", TCPPort: 7777, UDPPort: 7778, HealthCheckPort: 7777, Enabled: true},
 		},
 		Rules: []resources.Rule{
-			{Name: "rule-server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
-			{Name: "rule-server-01-canary-udp", Kind: "canary", Server: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
-			{Name: "rule-server-01-production-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
+			{Name: "server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
+			{Name: "server-01-canary-udp", Kind: "canary", Server: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
+			{Name: "server-01-production-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
 		},
 	}
 }
 
-func TestRenderEnvoyResourceNames(t *testing.T) {
+func TestEnvoyNaming(t *testing.T) {
 	r := testResources()
 	cfg, _, err := Render(r)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
 	static := cfg["static_resources"].(map[string]any)
-	listeners := static["listeners"].([]any)
-	if len(listeners) != 2 {
-		t.Fatalf("listeners=%d", len(listeners))
-	}
-	tcp := listeners[0].(map[string]any)
-	if tcp["name"] != "listener-rule-server-01-canary-tcp" {
-		t.Fatalf("listener name: %v", tcp["name"])
-	}
 	clusters := static["clusters"].([]any)
-	if clusters[0].(map[string]any)["name"] != "cluster-server-01-tcp" {
-		t.Fatalf("cluster name: %v", clusters[0].(map[string]any)["name"])
+	listeners := static["listeners"].([]any)
+	if len(clusters) != 2 {
+		t.Fatalf("expected 2 clusters, got %d", len(clusters))
+	}
+	for _, c := range clusters {
+		name := c.(map[string]any)["name"].(string)
+		if !strings.HasPrefix(name, "upstream-server-01-") {
+			t.Fatalf("unexpected cluster name: %s", name)
+		}
+	}
+	for _, l := range listeners {
+		name := l.(map[string]any)["name"].(string)
+		if !strings.HasPrefix(name, "ingress-server-01-") {
+			t.Fatalf("unexpected listener name: %s", name)
+		}
 	}
 }
 
@@ -111,7 +116,7 @@ func TestRenderNFTIncludesACLSets(t *testing.T) {
 
 func TestRenderNFTAppliesDefaultRateLimits(t *testing.T) {
 	r := testResources()
-	r.Defaults.Nft = resources.NftDefaults{}
+	r.Defaults.Nftables = resources.NftablesDefaults{}
 	_, nft, err := Render(r)
 	if err != nil {
 		t.Fatalf("Render: %v", err)

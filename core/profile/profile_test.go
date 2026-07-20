@@ -40,7 +40,7 @@ defaults:
     interval: 10s
     unhealthy_threshold: 3
     healthy_threshold: 2
-  nft:
+  nftables:
     tcp_new_conn_per_ip: 30/second
     udp_pps_per_ip: 500/second
     tcp_burst: 60
@@ -62,7 +62,7 @@ defaults:
 			{Name: "server-01", Address: "10.0.0.11", TCPPort: 7777, UDPPort: 7778, HealthCheckPort: 7777, Enabled: true},
 		},
 		Rules: []resources.Rule{
-			{Name: "rule-server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
+			{Name: "server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
 		},
 	}
 	if err := resources.Save(filepath.Join(data, "resources.yaml"), res); err != nil {

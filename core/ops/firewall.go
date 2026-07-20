@@ -28,10 +28,10 @@ func writeFirewallRuntime(root, sshPort string) (fwDir, runtimePath string, err 
 	}
 	forwardPorts := filepath.Join(fwDir, "forward-ports.nft")
 	body := string(b)
-	body = strings.ReplaceAll(body, "@INLINE_TCP_NEW_CONN_RATE@", inlineNftRate(root, func(n resources.NftDefaults) string { return n.TCPNewConnPerIP }))
-	body = strings.ReplaceAll(body, "@INLINE_UDP_PPS_RATE@", inlineNftRate(root, func(n resources.NftDefaults) string { return n.UDPPPSPerIP }))
-	body = strings.ReplaceAll(body, "@INLINE_TCP_NEW_CONN_BURST@", inlineNftBurst(root, func(n resources.NftDefaults) int { return n.TCPBurst }, 60))
-	body = strings.ReplaceAll(body, "@INLINE_UDP_PPS_BURST@", inlineNftBurst(root, func(n resources.NftDefaults) int { return n.UDPBurst }, 1000))
+	body = strings.ReplaceAll(body, "@INLINE_TCP_NEW_CONN_RATE@", inlineNftablesRate(root, func(n resources.NftablesDefaults) string { return n.TCPNewConnPerIP }))
+	body = strings.ReplaceAll(body, "@INLINE_UDP_PPS_RATE@", inlineNftablesRate(root, func(n resources.NftablesDefaults) string { return n.UDPPPSPerIP }))
+	body = strings.ReplaceAll(body, "@INLINE_TCP_NEW_CONN_BURST@", inlineNftablesBurst(root, func(n resources.NftablesDefaults) int { return n.TCPBurst }, 60))
+	body = strings.ReplaceAll(body, "@INLINE_UDP_PPS_BURST@", inlineNftablesBurst(root, func(n resources.NftablesDefaults) int { return n.UDPBurst }, 1000))
 	lines := strings.Split(body, "\n")
 	for i, line := range lines {
 		trim := strings.TrimSpace(line)
@@ -150,28 +150,28 @@ func confirmFirewall(env Env) error {
 	return nil
 }
 
-func inlineNftRate(root string, pick func(resources.NftDefaults) string) string {
+func inlineNftablesRate(root string, pick func(resources.NftablesDefaults) string) string {
 	resPath, _, _ := resources.DefaultPaths(root)
 	res, err := resources.Load(resPath)
 	if err != nil {
 		return "30/second"
 	}
-	res.Defaults.ApplyNftDefaults()
-	rate := strings.TrimSpace(pick(res.Defaults.Nft))
+	res.Defaults.ApplyNftablesDefaults()
+	rate := strings.TrimSpace(pick(res.Defaults.Nftables))
 	if rate == "" {
 		return "30/second"
 	}
 	return rate
 }
 
-func inlineNftBurst(root string, pick func(resources.NftDefaults) int, fallback int) string {
+func inlineNftablesBurst(root string, pick func(resources.NftablesDefaults) int, fallback int) string {
 	resPath, _, _ := resources.DefaultPaths(root)
 	res, err := resources.Load(resPath)
 	if err != nil {
 		return strconv.Itoa(fallback)
 	}
-	res.Defaults.ApplyNftDefaults()
-	v := pick(res.Defaults.Nft)
+	res.Defaults.ApplyNftablesDefaults()
+	v := pick(res.Defaults.Nftables)
 	if v <= 0 {
 		v = fallback
 	}

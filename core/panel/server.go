@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/relaygate/relaygate/core/envoygen"
+	"github.com/relaygate/relaygate/core/render"
 	"github.com/relaygate/relaygate/core/ops"
 	"github.com/relaygate/relaygate/core/resources"
 	"github.com/relaygate/relaygate/core/status"
@@ -624,7 +624,7 @@ func (s *Server) handleApplyPage(w http.ResponseWriter, r *http.Request) {
 			diff.Note = "相对备份 " + prevStamp
 		}
 		b.WriteString(diff.String())
-		b.WriteString(envoygen.Summarize(res))
+		b.WriteString(render.Summarize(res))
 		summary = b.String()
 	} else {
 		msg = err.Error()
@@ -904,7 +904,7 @@ func (s *Server) apiApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.lastApply = time.Now().Format(time.RFC3339) + " OK\n" + msg
-	writeJSON(w, 200, map[string]any{"ok": true, "output": msg, "summary": envoygen.Summarize(res)})
+	writeJSON(w, 200, map[string]any{"ok": true, "output": msg, "summary": render.Summarize(res)})
 }
 
 func (s *Server) apiEnvoyStatus(w http.ResponseWriter, r *http.Request) {

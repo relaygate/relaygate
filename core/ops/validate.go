@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/relaygate/relaygate/core/config"
-	"github.com/relaygate/relaygate/core/envoygen"
+	"github.com/relaygate/relaygate/core/render"
 	"github.com/relaygate/relaygate/core/resources"
 )
 
@@ -23,11 +23,11 @@ func RenderConfig(root string, checkOnly bool) error {
 	if err := res.Validate(); err != nil {
 		return err
 	}
-	fmt.Print(envoygen.Summarize(res))
+	fmt.Print(render.Summarize(res))
 	if checkOnly {
 		return nil
 	}
-	if err := envoygen.Write(envoyOut, nftOut, res); err != nil {
+	if err := render.Write(envoyOut, nftOut, res); err != nil {
 		return err
 	}
 	fmt.Printf("已写入 %s\n", envoyOut)

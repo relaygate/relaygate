@@ -1,7 +1,7 @@
 {{template "page-start" .}}
   <header class="mb-6">
     <h1 class="text-2xl font-bold tracking-tight">ACL</h1>
-    <p class="mt-1 text-sm text-rg-muted">IP 黑白名单写入 resources.yaml → nft 为真相源。改完后请 <code>firewall apply</code>（多数情况无需 reload Envoy）。SSH 不受此名单约束。</p>
+    <p class="mt-1 text-sm text-rg-muted">IP 黑白名单写入 resources.yaml → nftables 为真相源。改完后请 <code>firewall apply</code>（多数情况无需 reload Envoy）。SSH 不受此名单约束。</p>
   </header>
 
   <section class="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">

@@ -8,7 +8,7 @@
 - **运维入口**：`relaygate`（setup、doctor、渲染、部署、drain、冒烟、防火墙、ACL、profile、Panel）
 - **管理面**：Panel 默认 `127.0.0.1:9000`（Grafana 同源反代）；监控仅 loopback
 - **智能化**：增服自动分配端口；`reload` 自动 drain → 校验 → 重启 → ready
-- **加深能力**：IP 黑白名单（nft）、defaults 变更摘要、游戏类型 profile、per-rule 限速观测、NLB/drain 协同检查
+- **加深能力**：IP 黑白名单（nftables）、defaults 变更摘要、游戏类型 profile、per-rule 限速观测、NLB/drain 协同检查
 
 ## 安装
 
@@ -89,7 +89,7 @@ make dist VERSION=dev
          relaygate doctor [--strict-ports]   # 含 admin / drain 端点 / 双活 env
 
 配置     relaygate render [--check-only] [--observability]
-         relaygate validate                  # 端口冲突、rule→server、nft/ACL 同源校验
+         relaygate validate                  # 端口冲突、rule→server、nftables/ACL 同源校验
          relaygate server status             # 每服 canary / production 是否生效
          relaygate server enable|disable <server-01>
          relaygate acl list|add|remove …     # IP 黑白名单（写 resources → firewall apply）
@@ -106,14 +106,14 @@ make dist VERSION=dev
          relaygate baseline
          relaygate doctor                # admin/drain/双活 + NLB/高防清单
 
-防火墙   relaygate firewall [check|apply]  # 端口集 + defaults.nft + ACL set
+防火墙   relaygate firewall [check|apply]  # 端口集 + defaults.nftables + ACL set
 Panel    sudo relaygate panel install | uninstall
 多机     GATEWAYS=gateway-01,gateway-02 relaygate fleet
 ```
 
 ### IP 黑白名单（ACL）
 
-`resources.yaml` 顶层 `acl`（nft 为真相源；SSH 不受约束）：
+`resources.yaml` 顶层 `acl`（nftables 为真相源；SSH 不受约束）：
 
 ```yaml
 acl:
@@ -138,7 +138,7 @@ relaygate profile list
 relaygate profile show fps-udp-heavy
 relaygate profile apply fps-udp-heavy   # 覆盖 resources defaults
 relaygate validate && relaygate reload
-sudo ./bin/relaygate firewall apply     # 若改了 nft 档位
+sudo ./bin/relaygate firewall apply     # 若改了 nftables 档位
 ```
 
 ### 变更摘要与限速观测
@@ -182,14 +182,14 @@ relaygate smoke                  # 冒烟
 
 `DRAIN_WAIT` 写在 `.env`（见 `.env.example`）。`reload` 使用该值；单独 `drain fail` 在未设置时默认多等一会儿（15s），给 LB 失败窗口留余量。
 
-### 同源限流（Envoy + nft）
+### 同源限流（Envoy + nftables）
 
 `DataDir/resources.yaml` 的 `defaults` 是单一意图源：
 
 | 字段 | 生成物 |
 |------|--------|
 | `tcp_local_rate_limit_*` | Envoy TCP listener 本地限速（`stat_prefix: rl_<rule>`） |
-| `defaults.nft.*` | `DataDir/firewall/forward-ports.nft` 中的 `FORWARD_*_RATE/BURST` |
+| `defaults.nftables.*` | `DataDir/firewall/forward-ports.nft` 中的 `FORWARD_*_RATE/BURST` |
 | 启用中的 rules 端口 | Envoy listeners + `FORWARD_TCP/UDP_PORTS` |
 | `acl.deny` / `acl.allow` | `ACL_DENY` / `ACL_ALLOW`（`gateway.nft` 在限速前 drop） |
 
@@ -290,15 +290,17 @@ docker compose --env-file .env up -d
 
 | 角色/阶段 | 英文标识 | 示例 |
 |-----------|----------|------|
-| 网关产品/进程 | gateway / relaygate | `gateway-01`、nft 表 `inet relaygate` |
-| 后端节点 | server / upstream | `servers[].name` → `server-01` |
-| 用户入口（转发规则） | rule / listener / ingress | `rule-server-01-production-tcp`、`rule-server-01-canary-udp` |
-| 上游集群 | cluster | `cluster-server-01-tcp` |
-| Envoy listener | listener | `listener-rule-server-01-production-tcp` |
-| 指标 stat_prefix | 与 rule 对齐 | `rl_rule_server_01_production_tcp`、`tcp_rule_server_01_canary_tcp` |
-| 防火墙端口集 | forward-ports / FORWARD_* | `DataDir/firewall/forward-ports.nft` |
+| 网关 | gateway | `gateway-01`、nftables 表 `inet relaygate` |
+| 后端节点 | server / backend | `servers[].name` → `server-01` |
+| 用户入口 | ingress | listener `ingress-server-01-production-tcp` |
+| 阶段 | production / canary | `rules[].kind` |
+| 上游 | upstream | cluster `upstream-server-01-tcp` |
+| 规则名 | `{server}-{stage}-{proto}` | `server-01-production-tcp` |
+| 限速 stat_prefix | `rl_{rule_name}` | `rl_server_01_canary_tcp` |
+| 防火墙端口集 | forward-ports / FORWARD_* | `DataDir/firewall/forward-ports.nft`（`.nft` 为扩展名；应用用 `nft -f`） |
+| YAML 限流键 | `defaults.nftables.*` | 与 Go `NftablesDefaults` 对齐 |
 
-规则名模式：`rule-<server>-<kind>-<proto>`（kind = `production` \| `canary`）。禁止在基础设施命名中使用 `game`/`player`（`meta.game_name` 等产品域字段除外）。
+禁止在基础设施命名中使用 `game`/`player`（`meta.game_name` 等产品域字段除外）。渲染包：`core/render`（原 envoygen）。
 
 ## 已知边界
 

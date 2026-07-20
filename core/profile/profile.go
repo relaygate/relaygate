@@ -75,7 +75,7 @@ func Load(root, name string) (*Profile, error) {
 		if strings.TrimSpace(p.Name) == "" {
 			p.Name = name
 		}
-		p.Defaults.ApplyNftDefaults()
+		p.Defaults.ApplyNftablesDefaults()
 		return &p, nil
 	}
 	if lastErr != nil {
@@ -97,7 +97,7 @@ func Apply(root, name string) (*resources.ChangeSummary, error) {
 	}
 	before := *res
 	res.Defaults = p.Defaults
-	res.Defaults.ApplyNftDefaults()
+	res.Defaults.ApplyNftablesDefaults()
 	if err := res.Validate(); err != nil {
 		return nil, fmt.Errorf("apply 后校验失败: %w", err)
 	}
@@ -124,9 +124,9 @@ func FormatShow(p *Profile) string {
 	fmt.Fprintf(&b, "  max_pending_requests: %d\n", d.MaxPendingRequests)
 	fmt.Fprintf(&b, "  tcp_local_rate_limit_per_sec: %d\n", d.TCPLocalRateLimitPerSec)
 	fmt.Fprintf(&b, "  tcp_local_rate_limit_burst: %d\n", d.TCPLocalRateLimitBurst)
-	fmt.Fprintf(&b, "  nft.tcp_new_conn_per_ip: %s\n", d.Nft.TCPNewConnPerIP)
-	fmt.Fprintf(&b, "  nft.udp_pps_per_ip: %s\n", d.Nft.UDPPPSPerIP)
-	fmt.Fprintf(&b, "  nft.tcp_burst: %d\n", d.Nft.TCPBurst)
-	fmt.Fprintf(&b, "  nft.udp_burst: %d\n", d.Nft.UDPBurst)
+	fmt.Fprintf(&b, "  nftables.tcp_new_conn_per_ip: %s\n", d.Nftables.TCPNewConnPerIP)
+	fmt.Fprintf(&b, "  nftables.udp_pps_per_ip: %s\n", d.Nftables.UDPPPSPerIP)
+	fmt.Fprintf(&b, "  nftables.tcp_burst: %d\n", d.Nftables.TCPBurst)
+	fmt.Fprintf(&b, "  nftables.udp_burst: %d\n", d.Nftables.UDPBurst)
 	return b.String()
 }

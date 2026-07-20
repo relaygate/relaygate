@@ -35,7 +35,7 @@
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
       "targets": [
         {
-          "expr": "count(envoy_cluster_membership_healthy{gateway=~\"$gateway\", envoy_cluster_name=~\"cluster-server-.*\"} > 0) or vector(0)",
+          "expr": "count(envoy_cluster_membership_healthy{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"} > 0) or vector(0)",
           "refId": "A"
         }
       ],
@@ -102,7 +102,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
       "targets": [
         {
-          "expr": "sum by (gateway, envoy_cluster_name) (envoy_cluster_upstream_cx_active{gateway=~\"$gateway\", envoy_cluster_name=~\"cluster-server-.*-tcp\"})",
+          "expr": "sum by (gateway, envoy_cluster_name) (envoy_cluster_upstream_cx_active{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*-tcp\"})",
           "legendFormat": "{{gateway}} {{envoy_cluster_name}}",
           "refId": "A"
         }
@@ -132,12 +132,12 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
       "targets": [
         {
-          "expr": "sum by (gateway, envoy_cluster_name) (rate(envoy_cluster_upstream_cx_rx_bytes_total{gateway=~\"$gateway\", envoy_cluster_name=~\"cluster-server-.*\"}[1m]))",
+          "expr": "sum by (gateway, envoy_cluster_name) (rate(envoy_cluster_upstream_cx_rx_bytes_total{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}[1m]))",
           "legendFormat": "rx {{gateway}} {{envoy_cluster_name}}",
           "refId": "A"
         },
         {
-          "expr": "sum by (gateway, envoy_cluster_name) (rate(envoy_cluster_upstream_cx_tx_bytes_total{gateway=~\"$gateway\", envoy_cluster_name=~\"cluster-server-.*\"}[1m]))",
+          "expr": "sum by (gateway, envoy_cluster_name) (rate(envoy_cluster_upstream_cx_tx_bytes_total{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}[1m]))",
           "legendFormat": "tx {{gateway}} {{envoy_cluster_name}}",
           "refId": "B"
         }
@@ -152,7 +152,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
       "targets": [
         {
-          "expr": "sum by (gateway, envoy_cluster_name) (rate(envoy_cluster_upstream_cx_overflow{gateway=~\"$gateway\", envoy_cluster_name=~\"cluster-server-.*\"}[1m]))",
+          "expr": "sum by (gateway, envoy_cluster_name) (rate(envoy_cluster_upstream_cx_overflow{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}[1m]))",
           "legendFormat": "cx_overflow {{gateway}} {{envoy_cluster_name}}",
           "refId": "A"
         },
@@ -172,7 +172,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
       "targets": [
         {
-          "expr": "envoy_cluster_membership_healthy{gateway=~\"$gateway\", envoy_cluster_name=~\"cluster-server-.*\"}",
+          "expr": "envoy_cluster_membership_healthy{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}",
           "legendFormat": "{{gateway}} {{envoy_cluster_name}}",
           "refId": "A"
         }

@@ -190,18 +190,18 @@ func diffDefaults(before, after Defaults) []string {
 	add("health.interval", before.HealthCheck.Interval, after.HealthCheck.Interval)
 	add("health.unhealthy_threshold", before.HealthCheck.UnhealthyThreshold, after.HealthCheck.UnhealthyThreshold)
 	add("health.healthy_threshold", before.HealthCheck.HealthyThreshold, after.HealthCheck.HealthyThreshold)
-	add("nft.tcp_new_conn_per_ip", before.Nft.TCPNewConnPerIP, after.Nft.TCPNewConnPerIP)
-	add("nft.udp_pps_per_ip", before.Nft.UDPPPSPerIP, after.Nft.UDPPPSPerIP)
-	add("nft.tcp_burst", before.Nft.TCPBurst, after.Nft.TCPBurst)
-	add("nft.udp_burst", before.Nft.UDPBurst, after.Nft.UDPBurst)
+	add("nftables.tcp_new_conn_per_ip", before.Nftables.TCPNewConnPerIP, after.Nftables.TCPNewConnPerIP)
+	add("nftables.udp_pps_per_ip", before.Nftables.UDPPPSPerIP, after.Nftables.UDPPPSPerIP)
+	add("nftables.tcp_burst", before.Nftables.TCPBurst, after.Nftables.TCPBurst)
+	add("nftables.udp_burst", before.Nftables.UDPBurst, after.Nftables.UDPBurst)
 	return parts
 }
 
 func summarizeDefaults(d Defaults) []string {
 	return []string{
-		fmt.Sprintf("tcp_rl=%d/%d max_conn=%d nft.tcp=%s nft.udp=%s",
+		fmt.Sprintf("tcp_rl=%d/%d max_conn=%d nftables.tcp=%s nftables.udp=%s",
 			d.TCPLocalRateLimitPerSec, d.TCPLocalRateLimitBurst, d.MaxConnections,
-			d.Nft.TCPNewConnPerIP, d.Nft.UDPPPSPerIP),
+			d.Nftables.TCPNewConnPerIP, d.Nftables.UDPPPSPerIP),
 	}
 }
 

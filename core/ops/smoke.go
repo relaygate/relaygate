@@ -128,7 +128,7 @@ func Canary(root string, host string) error {
 		}
 		clusters, _ := HTTPGet(env.AdminURL("/clusters"))
 		for _, line := range strings.Split(clusters, "\n") {
-			if strings.Contains(line, "cluster-server-01") {
+			if strings.Contains(line, "upstream-server-01") {
 				fmt.Println(line)
 			}
 		}

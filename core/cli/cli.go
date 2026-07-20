@@ -9,7 +9,7 @@ import (
 
 	"github.com/relaygate/relaygate/core/config"
 	"github.com/relaygate/relaygate/core/doctor"
-	"github.com/relaygate/relaygate/core/envoygen"
+	"github.com/relaygate/relaygate/core/render"
 	"github.com/relaygate/relaygate/core/host"
 	"github.com/relaygate/relaygate/core/ops"
 	"github.com/relaygate/relaygate/core/panel"
@@ -146,7 +146,7 @@ func runFirewall(args []string) int {
 			_ = os.Setenv("APPLY_FIREWALL", "1")
 		case "-h", "--help", "help":
 			fmt.Fprintln(os.Stderr, "usage: relaygate firewall [check|apply]")
-			fmt.Fprintln(os.Stderr, "  check  渲染并校验 nft（默认，不改主机规则）")
+			fmt.Fprintln(os.Stderr, "  check  渲染并校验 nftables（默认，不改主机规则）")
 			fmt.Fprintln(os.Stderr, "  apply  应用规则（需 root；非交互另需 FIREWALL_CONFIRM=YES_FLUSH_NFTABLES）")
 			return 2
 		default:
@@ -294,7 +294,7 @@ func runProfile(args []string) int {
 		}
 		fmt.Print(sum.String())
 		fmt.Println("已写入 defaults。请: relaygate validate && relaygate reload")
-		fmt.Println("若改了 nft 档位，另需: sudo relaygate firewall apply")
+		fmt.Println("若改了 nftables 档位，另需: sudo relaygate firewall apply")
 		return 0
 	case "help", "-h", "--help":
 		fmt.Fprintln(os.Stderr, "usage: relaygate profile list|show|apply")
@@ -378,11 +378,11 @@ func runRender(args []string) int {
 	if err := res.Validate(); err != nil {
 		return exitErr(err)
 	}
-	fmt.Print(envoygen.Summarize(res))
+	fmt.Print(render.Summarize(res))
 	if *checkOnly {
 		return 0
 	}
-	if err := envoygen.Write(*envoyOut, *nftOut, res); err != nil {
+	if err := render.Write(*envoyOut, *nftOut, res); err != nil {
 		return exitErr(err)
 	}
 	fmt.Printf("已写入 %s\n", *envoyOut)

@@ -69,10 +69,10 @@ func (c *Client) Envoy() EnvoyStatus {
 
 	clusters, err := c.get(c.EnvoyAdmin + "/clusters")
 	if err == nil {
-		re := regexp.MustCompile(`(?m)^(cluster-server-[^:]+)::(health|healthy)\s+(\S+)`)
+		re := regexp.MustCompile(`(?m)^(upstream-server-[^:]+)::(health|healthy)\s+(\S+)`)
 		healthy := map[string]bool{}
 		for _, line := range strings.Split(clusters, "\n") {
-			if strings.Contains(line, "cluster-server-") && (strings.Contains(line, "health") || strings.Contains(line, "::healthy")) {
+			if strings.Contains(line, "upstream-server-") && (strings.Contains(line, "health") || strings.Contains(line, "::healthy")) {
 				st.ClusterLines = append(st.ClusterLines, line)
 			}
 			m := re.FindStringSubmatch(line)
@@ -85,7 +85,7 @@ func (c *Client) Envoy() EnvoyStatus {
 		// Fallback: count membership_healthy style lines
 		if len(healthy) == 0 {
 			for _, line := range strings.Split(clusters, "\n") {
-				if strings.Contains(line, "cluster-server-") && strings.Contains(line, "::health_flags::healthy") {
+				if strings.Contains(line, "upstream-server-") && strings.Contains(line, "::health_flags::healthy") {
 					parts := strings.Split(line, "::")
 					if len(parts) > 0 {
 						healthy[parts[0]] = true
@@ -113,7 +113,7 @@ func (c *Client) Envoy() EnvoyStatus {
 
 func (c *Client) Traffic() TrafficStatus {
 	st := TrafficStatus{}
-	tcp, err1 := c.promQuery(`sum(envoy_cluster_upstream_cx_active{envoy_cluster_name=~"cluster-server-.*-tcp"}) or vector(0)`)
+	tcp, err1 := c.promQuery(`sum(envoy_cluster_upstream_cx_active{envoy_cluster_name=~"upstream-server-.*-tcp"}) or vector(0)`)
 	udp, err2 := c.promQuery(`sum(envoy_udp_downstream_sess_active) or vector(0)`)
 	rl, err3 := c.promQuery(`sum(increase(envoy_local_rate_limit_rate_limited[5m])) or vector(0)`)
 	top, err4 := c.promQueryVector(`topk(5, sum by (envoy_local_rate_limit) (increase(envoy_local_rate_limit_rate_limited[5m])))`)

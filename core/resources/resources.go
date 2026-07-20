@@ -51,30 +51,30 @@ type Defaults struct {
 	TCPLocalRateLimitPerSec int         `yaml:"tcp_local_rate_limit_per_sec"`
 	TCPLocalRateLimitBurst  int         `yaml:"tcp_local_rate_limit_burst"`
 	HealthCheck             HealthCheck `yaml:"health_check"`
-	Nft                     NftDefaults `yaml:"nft"`
+	Nftables                NftablesDefaults `yaml:"nftables"`
 }
 
-// NftDefaults drives host nftables per-IP rate limits (same intent as packaging/firewall).
-type NftDefaults struct {
+// NftablesDefaults drives host nftables per-IP rate limits (same intent as packaging/firewall).
+type NftablesDefaults struct {
 	TCPNewConnPerIP string `yaml:"tcp_new_conn_per_ip"`
 	UDPPPSPerIP     string `yaml:"udp_pps_per_ip"`
 	TCPBurst        int    `yaml:"tcp_burst"`
 	UDPBurst        int    `yaml:"udp_burst"`
 }
 
-// ApplyNftDefaults fills empty nft fields with product defaults (单一来源).
-func (d *Defaults) ApplyNftDefaults() {
-	if strings.TrimSpace(d.Nft.TCPNewConnPerIP) == "" {
-		d.Nft.TCPNewConnPerIP = "30/second"
+// ApplyNftablesDefaults fills empty nftables fields with product defaults (单一来源).
+func (d *Defaults) ApplyNftablesDefaults() {
+	if strings.TrimSpace(d.Nftables.TCPNewConnPerIP) == "" {
+		d.Nftables.TCPNewConnPerIP = "30/second"
 	}
-	if strings.TrimSpace(d.Nft.UDPPPSPerIP) == "" {
-		d.Nft.UDPPPSPerIP = "500/second"
+	if strings.TrimSpace(d.Nftables.UDPPPSPerIP) == "" {
+		d.Nftables.UDPPPSPerIP = "500/second"
 	}
-	if d.Nft.TCPBurst <= 0 {
-		d.Nft.TCPBurst = 60
+	if d.Nftables.TCPBurst <= 0 {
+		d.Nftables.TCPBurst = 60
 	}
-	if d.Nft.UDPBurst <= 0 {
-		d.Nft.UDPBurst = 1000
+	if d.Nftables.UDPBurst <= 0 {
+		d.Nftables.UDPBurst = 1000
 	}
 }
 
@@ -276,10 +276,10 @@ func (r *Resources) DeleteServer(name string) (removedRules int, err error) {
 	return removedRules, nil
 }
 
-// RuleName is the canonical rule identifier: rule-<server>-<kind>-<proto>.
-// Example: rule-server-01-production-tcp, rule-server-01-canary-udp.
+// RuleName is the canonical rule identifier: {server}-{stage}-{proto}.
+// Example: server-01-production-tcp, server-01-canary-udp.
 func RuleName(server, kind, protocol string) string {
-	return fmt.Sprintf("rule-%s-%s-%s",
+	return fmt.Sprintf("%s-%s-%s",
 		server, strings.ToLower(strings.TrimSpace(kind)), strings.ToLower(strings.TrimSpace(protocol)))
 }
 

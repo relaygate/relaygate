@@ -30,26 +30,25 @@ defaults:
   # TCP 新建连接本地限速（每秒 token）
   tcp_local_rate_limit_per_sec: 200
   tcp_local_rate_limit_burst: 400
-  # 健康检查（仅 TCP cluster）
+  # 健康检查（仅 TCP upstream cluster）
   health_check:
     timeout: 2s
     interval: 10s
     unhealthy_threshold: 3
     healthy_threshold: 2
   # nftables 限流默认值
-  nft:
+  nftables:
     tcp_new_conn_per_ip: 30/second
     udp_pps_per_ip: 500/second
     tcp_burst: 60
     udp_burst: 1000
 
-# IP 黑白名单（nft 真相源；SSH 不受此约束）
-# deny: 立即丢弃；allow 非空时进入严格模式（仅名单可进转发口）
+# IP 黑白名单（nftables 真相源；SSH 不受此约束）
 acl:
   deny: []
   allow: []
 
-# 后端游戏服：请将 address 替换为真实 IP（仅示例，非真实业务地址）
+# 后端节点：请将 address 替换为真实 IP（仅示例，非真实业务地址）
 servers:
   - name: server-01
     address: 10.0.0.11
@@ -64,25 +63,37 @@ servers:
     health_check_port: 7777
     enabled: true
 
-# 生产入口：production 端口固定映射到对应 server
+# 用户入口（ingress）：production 端口固定映射到对应 server
 # 旁路 canary：11001 指向 server-01，验证通过后再启用 production
 rules:
-  - name: rule-server-01-canary-tcp
+  - name: server-01-canary-tcp
     kind: canary
     server: server-01
     protocol: TCP
     listen_port: 11001
     enabled: true
 
-  - name: rule-server-01-production-tcp
+  - name: server-01-production-tcp
     kind: production
     server: server-01
     protocol: TCP
     listen_port: 10001
     enabled: false
-  - name: rule-server-02-production-tcp
+  - name: server-01-production-udp
+    kind: production
+    server: server-01
+    protocol: UDP
+    listen_port: 10001
+    enabled: false
+  - name: server-02-production-tcp
     kind: production
     server: server-02
     protocol: TCP
+    listen_port: 10002
+    enabled: false
+  - name: server-02-production-udp
+    kind: production
+    server: server-02
+    protocol: UDP
     listen_port: 10002
     enabled: false

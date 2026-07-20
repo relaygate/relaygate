@@ -12,22 +12,22 @@ func sampleResources() *Resources {
 			{Name: "server-02", Address: "10.0.0.12", TCPPort: 7777, UDPPort: 7778, HealthCheckPort: 7777, Enabled: true},
 		},
 		Rules: []Rule{
-			{Name: "rule-server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
-			{Name: "rule-server-01-canary-udp", Kind: "canary", Server: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
-			{Name: "rule-server-01-production-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
-			{Name: "rule-server-01-production-udp", Kind: "production", Server: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
-			{Name: "rule-server-02-production-tcp", Kind: "production", Server: "server-02", Protocol: "TCP", ListenPort: 10002, Enabled: false},
-			{Name: "rule-server-02-production-udp", Kind: "production", Server: "server-02", Protocol: "UDP", ListenPort: 10002, Enabled: false},
+			{Name: "server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
+			{Name: "server-01-canary-udp", Kind: "canary", Server: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
+			{Name: "server-01-production-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
+			{Name: "server-01-production-udp", Kind: "production", Server: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
+			{Name: "server-02-production-tcp", Kind: "production", Server: "server-02", Protocol: "TCP", ListenPort: 10002, Enabled: false},
+			{Name: "server-02-production-udp", Kind: "production", Server: "server-02", Protocol: "UDP", ListenPort: 10002, Enabled: false},
 		},
 	}
 }
 
 func TestRuleName(t *testing.T) {
 	got := RuleName("server-01", "production", "TCP")
-	if got != "rule-server-01-production-tcp" {
+	if got != "server-01-production-tcp" {
 		t.Fatalf("got %q", got)
 	}
-	if RuleName("server-02", "canary", "udp") != "rule-server-02-canary-udp" {
+	if RuleName("server-02", "canary", "udp") != "server-02-canary-udp" {
 		t.Fatal("canary/udp")
 	}
 }
@@ -44,7 +44,7 @@ func TestAddServerCreatesProductionRules(t *testing.T) {
 	if len(created) != 2 {
 		t.Fatalf("expected 2 rules, got %d", len(created))
 	}
-	if created[0].Name != "rule-server-11-production-tcp" || created[1].Name != "rule-server-11-production-udp" {
+	if created[0].Name != "server-11-production-tcp" || created[1].Name != "server-11-production-udp" {
 		t.Fatalf("unexpected rule names: %+v", created)
 	}
 	for _, rule := range created {
@@ -184,7 +184,7 @@ func TestValidateRejectsCanaryProductionPortOverlap(t *testing.T) {
 	r := sampleResources()
 	// Point a disabled production rule at the canary port → planning conflict
 	for i := range r.Rules {
-		if r.Rules[i].Name == "rule-server-01-production-tcp" {
+		if r.Rules[i].Name == "server-01-production-tcp" {
 			r.Rules[i].ListenPort = 11001
 		}
 	}
@@ -228,7 +228,7 @@ func TestDiffDetectsToggleAndPortChange(t *testing.T) {
 	before := sampleResources()
 	after := sampleResources()
 	for i := range after.Rules {
-		if after.Rules[i].Name == "rule-server-01-production-tcp" {
+		if after.Rules[i].Name == "server-01-production-tcp" {
 			after.Rules[i].Enabled = true
 			after.Rules[i].ListenPort = 10099
 		}
@@ -253,11 +253,11 @@ func TestDiffDetectsToggleAndPortChange(t *testing.T) {
 func TestDiffDefaultsAndACL(t *testing.T) {
 	before := sampleResources()
 	before.Defaults.TCPLocalRateLimitPerSec = 200
-	before.Defaults.Nft.UDPPPSPerIP = "500/second"
+	before.Defaults.Nftables.UDPPPSPerIP = "500/second"
 	after := sampleResources()
 	after.Defaults = before.Defaults
 	after.Defaults.TCPLocalRateLimitPerSec = 400
-	after.Defaults.Nft.UDPPPSPerIP = "1200/second"
+	after.Defaults.Nftables.UDPPPSPerIP = "1200/second"
 	after.ACL.Deny = []string{"1.2.3.4/32"}
 	sum := Diff(before, after)
 	if len(sum.DefaultsChanged) == 0 {
@@ -298,15 +298,15 @@ func TestACLNormalizeAndCRUD(t *testing.T) {
 	}
 }
 
-func TestApplyNftDefaults(t *testing.T) {
+func TestApplyNftablesDefaults(t *testing.T) {
 	d := Defaults{}
-	d.ApplyNftDefaults()
-	if d.Nft.TCPNewConnPerIP != "30/second" || d.Nft.TCPBurst != 60 {
-		t.Fatalf("unexpected defaults: %+v", d.Nft)
+	d.ApplyNftablesDefaults()
+	if d.Nftables.TCPNewConnPerIP != "30/second" || d.Nftables.TCPBurst != 60 {
+		t.Fatalf("unexpected defaults: %+v", d.Nftables)
 	}
-	d.Nft.TCPBurst = 99
-	d.ApplyNftDefaults()
-	if d.Nft.TCPBurst != 99 {
+	d.Nftables.TCPBurst = 99
+	d.ApplyNftablesDefaults()
+	if d.Nftables.TCPBurst != 99 {
 		t.Fatal("should preserve explicit burst")
 	}
 }

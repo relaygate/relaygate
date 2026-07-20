@@ -16,7 +16,7 @@ defaults:
     interval: 10s
     unhealthy_threshold: 3
     healthy_threshold: 2
-  nft:
+  nftables:
     tcp_new_conn_per_ip: 35/second
     udp_pps_per_ip: 600/second
     tcp_burst: 70

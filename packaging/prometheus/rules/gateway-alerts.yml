@@ -24,7 +24,7 @@ groups:
       - alert: EnvoyNoHealthyUpstream
         expr: |
           sum by (gateway, envoy_cluster_name) (
-            envoy_cluster_membership_healthy{envoy_cluster_name=~"cluster-server-.*"}
+            envoy_cluster_membership_healthy{envoy_cluster_name=~"upstream-server-.*"}
           ) == 0
         for: 2m
         labels:
@@ -35,9 +35,9 @@ groups:
 
       - alert: EnvoyCircuitBreakerOpen
         expr: |
-          increase(envoy_cluster_upstream_cx_overflow{envoy_cluster_name=~"cluster-server-.*"}[5m]) > 0
+          increase(envoy_cluster_upstream_cx_overflow{envoy_cluster_name=~"upstream-server-.*"}[5m]) > 0
           or
-          increase(envoy_cluster_upstream_rq_pending_overflow{envoy_cluster_name=~"cluster-server-.*"}[5m]) > 0
+          increase(envoy_cluster_upstream_rq_pending_overflow{envoy_cluster_name=~"upstream-server-.*"}[5m]) > 0
         for: 1m
         labels:
           severity: warning
