@@ -9,6 +9,8 @@
         <th>UDP</th>
         <th>Health</th>
         <th>Enabled</th>
+        <th>Canary</th>
+        <th>Production</th>
         <th></th>
       </tr>
     </thead>
@@ -22,6 +24,20 @@
         <td><input class="rg-input w-20" name="health_check_port" type="number" form="save-{{.Name}}" value="{{.HealthCheckPort}}"/></td>
         <td>
           <input form="save-{{.Name}}" name="enabled" type="checkbox" value="on" class="h-4 w-4 accent-rg-accent" {{if .Enabled}}checked{{end}}/>
+        </td>
+        <td>
+          {{with index $.Lifecycle .Name}}
+            {{if .CanaryEnabled}}<span class="rg-badge bg-rg-cyan/15 text-rg-cyan">on</span>
+            {{else if gt .CanaryRuleCount 0}}<span class="text-xs text-rg-muted">off</span>
+            {{else}}<span class="text-xs text-rg-muted">—</span>{{end}}
+          {{else}}<span class="text-xs text-rg-muted">—</span>{{end}}
+        </td>
+        <td>
+          {{with index $.Lifecycle .Name}}
+            {{if .ProductionEnabled}}<span class="rg-badge bg-rg-accent/15 text-rg-accent">on</span>
+            {{else if gt .ProductionRuleCount 0}}<span class="text-xs text-rg-muted">off</span>
+            {{else}}<span class="text-xs text-rg-muted">—</span>{{end}}
+          {{else}}<span class="text-xs text-rg-muted">—</span>{{end}}
         </td>
         <td>
           <div class="flex flex-wrap items-center gap-2">
@@ -47,7 +63,7 @@
       </tr>
       {{else}}
       <tr>
-        <td colspan="7" class="px-3 py-8 text-center text-rg-muted">暂无 Server，请在上方添加。</td>
+        <td colspan="9" class="px-3 py-8 text-center text-rg-muted">暂无 Server，请在上方添加。</td>
       </tr>
       {{end}}
     </tbody>

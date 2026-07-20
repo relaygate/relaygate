@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/relaygate/relaygate/core/config"
 )
 
 // Rollback restores config from backups/<stamp> or backups/latest and recreates envoy.
@@ -14,7 +16,8 @@ func Rollback(root string, stamp string) error {
 	if err != nil {
 		return err
 	}
-	backupDir := filepath.Join(root, "data", "backups")
+	p := config.ResolvePaths(root)
+	backupDir := p.Backups
 	var target string
 	if stamp != "" {
 		target = filepath.Join(backupDir, stamp)
@@ -32,19 +35,20 @@ func Rollback(root string, stamp string) error {
 
 	fmt.Printf("==> 回滚自 %s (gateway=%s)\n", target, env.GatewayName)
 	if b, err := os.ReadFile(filepath.Join(target, "resources.yaml")); err == nil {
-		_ = os.MkdirAll(filepath.Join(root, "data"), 0o755)
-		_ = os.WriteFile(filepath.Join(root, "data", "resources.yaml"), b, 0o644)
+		_ = os.MkdirAll(p.DataDir, 0o755)
+		_ = os.WriteFile(p.Resources, b, 0o644)
 	}
 	if b, err := os.ReadFile(filepath.Join(target, "envoy.yaml")); err == nil {
-		_ = os.MkdirAll(filepath.Join(root, "data", "envoy"), 0o755)
-		_ = os.WriteFile(filepath.Join(root, "data", "envoy", "envoy.yaml"), b, 0o644)
+		_ = os.MkdirAll(filepath.Dir(p.EnvoyYAML), 0o755)
+		_ = os.WriteFile(p.EnvoyYAML, b, 0o644)
 	} else {
 		if err := RenderConfig(root, false); err != nil {
 			return err
 		}
 	}
 	if b, err := os.ReadFile(filepath.Join(target, "prometheus.yml")); err == nil {
-		_ = os.WriteFile(filepath.Join(root, "data", "prometheus", "prometheus.yml"), b, 0o644)
+		_ = os.MkdirAll(filepath.Dir(p.PromYAML), 0o755)
+		_ = os.WriteFile(p.PromYAML, b, 0o644)
 	}
 
 	if err := requireEnvFile(root); err != nil {

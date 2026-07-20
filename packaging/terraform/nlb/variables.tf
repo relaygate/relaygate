@@ -29,12 +29,12 @@ variable "gateways" {
   }))
 }
 
-variable "game_port_start" {
+variable "forward_port_start" {
   type    = number
   default = 10001
 }
 
-variable "game_port_end" {
+variable "forward_port_end" {
   type    = number
   default = 10010
 }
@@ -72,7 +72,7 @@ variable "gateway_security_group_id" {
 }
 
 variable "client_cidrs" {
-  description = "Client CIDRs allowed to game ports on instance SG"
+  description = "Client CIDRs allowed to forward ports on instance SG"
   type        = list(string)
   default     = ["0.0.0.0/0"]
 }

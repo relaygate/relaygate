@@ -14,10 +14,10 @@ func sampleResources() *Resources {
 		Rules: []Rule{
 			{Name: "rule-canary-server-01-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
 			{Name: "rule-canary-server-01-udp", Kind: "canary", Server: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
-			{Name: "rule-server-01-tcp-game", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
-			{Name: "rule-server-01-udp-game", Kind: "production", Server: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
-			{Name: "rule-server-02-tcp-game", Kind: "production", Server: "server-02", Protocol: "TCP", ListenPort: 10002, Enabled: false},
-			{Name: "rule-server-02-udp-game", Kind: "production", Server: "server-02", Protocol: "UDP", ListenPort: 10002, Enabled: false},
+			{Name: "rule-server-01-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
+			{Name: "rule-server-01-udp", Kind: "production", Server: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
+			{Name: "rule-server-02-tcp", Kind: "production", Server: "server-02", Protocol: "TCP", ListenPort: 10002, Enabled: false},
+			{Name: "rule-server-02-udp", Kind: "production", Server: "server-02", Protocol: "UDP", ListenPort: 10002, Enabled: false},
 		},
 	}
 }
@@ -34,7 +34,7 @@ func TestAddServerCreatesProductionRules(t *testing.T) {
 	if len(created) != 2 {
 		t.Fatalf("expected 2 rules, got %d", len(created))
 	}
-	if created[0].Name != "rule-server-11-tcp-game" || created[1].Name != "rule-server-11-udp-game" {
+	if created[0].Name != "rule-server-11-tcp" || created[1].Name != "rule-server-11-udp" {
 		t.Fatalf("unexpected rule names: %+v", created)
 	}
 	for _, rule := range created {
@@ -157,3 +157,99 @@ func TestValidatePassesSample(t *testing.T) {
 		t.Fatalf("Validate: %v", err)
 	}
 }
+
+func TestValidateRejectsUnknownServerOnDisabledRule(t *testing.T) {
+	r := sampleResources()
+	r.Rules = append(r.Rules, Rule{
+		Name: "orphan", Kind: "production", Server: "missing",
+		Protocol: "TCP", ListenPort: 12000, Enabled: false,
+	})
+	err := r.Validate()
+	if err == nil || !strings.Contains(err.Error(), "未知 server") {
+		t.Fatalf("expected unknown server error, got %v", err)
+	}
+}
+
+func TestValidateRejectsCanaryProductionPortOverlap(t *testing.T) {
+	r := sampleResources()
+	// Point a disabled production rule at the canary port → planning conflict
+	for i := range r.Rules {
+		if r.Rules[i].Name == "rule-server-01-tcp" {
+			r.Rules[i].ListenPort = 11001
+		}
+	}
+	err := r.Validate()
+	if err == nil || !strings.Contains(err.Error(), "端口冲突") {
+		t.Fatalf("expected port conflict, got %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidKind(t *testing.T) {
+	r := sampleResources()
+	r.Rules[0].Kind = "experimental"
+	err := r.Validate()
+	if err == nil || !strings.Contains(err.Error(), "kind") {
+		t.Fatalf("expected kind error, got %v", err)
+	}
+}
+
+func TestLifecycleStatus(t *testing.T) {
+	r := sampleResources()
+	rows := r.LifecycleStatus()
+	if len(rows) != 2 {
+		t.Fatalf("rows=%d", len(rows))
+	}
+	var s01 ServerLifecycle
+	for _, lc := range rows {
+		if lc.Name == "server-01" {
+			s01 = lc
+		}
+	}
+	if !s01.CanaryEnabled || s01.ProductionEnabled {
+		t.Fatalf("unexpected lifecycle: %+v", s01)
+	}
+	tcp, udp := r.CanaryListenPorts()
+	if tcp != 11001 || udp != 11001 {
+		t.Fatalf("canary ports tcp=%d udp=%d", tcp, udp)
+	}
+}
+
+func TestDiffDetectsToggleAndPortChange(t *testing.T) {
+	before := sampleResources()
+	after := sampleResources()
+	for i := range after.Rules {
+		if after.Rules[i].Name == "rule-server-01-tcp" {
+			after.Rules[i].Enabled = true
+			after.Rules[i].ListenPort = 10099
+		}
+	}
+	after.Servers = append(after.Servers, Server{
+		Name: "server-03", Address: "10.0.0.13",
+		TCPPort: 7777, UDPPort: 7778, HealthCheckPort: 7777, Enabled: true,
+	})
+	sum := Diff(before, after)
+	if len(sum.ServersAdded) != 1 || sum.ServersAdded[0] != "server-03" {
+		t.Fatalf("servers added: %+v", sum.ServersAdded)
+	}
+	if len(sum.RulesToggled) == 0 && len(sum.PortChanges) == 0 {
+		t.Fatalf("expected toggle or port change, got %+v", sum)
+	}
+	text := sum.String()
+	if !strings.Contains(text, "变更摘要") {
+		t.Fatalf("summary text: %s", text)
+	}
+}
+
+func TestApplyNftDefaults(t *testing.T) {
+	d := Defaults{}
+	d.ApplyNftDefaults()
+	if d.Nft.TCPNewConnPerIP != "30/second" || d.Nft.TCPBurst != 60 {
+		t.Fatalf("unexpected defaults: %+v", d.Nft)
+	}
+	d.Nft.TCPBurst = 99
+	d.ApplyNftDefaults()
+	if d.Nft.TCPBurst != 99 {
+		t.Fatal("should preserve explicit burst")
+	}
+}
+

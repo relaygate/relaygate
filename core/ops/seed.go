@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/relaygate/relaygate/core/config"
 )
 
-// runtimeDataDirs are created empty under data/ (runtime only; not versioned).
+// runtimeDataDirs are created empty under DataDir (runtime only; not versioned).
 var runtimeDataDirs = []string{
 	"envoy",
 	"firewall",
@@ -16,43 +18,43 @@ var runtimeDataDirs = []string{
 	"inventory",
 }
 
-// SeedDefaults ensures data/ runtime skeleton and copies versioned templates
+// SeedDefaults ensures DataDir runtime skeleton and copies versioned templates
 // when targets are missing (or reset is true). Does not touch generated
 // envoy/prometheus/firewall outputs or Grafana provisioning (those live under
-// core/deploy and are mounted/rendered separately).
+// packaging/ and are mounted/rendered separately).
 func SeedDefaults(root string, reset bool) error {
 	if root == "" {
 		return fmt.Errorf("root required")
 	}
-	if err := ensureDataDirs(root); err != nil {
+	p := config.ResolvePaths(root)
+	if err := ensureDataDirs(p.DataDir); err != nil {
 		return err
 	}
-	if err := seedFile(root, "resources.example.yaml", filepath.Join("data", "resources.yaml"), reset,
+	if err := seedFile(root, p.DataDir, "resources.example.yaml", filepath.Join(p.DataDir, "resources.yaml"), reset,
 		"占位 IP；请填入真实后端后 relaygate render / reload"); err != nil {
 		return err
 	}
-	if err := seedFile(root, "gateways.env.example", filepath.Join("data", "inventory", "gateways.env"), reset,
+	if err := seedFile(root, p.DataDir, "gateways.env.example", filepath.Join(p.DataDir, "inventory", "gateways.env"), reset,
 		"多机 fleet 用；单机可忽略"); err != nil {
 		return err
 	}
 	return nil
 }
 
-func ensureDataDirs(root string) error {
+func ensureDataDirs(dataDir string) error {
 	for _, name := range runtimeDataDirs {
-		if err := os.MkdirAll(filepath.Join(root, "data", name), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(dataDir, name), 0o755); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// seedFile copies a root-level versioned template into data/ when missing,
+// seedFile copies a root-level versioned template into DataDir when missing,
 // or when reset is true. Never silently overwrites an existing target.
-func seedFile(root, exampleRel, destRel string, reset bool, hint string) error {
-	dst := filepath.Join(root, destRel)
+func seedFile(root, dataDir, exampleRel, dest string, reset bool, hint string) error {
 	if !reset {
-		if st, err := os.Stat(dst); err == nil && st.Size() > 0 {
+		if st, err := os.Stat(dest); err == nil && st.Size() > 0 {
 			return nil
 		}
 	}
@@ -62,23 +64,22 @@ func seedFile(root, exampleRel, destRel string, reset bool, hint string) error {
 		if reset || !os.IsNotExist(err) {
 			return fmt.Errorf("无法读取模板 %s: %w", src, err)
 		}
-		// Fresh tree without example: leave data/ empty; apply/validate will fail loudly.
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err
 	}
 	mode := os.FileMode(0o660)
-	if strings.HasSuffix(destRel, ".env") {
+	if strings.HasSuffix(dest, ".env") {
 		mode = 0o600
 	}
-	if err := os.WriteFile(dst, b, mode); err != nil {
+	if err := os.WriteFile(dest, b, mode); err != nil {
 		return err
 	}
 	action := "已从模板生成"
 	if reset {
 		action = "已按 --reset-defaults 覆盖"
 	}
-	fmt.Printf("WARN: %s %s（%s）\n", action, dst, hint)
+	fmt.Printf("WARN: %s %s（%s）\n", action, dest, hint)
 	return nil
 }

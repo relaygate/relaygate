@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/relaygate/relaygate/core/config"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -48,6 +50,31 @@ type Defaults struct {
 	TCPLocalRateLimitPerSec int         `yaml:"tcp_local_rate_limit_per_sec"`
 	TCPLocalRateLimitBurst  int         `yaml:"tcp_local_rate_limit_burst"`
 	HealthCheck             HealthCheck `yaml:"health_check"`
+	Nft                     NftDefaults `yaml:"nft"`
+}
+
+// NftDefaults drives host nftables per-IP rate limits (same intent as packaging/firewall).
+type NftDefaults struct {
+	TCPNewConnPerIP string `yaml:"tcp_new_conn_per_ip"`
+	UDPPPSPerIP     string `yaml:"udp_pps_per_ip"`
+	TCPBurst        int    `yaml:"tcp_burst"`
+	UDPBurst        int    `yaml:"udp_burst"`
+}
+
+// ApplyNftDefaults fills empty nft fields with product defaults (单一来源).
+func (d *Defaults) ApplyNftDefaults() {
+	if strings.TrimSpace(d.Nft.TCPNewConnPerIP) == "" {
+		d.Nft.TCPNewConnPerIP = "30/second"
+	}
+	if strings.TrimSpace(d.Nft.UDPPPSPerIP) == "" {
+		d.Nft.UDPPPSPerIP = "500/second"
+	}
+	if d.Nft.TCPBurst <= 0 {
+		d.Nft.TCPBurst = 60
+	}
+	if d.Nft.UDPBurst <= 0 {
+		d.Nft.UDPBurst = 1000
+	}
 }
 
 type HealthCheck struct {
@@ -75,10 +102,9 @@ type Rule struct {
 	Enabled    bool   `yaml:"enabled"`
 }
 
-func DefaultPaths(root string) (resources, envoyOut, nftOut string) {
-	return filepath.Join(root, "data", "resources.yaml"),
-		filepath.Join(root, "data", "envoy", "envoy.yaml"),
-		filepath.Join(root, "data", "firewall", "game-ports.nft")
+func DefaultPaths(root string) (resourcesPath, envoyOut, nftOut string) {
+	p := config.ResolvePaths(root)
+	return p.Resources, p.EnvoyYAML, p.ForwardPorts
 }
 
 func Load(path string) (*Resources, error) {
@@ -127,8 +153,13 @@ func (r *Resources) Validate() error {
 	}
 	servers := r.ServerMap()
 
-	seen := map[string]string{}
-	for _, rule := range r.EnabledRules() {
+	// All rules: kind/protocol/port/server refs (规划期也要能发现错误)
+	allPorts := map[string]string{} // proto/port -> rule name
+	for _, rule := range r.Rules {
+		kind := strings.ToLower(strings.TrimSpace(rule.Kind))
+		if kind != "canary" && kind != "production" {
+			return fmt.Errorf("%s: kind 必须是 canary 或 production（当前 %q）", rule.Name, rule.Kind)
+		}
 		proto := strings.ToUpper(rule.Protocol)
 		if proto != "TCP" && proto != "UDP" {
 			return fmt.Errorf("%s: protocol 必须是 TCP 或 UDP", rule.Name)
@@ -136,15 +167,18 @@ func (r *Resources) Validate() error {
 		if rule.ListenPort < 1 || rule.ListenPort > 65535 {
 			return fmt.Errorf("%s: listen_port 越界: %d", rule.Name, rule.ListenPort)
 		}
-		key := fmt.Sprintf("%s/%d", proto, rule.ListenPort)
-		if other, ok := seen[key]; ok {
-			return fmt.Errorf("端口冲突: %s 同时被 %s 与 %s 使用", key, other, rule.Name)
-		}
-		seen[key] = rule.Name
-		s, ok := servers[rule.Server]
-		if !ok {
+		if _, ok := servers[rule.Server]; !ok {
 			return fmt.Errorf("%s: 未知 server %s", rule.Name, rule.Server)
 		}
+		key := fmt.Sprintf("%s/%d", proto, rule.ListenPort)
+		if other, ok := allPorts[key]; ok {
+			return fmt.Errorf("端口冲突: %s 同时被 %s 与 %s 使用（含未启用规则；production 与 canary 也不可重叠）", key, other, rule.Name)
+		}
+		allPorts[key] = rule.Name
+	}
+
+	for _, rule := range r.EnabledRules() {
+		s := servers[rule.Server]
 		if !s.Enabled {
 			return fmt.Errorf("%s: 目标 %s 已禁用", rule.Name, rule.Server)
 		}
@@ -241,7 +275,7 @@ func (r *Resources) DeleteServer(name string) (removedRules int, err error) {
 func productionRuleTemplates(serverName string, listenPort int) []Rule {
 	return []Rule{
 		{
-			Name:       "rule-" + serverName + "-tcp-game",
+			Name:       "rule-" + serverName + "-tcp",
 			Kind:       "production",
 			Server:     serverName,
 			Protocol:   "TCP",
@@ -249,7 +283,7 @@ func productionRuleTemplates(serverName string, listenPort int) []Rule {
 			Enabled:    false,
 		},
 		{
-			Name:       "rule-" + serverName + "-udp-game",
+			Name:       "rule-" + serverName + "-udp",
 			Kind:       "production",
 			Server:     serverName,
 			Protocol:   "UDP",
@@ -400,32 +434,7 @@ func PatchRuleEnabledInPlace(path, ruleName string, enabled bool) (bool, error) 
 }
 
 func FindRoot() (string, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	dir := wd
-	// 稳定入库标记（运行态 data/resources.yaml 通常不入库）。
-	markers := []string{
-		"resources.example.yaml",
-		"go.mod",
-	}
-	for {
-		for _, m := range markers {
-			if _, err := os.Stat(filepath.Join(dir, m)); err == nil {
-				return dir, nil
-			}
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-	if env := os.Getenv("PANEL_ROOT"); env != "" {
-		return env, nil
-	}
-	return "", fmt.Errorf("cannot locate repo root (resources.example.yaml 或 go.mod)")
+	return config.FindRoot()
 }
 
 func AbsJoin(root, rel string) string {
@@ -440,7 +449,7 @@ func EnsureDir(path string) error {
 }
 
 func BackupFiles(root, stamp string, files ...string) (string, error) {
-	dir := filepath.Join(root, "data", "backups", stamp)
+	dir := filepath.Join(config.ResolvePaths(root).Backups, stamp)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -457,7 +466,7 @@ func BackupFiles(root, stamp string, files ...string) (string, error) {
 			return "", err
 		}
 	}
-	_ = os.WriteFile(filepath.Join(root, "data", "backups", "latest"), []byte(stamp+"\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(config.ResolvePaths(root).Backups, "latest"), []byte(stamp+"\n"), 0o644)
 	return dir, nil
 }
 

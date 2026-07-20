@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/relaygate/relaygate/core/config"
 )
 
 // GrafanaEnabled reports whether the with-grafana compose profile is active.
@@ -28,14 +30,14 @@ func GrafanaEnabled(env Env) bool {
 }
 
 // EnsureGrafanaRuntime verifies bind-mount sources for the grafana service:
-// provisioning tree under core/deploy, and a group-readable admin password file
+// provisioning tree under packaging/, and a group-readable admin password file
 // (Grafana image runs as uid=472 gid=0; 0600 root:root is unreadable in-container).
 func EnsureGrafanaRuntime(root string, env Env) error {
 	if !GrafanaEnabled(env) {
 		return nil
 	}
 
-	prov := filepath.Join(root, "core", "deploy", "grafana", "provisioning")
+	prov := filepath.Join(root, config.PackagingDirName, "grafana", "provisioning")
 	for _, rel := range []string{
 		"datasources/prometheus.yml",
 		"dashboards/dashboards.yml",
@@ -43,13 +45,13 @@ func EnsureGrafanaRuntime(root string, env Env) error {
 	} {
 		p := filepath.Join(prov, rel)
 		if _, err := os.Stat(p); err != nil {
-			return fmt.Errorf("Grafana provisioning 缺失: %s（release 应含 core/deploy/grafana）", p)
+			return fmt.Errorf("Grafana provisioning 缺失: %s（release 应含 packaging/grafana）", p)
 		}
 	}
 
 	secretsDir := env.SecretsDir
 	if secretsDir == "" {
-		secretsDir = "/etc/relaygate/secrets"
+		secretsDir = config.DefaultSecretsDir
 	}
 	if err := os.MkdirAll(secretsDir, 0o750); err != nil {
 		return fmt.Errorf("创建密钥目录失败: %w", err)

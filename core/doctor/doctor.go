@@ -3,6 +3,7 @@ package doctor
 import (
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/relaygate/relaygate/core/config"
 	"github.com/relaygate/relaygate/core/ops"
+	"github.com/relaygate/relaygate/core/resources"
 )
 
 // Options for preflight checks.
@@ -59,9 +62,16 @@ func Run(opt Options) error {
 	})
 
 	check("resources.yaml", func() error {
-		p := filepath.Join(opt.Root, "data", "resources.yaml")
+		p := config.ResolvePaths(opt.Root).Resources
 		if _, err := os.Stat(p); err != nil {
-			return fmt.Errorf("缺少 %s", p)
+			return fmt.Errorf("缺少 %s（先跑 relaygate setup）", p)
+		}
+		res, err := resources.Load(p)
+		if err != nil {
+			return err
+		}
+		if err := res.Validate(); err != nil {
+			return fmt.Errorf("校验失败: %w", err)
 		}
 		return nil
 	})
@@ -116,12 +126,74 @@ func Run(opt Options) error {
 		return nil
 	})
 
+	check("dual-active env", func() error {
+		role := strings.ToLower(strings.TrimSpace(env.PanelRole))
+		if role != "primary" && role != "standby" {
+			return fmt.Errorf("PANEL_ROLE=%q 无效（须 primary|standby）", env.PanelRole)
+		}
+		if role == "standby" && env.EnablePanel == "1" {
+			fmt.Println("WARN: PANEL_ROLE=standby 但 ENABLE_PANEL=1（从节点建议 ENABLE_PANEL=0；若误启则 Panel 写保护）")
+		}
+		if role == "primary" && env.EnablePanel != "1" {
+			fmt.Println("WARN: PANEL_ROLE=primary 但 ENABLE_PANEL!=1（主管理节点通常需要 Panel）")
+		}
+		fmt.Printf("PANEL_ROLE=%s ENABLE_PANEL=%s DRAIN_WAIT=%ds ENVOY_ADMIN_PORT=%s\n",
+			env.PanelRole, env.EnablePanel, env.DrainWait, env.EnvoyAdminPort)
+		return nil
+	})
+
+	check("envoy admin", func() error {
+		port := env.EnvoyAdminPort
+		if port == "" {
+			return fmt.Errorf("ENVOY_ADMIN_PORT 为空")
+		}
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("ENVOY_ADMIN_PORT 无效: %s", port)
+		}
+		resPath := config.ResolvePaths(opt.Root).Resources
+		if res, err := resources.Load(resPath); err == nil {
+			addr := strings.TrimSpace(res.Meta.AdminAddress)
+			if addr != "" && addr != "127.0.0.1" && addr != "::1" {
+				fmt.Printf("WARN: resources meta.admin_address=%s（建议 127.0.0.1，勿对公网暴露 admin）\n", addr)
+			}
+			if res.Meta.AdminPort > 0 && strconv.Itoa(res.Meta.AdminPort) != port {
+				fmt.Printf("WARN: resources admin_port=%d 与 ENVOY_ADMIN_PORT=%s 不一致\n", res.Meta.AdminPort, port)
+			}
+		}
+		url := env.AdminURL("/ready")
+		if !ops.HTTPGetOK(url) {
+			return fmt.Errorf("Envoy admin 不可达（%s）；部署后应可访问", url)
+		}
+		return nil
+	})
+
 	check("envoy ready", func() error {
 		url := env.AdminURL("/ready")
 		if ops.HTTPGetOK(url) {
 			return nil
 		}
 		return fmt.Errorf("Envoy 未 ready（%s）；部署后应可访问", url)
+	})
+
+	check("drain endpoints", func() error {
+		readyURL := env.AdminURL("/ready")
+		if !ops.HTTPGetOK(readyURL) {
+			return fmt.Errorf("Envoy 未运行，无法检查 /healthcheck/*（%s）", readyURL)
+		}
+		failURL := env.AdminURL("/healthcheck/fail")
+		okURL := env.AdminURL("/healthcheck/ok")
+		client := &http.Client{Timeout: 2 * time.Second}
+		for _, u := range []string{failURL, okURL} {
+			resp, err := client.Get(u)
+			if err != nil {
+				return fmt.Errorf("无法连接 %s: %w（drain 将失败）", u, err)
+			}
+			_ = resp.Body.Close()
+			fmt.Printf("reachable %s (HTTP %d)\n", u, resp.StatusCode)
+		}
+		fmt.Printf("DRAIN_WAIT=%ds（CLI drain fail 未设 env 时默认等 15s；reload 用此值）\n", env.DrainWait)
+		return nil
 	})
 
 	if opt.EnablePanel {
@@ -139,11 +211,11 @@ func Run(opt Options) error {
 		for _, f := range failures {
 			fmt.Println(" -", f)
 		}
-		// envoy/panel not ready is soft for pre-apply; only fail hard on infra
 		hard := 0
 		for _, f := range failures {
 			if strings.HasPrefix(f, ".env") || strings.HasPrefix(f, "resources") ||
-				strings.HasPrefix(f, "docker") || strings.HasPrefix(f, "binary") {
+				strings.HasPrefix(f, "docker") || strings.HasPrefix(f, "binary") ||
+				strings.HasPrefix(f, "dual-active") {
 				hard++
 			}
 			if opt.StrictPorts && strings.HasPrefix(f, "ports") {
@@ -153,14 +225,13 @@ func Run(opt Options) error {
 		if hard > 0 {
 			return fmt.Errorf("doctor 失败（%d 项）", hard)
 		}
-		fmt.Println("（Envoy/Panel 未就绪在首次 apply 前属预期）")
+		fmt.Println("（Envoy/Panel/drain 未就绪在首次 apply 前属预期）")
 	}
 	fmt.Println("doctor 完成")
 	return nil
 }
 
 func portListening(port int) bool {
-	// Prefer ss
 	if ops.LookPath("ss") {
 		out, err := exec.Command("ss", "-H", "-lnt", fmt.Sprintf("( sport = :%d )", port)).CombinedOutput()
 		if err == nil && strings.TrimSpace(string(out)) != "" {

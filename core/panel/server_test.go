@@ -12,13 +12,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/relaygate/relaygate/core/config"
 	"github.com/relaygate/relaygate/core/resources"
 )
 
 func setupPanel(t *testing.T) (*Server, string, string) {
 	t.Helper()
 	root := t.TempDir()
-	cfgDir := filepath.Join(root, "data")
+	cfgDir := config.ResolveDataDir(root)
 	webDir := filepath.Join(root, "frontend")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -36,10 +37,10 @@ func setupPanel(t *testing.T) (*Server, string, string) {
 		},
 		Rules: []resources.Rule{
 			{Name: "rule-canary-server-01-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
-			{Name: "rule-server-01-tcp-game", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
-			{Name: "rule-server-01-udp-game", Kind: "production", Server: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
-			{Name: "rule-server-02-tcp-game", Kind: "production", Server: "server-02", Protocol: "TCP", ListenPort: 10002, Enabled: false},
-			{Name: "rule-server-02-udp-game", Kind: "production", Server: "server-02", Protocol: "UDP", ListenPort: 10002, Enabled: false},
+			{Name: "rule-server-01-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
+			{Name: "rule-server-01-udp", Kind: "production", Server: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
+			{Name: "rule-server-02-tcp", Kind: "production", Server: "server-02", Protocol: "TCP", ListenPort: 10002, Enabled: false},
+			{Name: "rule-server-02-udp", Kind: "production", Server: "server-02", Protocol: "UDP", ListenPort: 10002, Enabled: false},
 		},
 	}
 	if err := resources.Save(filepath.Join(cfgDir, "resources.yaml"), res); err != nil {
@@ -170,7 +171,7 @@ func TestAPIServerCreateAndDelete(t *testing.T) {
 		t.Fatalf("expected 2 rules in response, got %#v", created["rules"])
 	}
 
-	res, err := resources.Load(filepath.Join(srv.cfg.Root, "data", "resources.yaml"))
+	res, err := resources.Load(filepath.Join(config.ResolveDataDir(srv.cfg.Root), "resources.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +209,7 @@ func TestAPIServerCreateAndDelete(t *testing.T) {
 		t.Fatalf("expected cascade remove, got %#v", deleted)
 	}
 
-	res, err = resources.Load(filepath.Join(srv.cfg.Root, "data", "resources.yaml"))
+	res, err = resources.Load(filepath.Join(config.ResolveDataDir(srv.cfg.Root), "resources.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +376,7 @@ func TestHXServerCreateAndRulePatch(t *testing.T) {
 		t.Fatalf("missing HX-Trigger: %s", rec.Header().Get("HX-Trigger"))
 	}
 
-	req = httptest.NewRequest(http.MethodPatch, "/hx/rules/rule-server-02-tcp-game", strings.NewReader("enabled=on"))
+	req = httptest.NewRequest(http.MethodPatch, "/hx/rules/rule-server-02-tcp", strings.NewReader("enabled=on"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	authedCSRF(req, token, csrf)
 	rec = httptest.NewRecorder()

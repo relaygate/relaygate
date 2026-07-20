@@ -74,7 +74,7 @@ func WaitHTTP(url string, attempts int, sleep time.Duration) error {
 }
 
 func ComposeArgs(root string, withEnvFile bool) []string {
-	args := []string{"compose", "-f", "core/deploy/compose.yaml"}
+	args := []string{"compose", "-f", "packaging/compose.yaml"}
 	if withEnvFile {
 		envPath := root + "/.env"
 		if _, err := os.Stat(envPath); err == nil {

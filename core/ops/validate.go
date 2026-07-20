@@ -8,11 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/relaygate/relaygate/core/config"
 	"github.com/relaygate/relaygate/core/envoygen"
 	"github.com/relaygate/relaygate/core/resources"
 )
 
-// RenderConfig loads resources, validates, and writes envoy + nft outputs under data/.
+// RenderConfig loads resources, validates, and writes envoy + nft outputs under DataDir.
 func RenderConfig(root string, checkOnly bool) error {
 	resPath, envoyOut, nftOut := resources.DefaultPaths(root)
 	res, err := resources.Load(resPath)
@@ -34,14 +35,15 @@ func RenderConfig(root string, checkOnly bool) error {
 	return nil
 }
 
-// RenderObservability renders data/prometheus/prometheus.yml from deploy template + env.
+// RenderObservability renders DataDir/prometheus/prometheus.yml from packaging template + env.
 func RenderObservability(root string) error {
 	env, err := LoadEnv(root)
 	if err != nil {
 		return err
 	}
-	tpl := filepath.Join(root, "core", "deploy", "prometheus", "prometheus.yml.tpl")
-	out := filepath.Join(root, "data", "prometheus", "prometheus.yml")
+	p := config.ResolvePaths(root)
+	tpl := filepath.Join(p.Packaging, "prometheus", "prometheus.yml.tpl")
+	out := p.PromYAML
 	b, err := os.ReadFile(tpl)
 	if err != nil {
 		return fmt.Errorf("missing %s: %w", tpl, err)
@@ -89,7 +91,7 @@ func ValidateEnvoyContainer(root string, env Env, skipWarn bool) error {
 		}
 		return fmt.Errorf("docker 不可用")
 	}
-	envoyYAML := filepath.Join(root, "data", "envoy", "envoy.yaml")
+	envoyYAML := config.ResolvePaths(root).EnvoyYAML
 	if _, err := os.Stat(envoyYAML); err != nil {
 		return fmt.Errorf("缺少 %s", envoyYAML)
 	}
@@ -124,7 +126,7 @@ func ValidateCompose(root string, env Env) error {
 	if !LookPath("docker") {
 		return nil
 	}
-	args := []string{"compose", "-f", "core/deploy/compose.yaml"}
+	args := []string{"compose", "-f", config.ComposeFileRel}
 	envFile := filepath.Join(root, ".env")
 	if _, err := os.Stat(envFile); err == nil {
 		args = append(args, "--env-file", ".env", "config")
@@ -137,6 +139,7 @@ func ValidateCompose(root string, env Env) error {
 	cmd.Env = append(os.Environ(),
 		"GATEWAY_NAME="+env.GatewayName,
 		"GRAFANA_ADMIN_PASSWORD=validate-only",
+		"RELAYGATE_DATA_DIR="+env.DataDir,
 	)
 	return cmd.Run()
 }
@@ -147,7 +150,7 @@ func Validate(root string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("==> render (gateway=%s)\n", env.GatewayName)
+	fmt.Printf("==> render (gateway=%s data=%s)\n", env.GatewayName, env.DataDir)
 	if err := RenderObservability(root); err != nil {
 		return err
 	}
@@ -155,7 +158,7 @@ func Validate(root string) error {
 		return err
 	}
 
-	prom, err := os.ReadFile(filepath.Join(root, "data", "prometheus", "prometheus.yml"))
+	prom, err := os.ReadFile(config.ResolvePaths(root).PromYAML)
 	if err != nil {
 		return err
 	}
@@ -171,6 +174,19 @@ func Validate(root string) error {
 	fmt.Println("==> nftables 语法检查")
 	if err := ValidateNFT(root); err != nil {
 		return err
+	}
+	// Ensure forward-ports.nft carries resources-derived rate limit defines
+	nftBody, err := os.ReadFile(config.ResolvePaths(root).ForwardPorts)
+	if err != nil {
+		return fmt.Errorf("读取 forward-ports.nft: %w", err)
+	}
+	for _, needle := range []string{
+		"FORWARD_TCP_PORTS", "FORWARD_UDP_PORTS",
+		"FORWARD_TCP_NEW_CONN_RATE", "FORWARD_UDP_PPS_RATE",
+	} {
+		if !strings.Contains(string(nftBody), needle) {
+			return fmt.Errorf("forward-ports.nft 缺少 %s（resources→nft 同源渲染失败）", needle)
+		}
 	}
 	if LookPath("docker") {
 		fmt.Println("==> compose 配置检查")

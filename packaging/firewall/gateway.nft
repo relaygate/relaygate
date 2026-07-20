@@ -1,15 +1,16 @@
 #!/usr/sbin/nft -f
-# RelayGate 网关防火墙模板（版本化，随 core/deploy 发布）
+# RelayGate 网关防火墙模板（版本化，随 packaging 发布）
 # 勿直接 nft -f 本文件：SSH 端口与 include 路径由 `relaygate firewall` 改写后
-# 写入 data/firewall/.gateway-*.nft 再校验/应用。
-# 端口定义由 render 生成：data/firewall/game-ports.nft
+# 写入 DataDir/firewall/.gateway-*.nft 再校验/应用。
+# 端口定义与限速 define 由 render 生成：DataDir/firewall/forward-ports.nft
+# （FORWARD_*_PORTS + FORWARD_*_RATE/BURST，同源自 resources.yaml defaults.nft）
 #
 # 警告：错误应用可能导致 SSH 断开。请保留现有会话并准备控制台。
 
 flush ruleset
 
-# 占位 include；firewall/apply 会改写为 data/firewall/game-ports.nft 的绝对路径
-include "../../data/firewall/game-ports.nft"
+# 占位 include；firewall/apply 会改写为 DataDir/firewall/forward-ports.nft 的绝对路径
+include "forward-ports.nft"
 
 define SSH_PORT = 30455
 # 可选：限制管理面来源（示例，按需取消注释并修改）
@@ -31,10 +32,10 @@ table inet gateway {
     # SSH 运维入口（必须保留）
     tcp dport $SSH_PORT ct state new limit rate 10/second burst 20 packets accept comment "allow-ops-ssh"
 
-    # 游戏 TCP 入口 + 新建连接限速
-    tcp dport $GAME_TCP_PORTS jump allow-game-tcp
-    # 游戏 UDP 入口 + 每 IP PPS 限速
-    udp dport $GAME_UDP_PORTS jump allow-game-udp
+    # 转发 TCP 入口（rules 监听端口）+ 新建连接限速
+    tcp dport $FORWARD_TCP_PORTS jump allow-forward-tcp
+    # 转发 UDP 入口（rules 监听端口）+ 每 IP PPS 限速
+    udp dport $FORWARD_UDP_PORTS jump allow-forward-udp
 
     # 管理面仅本机（host network 下由服务本身 bind 127.0.0.1）
     # 若误暴露，这里再拒绝一次公网访问
@@ -49,19 +50,19 @@ table inet gateway {
     type filter hook output priority filter; policy accept;
   }
 
-  chain allow-game-tcp {
-    # 每源 IP 新建连接限速：超速丢弃，其余放行
+  chain allow-forward-tcp {
+    # 每源 IP 新建连接限速：超速丢弃，其余放行（阈值来自 forward-ports.nft / resources defaults.nft）
     ct state new meter tcp-new-per-ip size 65535 {
-      ip saddr limit rate over 30/second burst 60 packets
+      ip saddr limit rate over $FORWARD_TCP_NEW_CONN_RATE burst $FORWARD_TCP_NEW_CONN_BURST packets
     } counter drop comment "limit-new-tcp"
-    accept comment "allow-game-tcp"
+    accept comment "allow-forward-tcp"
   }
 
-  chain allow-game-udp {
+  chain allow-forward-udp {
     # 每源 IP UDP PPS 限速（防扫描/小流量洪泛；大流量仍需高防）
     meter udp-pps-per-ip size 65535 {
-      ip saddr limit rate over 500/second burst 1000 packets
+      ip saddr limit rate over $FORWARD_UDP_PPS_RATE burst $FORWARD_UDP_PPS_BURST packets
     } counter drop comment "limit-udp-pps"
-    accept comment "allow-game-udp"
+    accept comment "allow-forward-udp"
   }
 }

@@ -1,6 +1,6 @@
 # RelayGate
 
-基于 **Envoy** 的游戏网关：单机起步，可演进为双活 + 云 L4 LB。一份 `data/resources.yaml` 驱动转发与限流；日常运维统一用二进制 `relaygate`。
+基于 **Envoy** 的游戏网关：单机起步，可演进为双活 + 云 L4 LB。一份运行态 `resources.yaml` 驱动转发与限流；日常运维统一用二进制 `relaygate`。
 
 ## 功能
 
@@ -27,7 +27,7 @@ sudo RELAYGATE_VERSION=v0.1.0 bash /tmp/relaygate-install.sh
 ```text
 root / OS / arch / systemd / Docker
 → 下载 relaygate-$VERSION-linux-$ARCH.tar.gz（+ sha256）
-→ 解压到 /opt/relaygate（保留已有 .env 与 data/）
+→ 解压到 /opt/relaygate（保留已有 .env 与 DataDir）
 → relaygate setup → apply → panel install → smoke
 → firewall check（默认不改主机）
 ```
@@ -60,18 +60,21 @@ sudo env NONINTERACTIVE=1 \
 | `RELAYGATE_VERSION` | GitHub Release tag（推荐） |
 | `RELAYGATE_TAR` | 本地 tar.gz，跳过下载 |
 | `RELAYGATE_INSTALL_DIR` | 默认 `/opt/relaygate` |
+| `RELAYGATE_DATA_DIR` | 运行态目录；安装默认 `$INSTALL_DIR/data` |
 | `FROM_SOURCE=1` | 开发兜底：源码构建（非默认） |
 | `GATEWAY_NAME` / `GATEWAY_PUBLIC_IP` | 网关身份 |
+| `GATEWAY_SSH_PORT` | 默认 `30455`（与 `.env.example` / firewall 模板一致） |
 | `ENABLE_PANEL` / `ENABLE_GRAFANA` | 默认 1 |
 | `APPLY_FIREWALL` | 默认 0（只校验） |
 
 ### 开发机（源码）
 
+源码树**没有**顶层 `data/`。运行态默认写到 gitignore 的 `.runtime/`（或显式 `RELAYGATE_DATA_DIR`）。
+
 ```bash
-cp resources.example.yaml data/resources.yaml
 cp .env.example .env && chmod 600 .env
 make build
-./bin/relaygate setup --noninteractive
+./bin/relaygate setup --noninteractive   # 写入 .env 中 RELAYGATE_DATA_DIR=<repo>/.runtime
 ./bin/relaygate validate && ./bin/relaygate apply && ./bin/relaygate smoke
 
 # 本地打与 CI 相同结构的 release 包
@@ -82,40 +85,88 @@ make dist VERSION=dev
 
 ```text
 首启     relaygate setup [--noninteractive] [--sysctl]
-         relaygate doctor [--strict-ports]
+         relaygate doctor [--strict-ports]   # 含 admin / drain 端点 / 双活 env
 
 配置     relaygate render [--check-only] [--observability]
-         relaygate validate
+         relaygate validate                  # 端口冲突、rule→server、nft 同源校验
+         relaygate server status             # 每服 canary / production 是否生效
          relaygate server enable|disable <server-01>
 
-数据面   relaygate apply                 # 首次/全量
-         relaygate reload                # 改配置后
+数据面   relaygate apply                 # 首次/全量（含变更摘要备份）
+         relaygate reload                # 改配置后：backup→drain→restart→ready（分阶段计时）
          relaygate rollback [STAMP]
-         relaygate drain fail|ok|status
+         relaygate drain fail|ok|status  # NLB 摘流 / 恢复（DRAIN_WAIT）
 
 检查     relaygate smoke [HOST]
-         relaygate canary [HOST]
+         relaygate canary [HOST]         # 读 resources 启用 canary 端口
          relaygate baseline
 
-防火墙   relaygate firewall [check|apply]
+防火墙   relaygate firewall [check|apply]  # 端口集 + defaults.nft 限速同源
 Panel    sudo relaygate panel install | uninstall
 多机     GATEWAYS=gateway-01,gateway-02 relaygate fleet
 ```
 
-### 推荐流程
+### 推荐流程（增服 → canary → production）
 
 ```bash
+# 1) Panel 添加 Server（自动分配 production 端口，规则默认关闭）
+#    或编辑 DataDir/resources.yaml
+
+relaygate server status          # 查看 canary/production 是否生效
+relaygate validate               # 端口冲突 / 引用检查
+relaygate canary 127.0.0.1       # 探针走启用中的 canary 端口
+
+# 2) canary 通过后放量到 production
 relaygate server enable server-01
-relaygate reload
+relaygate reload                 # 输出变更摘要 + 各阶段耗时；备份含 change-summary.txt
 relaygate smoke
 
-relaygate canary 127.0.0.1
+# 3) 宿主防火墙与 Envoy 端口集对齐
 sudo FIREWALL_CONFIRM=YES_FLUSH_NFTABLES ./bin/relaygate firewall apply
-
-relaygate drain fail
-# …变更…
-relaygate drain ok
 ```
+
+### L4 维护窗口剧本（drain ↔ NLB 摘流）
+
+云 L4（如 NLB）通常探测 Envoy `/ready`。维护时：
+
+```bash
+relaygate doctor                 # 确认 /healthcheck/* 与 admin 可达；核对 DRAIN_WAIT
+relaygate drain fail             # POST /healthcheck/fail → 等 DRAIN_WAIT（未设 env 默认 15s）
+# …此时 NLB 应摘流；再改配置 / reload / 升级…
+relaygate reload                 # 内置：drain → restart → poll /ready → healthcheck/ok
+# 或手动恢复：
+relaygate drain ok               # POST /healthcheck/ok
+relaygate smoke                  # 冒烟
+```
+
+`DRAIN_WAIT` 写在 `.env`（见 `.env.example`）。`reload` 使用该值；单独 `drain fail` 在未设置时默认多等一会儿（15s），给 LB 失败窗口留余量。
+
+### 同源限流（Envoy + nft）
+
+`DataDir/resources.yaml` 的 `defaults` 是单一意图源：
+
+| 字段 | 生成物 |
+|------|--------|
+| `tcp_local_rate_limit_*` | Envoy TCP listener 本地限速 |
+| `defaults.nft.*` | `DataDir/firewall/forward-ports.nft` 中的 `FORWARD_*_RATE/BURST` |
+| 启用中的 rules 端口 | Envoy listeners + `FORWARD_TCP/UDP_PORTS` |
+
+`packaging/firewall/gateway.nft` 引用这些 define，不再硬编码限速数字。改档位：编辑 `resources.yaml` → `validate` / `firewall check` → `firewall apply`。
+
+### 双活（可选）
+
+```text
+玩家 → 云 L4 LB
+         ├─ gateway-01（ENABLE_PANEL=1, PANEL_ROLE=primary）
+         └─ gateway-02（ENABLE_PANEL=0, PANEL_ROLE=standby）
+```
+
+```bash
+./bin/relaygate apply && ./bin/relaygate smoke
+# 仅 primary：sudo ./bin/relaygate panel install
+```
+
+双活滚动：对即将变更的节点先 `drain fail`，确认 NLB 摘流后再 `reload`，另一台继续接流量；恢复后 `drain ok` / smoke。云 NLB 模板见 [`packaging/terraform/nlb/`](packaging/terraform/nlb/)。分批：`GATEWAYS=gateway-01,gateway-02 ./bin/relaygate fleet`。
 
 ### 升级 / 回滚 / 卸载
 
@@ -139,68 +190,51 @@ sudo PURGE=1 bash /tmp/relaygate-install.sh --uninstall
 
 要点：游戏监听 `0.0.0.0` 或内网 IP；Server 防火墙只放行网关回源 IP；双活时放行全部网关 IP。
 
-```bash
-relaygate reload
-relaygate smoke
-```
-
-## 双活（可选）
-
-```text
-玩家 → 云 L4 LB
-         ├─ gateway-01（ENABLE_PANEL=1, PANEL_ROLE=primary）
-         └─ gateway-02（ENABLE_PANEL=0, PANEL_ROLE=standby）
-```
-
-```bash
-./bin/relaygate apply && ./bin/relaygate smoke
-# 仅 primary：sudo ./bin/relaygate panel install
-```
-
-云 NLB 模板见 [`core/deploy/terraform/nlb/`](core/deploy/terraform/nlb/)。分批：`GATEWAYS=gateway-01,gateway-02 ./bin/relaygate fleet`。
-
 ## 仓库布局
 
-单 Go module + 预编译 release：`core` 随版本走，`data` 是安装后运行态（gitignore）。
+单 Go module + 预编译 release。`core/` 是应用代码；`packaging/` 是版本化安装资产；**运行态不在源码树内**。
 
 ```text
-*.example / .env.example   # 仓库根：seed 源（resources → data/；inventory → data/inventory/）
-data/                      # 运行态（gitignore）：勿放 Go 代码 / Grafana provisioning
-  resources.yaml           # seed 自 resources.example.yaml
-  envoy/ firewall/ prometheus/ backups/ inventory/
+*.example / .env.example   # seed 源（setup 复制到 DataDir）
+packaging/                 # 版本化安装资产：compose、systemd、grafana、
+                           # prometheus tpl、firewall、sysctl、terraform、observability
 core/
   cmd/relaygate/           # 薄 main
-  cli/ panel/ setup/ doctor/ envoygen/ status/
-  ops/                     # Go 运维包（apply/reload/seed…）——代码，不是数据目录
-  resources/               # resources.yaml 领域模型
-  deploy/                  # 版本化部署模板（compose、systemd、grafana provisioning、
-                           # prometheus tpl、firewall tpl）；禁止运行生成物与用户可变配置
+  config/                  # 路径 / 默认值 / LoadEnv（唯一入口）
+  cli/ panel/ setup/ doctor/ envoygen/ status/ resources/
+  ops/                     # 数据面运维（apply/reload/seed/firewall…）
+  host/                    # 宿主安装（Panel systemd），与 panel HTTP 分离
 frontend/                  # Panel UI
 install.sh                 # bootstrap：下载 release tar → setup/apply
 Makefile                   # build / test / dist
 ```
 
-职责边界：`deploy` = 模板（版本化）；`data` = 实例状态；`ops` = Go package（仅在 `core/ops`）。
+### DataDir（运行态）约定
+
+| 场景 | 默认 DataDir | 说明 |
+|------|----------------|------|
+| 源码开发 | `<repo>/.runtime/` | gitignore；**不是**源码目录 |
+| 安装前缀 | `$INSTALL_DIR/data`（默认 `/opt/relaygate/data`） | 仅出现在安装树，不在 git 布局里展示为源码 |
+| 任意覆盖 | `RELAYGATE_DATA_DIR` | 绝对路径，或相对产品根；`setup` 写入 `.env` |
+
+`clone` 后仓库根下**没有** `data/`。`relaygate setup` 后才出现 `.runtime/`（开发）或安装目录下的 `data/`（生产）。Compose 通过 `.env` 的 `RELAYGATE_DATA_DIR` 挂载运行态文件。
 
 ### 预设配置 vs 运行配置
 
 | 环节 | 预设（入库 / release） | 运行（gitignore / 宿主机） |
 |------|------------------------|----------------------------|
-| 开发 | `*.example`、`core/deploy/`、`frontend/` | 本地 `.env`、`data/`（setup seed） |
+| 开发 | `*.example`、`packaging/`、`frontend/`、`core/` | 本地 `.env`、`.runtime/`（setup seed） |
 | 安装 | release tar 内模板 + 空 `data/` 骨架 | `/opt/relaygate/data/`、`.env`、`/etc/relaygate/secrets/` |
-| 容器 | compose 挂载 `core/deploy` 模板 + `data/` 生成物 | named volume（Grafana/Prometheus TSDB） |
-| 升级 | 新 tar 覆盖 `bin/`、`frontend/`、`core/deploy/` | **保留** `.env` 与 `data/`；seed 只补缺失文件 |
-| 备份 | — | `data/backups/`（apply/installer 自动） |
-| 运维 | CLI 子命令 | `relaygate reload/drain/smoke/firewall` |
+| 容器 | compose 挂载 `packaging/` 模板 + `${RELAYGATE_DATA_DIR}` 生成物 | named volume（Grafana/Prometheus TSDB） |
+| 升级 | 新 tar 覆盖 `bin/`、`frontend/`、`packaging/` | **保留** `.env` 与 DataDir；seed 只补缺失文件 |
+| 备份 | — | `DataDir/backups/`（apply/installer 自动） |
 
-`relaygate setup` / 首次 `apply` 在目标缺失时从 `*.example` seed 到 `data/`；`--reset-defaults` 才覆盖已有 `resources.yaml` / inventory。Grafana provisioning 始终挂载 `core/deploy/grafana/`，不进 `data/`。Panel 强制 `PANEL_BIND` 为 loopback。
+`relaygate setup` / 首次 `apply` 在目标缺失时从 `*.example` seed 到 DataDir；`--reset-defaults` 才覆盖已有 `resources.yaml` / inventory。Grafana provisioning 始终挂载 `packaging/grafana/`，不进 DataDir。Panel 强制 `PANEL_BIND` 为 loopback。
 
-分批：`DEPLOY_REF=<tag|sha> GATEWAYS=… ./bin/relaygate fleet`（禁止默认跟踪 main）。
-
-可选可观测性栈（标准 Compose；与网关默认栈分离，复用 `prometheus/`、`grafana/` 模板）：
+可选可观测性栈：
 
 ```bash
-cd core/deploy/observability
+cd packaging/observability
 cp .env.example .env && chmod 600 .env
 docker compose --env-file .env up -d
 ```

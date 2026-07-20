@@ -9,8 +9,8 @@
 #   docker compose --env-file .env up -d
 #
 # From repo root:
-#   docker compose -f core/deploy/observability/compose.yaml \
-#     --env-file core/deploy/observability/.env up -d
+#   docker compose -f packaging/observability/compose.yaml \
+#     --env-file packaging/observability/.env up -d
 
 name: relaygate-observability
 

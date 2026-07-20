@@ -43,17 +43,19 @@ jobs:
       - name: validate + compose + envoy
         run: |
           set -euo pipefail
-          mkdir -p data
-          cp resources.example.yaml data/resources.yaml
+          mkdir -p .runtime
+          cp resources.example.yaml .runtime/resources.yaml
           cp gateway-01.env.example .env
+          echo "RELAYGATE_DATA_DIR=$PWD/.runtime" >> .env
           ./bin/relaygate validate
-          grep -q 'gateway: gateway-01' data/prometheus/prometheus.yml
+          grep -q 'gateway: gateway-01' .runtime/prometheus/prometheus.yml
           cp gateway-02.env.example .env
+          echo "RELAYGATE_DATA_DIR=$PWD/.runtime" >> .env
           ./bin/relaygate validate
-          grep -q 'gateway: gateway-02' data/prometheus/prometheus.yml
-          docker compose -f core/deploy/compose.yaml --env-file .env config >/dev/null
+          grep -q 'gateway: gateway-02' .runtime/prometheus/prometheus.yml
+          docker compose -f packaging/compose.yaml --env-file .env config >/dev/null
           docker run --rm \
-            -v "$PWD/data/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro" \
+            -v "$PWD/.runtime/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro" \
             "${ENVOY_IMAGE}" \
             /usr/local/bin/envoy -c /etc/envoy/envoy.yaml --mode validate
 

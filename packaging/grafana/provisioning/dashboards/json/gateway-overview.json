@@ -102,7 +102,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
       "targets": [
         {
-          "expr": "sum by (gateway, envoy_cluster_name) (envoy_cluster_upstream_cx_active{gateway=~\"$gateway\", envoy_cluster_name=~\"cluster-server-.*-tcp-game\"})",
+          "expr": "sum by (gateway, envoy_cluster_name) (envoy_cluster_upstream_cx_active{gateway=~\"$gateway\", envoy_cluster_name=~\"cluster-server-.*-tcp\"})",
           "legendFormat": "{{gateway}} {{envoy_cluster_name}}",
           "refId": "A"
         }

@@ -1,13 +1,13 @@
 # RelayGate: Envoy 数据面 + 可观测性（Docker Compose）
-# Panel 默认以宿主二进制 + systemd 运行（见 core/deploy/systemd/、install.sh），
+# Panel 默认以宿主二进制 + systemd 运行（见 packaging/systemd/、install.sh），
 # 不在本文件中定义 panel 服务，也不挂载 docker.sock。
 # 每台网关共用本模板，靠 .env 中的 GATEWAY_NAME 等变量区分实例。
 # 在仓库根执行:
-#   docker compose -f core/deploy/compose.yaml --env-file .env up -d
+#   docker compose -f packaging/compose.yaml --env-file .env up -d
 #
 # Grafana 可选：COMPOSE_PROFILES 含 with-grafana（主管理节点推荐）。
 # provisioning / dashboard JSON 来自本目录 ./grafana/provisioning（版本化）；
-# data/ 只承载渲染产物与 backups，不挂 Grafana 配置。
+# RELAYGATE_DATA_DIR（.env 中由 setup 写入绝对路径）承载渲染产物与 backups；不挂 Grafana 配置。
 # 从节点可留空 profiles，仅跑数据面 + 本地 Prometheus（remote_write 到中心）。
 
 name: ${COMPOSE_PROJECT_NAME:-relaygate}
@@ -21,7 +21,7 @@ services:
     stop_grace_period: 45s
     stop_signal: SIGTERM
     volumes:
-      - ../../data/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ${RELAYGATE_DATA_DIR}/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
       - envoy-logs:/var/log/envoy
     command:
       - /usr/local/bin/envoy
@@ -65,7 +65,7 @@ services:
     network_mode: host
     restart: unless-stopped
     volumes:
-      - ../../data/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ${RELAYGATE_DATA_DIR}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
     command:
@@ -122,7 +122,7 @@ services:
         fi
         exec /run.sh
     volumes:
-      # provisioning（datasources/dashboards）随 core/deploy 进 release；持久化用命名卷
+      # provisioning（datasources/dashboards）随 packaging 进 release；持久化用命名卷
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana-data:/var/lib/grafana
       # grafana_admin_password 须 0640（镜像 uid=472 gid=0）；setup/apply 会校正

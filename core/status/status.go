@@ -104,7 +104,7 @@ func (c *Client) Envoy() EnvoyStatus {
 
 func (c *Client) Traffic() TrafficStatus {
 	st := TrafficStatus{}
-	tcp, err1 := c.promQuery(`sum(envoy_cluster_upstream_cx_active{envoy_cluster_name=~"cluster-server-.*-tcp-game"}) or vector(0)`)
+	tcp, err1 := c.promQuery(`sum(envoy_cluster_upstream_cx_active{envoy_cluster_name=~"cluster-server-.*-tcp"}) or vector(0)`)
 	udp, err2 := c.promQuery(`sum(envoy_udp_downstream_sess_active) or vector(0)`)
 	rl, err3 := c.promQuery(`sum(increase(envoy_local_rate_limit_rate_limited[5m])) or vector(0)`)
 	if err1 != nil || err2 != nil || err3 != nil {

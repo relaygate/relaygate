@@ -1,15 +1,17 @@
 # RelayGate — 开发/构建忽略规则
-# 预设配置入库（*.example、core/deploy/）；运行态不入库（data/、.env）
+# 预设配置入库（*.example、packaging/）；运行态不入库
 
 # 构建与发布产物
 /bin/
 /dist/
 *.exe
 
-# 运行态（setup/render/apply 写入）
+# 源码树本地运行态（setup/render/apply；勿用顶层 data/ 作为源码布局）
+/.runtime/
+# 若误在源码根创建 data/，也不入库
 /data/
 
-# 本地环境文件（模板：根 .env.example、以及 core/deploy/**/.env.example）
+# 本地环境文件（模板：根 .env.example、以及 packaging/**/.env.example）
 .env
 .env.*
 !.env.example

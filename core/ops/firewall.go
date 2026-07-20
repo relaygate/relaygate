@@ -8,26 +8,29 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/relaygate/relaygate/core/config"
 )
 
-// writeFirewallRuntime materializes a runnable nft file under data/firewall/
-// from the deploy template (SSH port + include path rewritten).
+// writeFirewallRuntime materializes a runnable nft file under DataDir/firewall/
+// from the packaging template (SSH port + include path rewritten).
 func writeFirewallRuntime(root, sshPort string) (fwDir, runtimePath string, err error) {
-	fwDir = filepath.Join(root, "data", "firewall")
+	p := config.ResolvePaths(root)
+	fwDir = p.Firewall
 	if err := os.MkdirAll(fwDir, 0o755); err != nil {
 		return "", "", err
 	}
-	src := filepath.Join(root, "core", "deploy", "firewall", "gateway.nft")
+	src := filepath.Join(p.Packaging, "firewall", "gateway.nft")
 	b, err := os.ReadFile(src)
 	if err != nil {
 		return "", "", err
 	}
-	gamePorts := filepath.Join(fwDir, "game-ports.nft")
+	forwardPorts := filepath.Join(fwDir, "forward-ports.nft")
 	lines := strings.Split(string(b), "\n")
 	for i, line := range lines {
 		trim := strings.TrimSpace(line)
 		if strings.HasPrefix(trim, "include ") {
-			lines[i] = fmt.Sprintf(`include %q`, gamePorts)
+			lines[i] = fmt.Sprintf(`include %q`, forwardPorts)
 			continue
 		}
 		if strings.HasPrefix(line, "define SSH_PORT = ") {
@@ -103,8 +106,9 @@ func Firewall(root string, apply bool) error {
 	if err := os.WriteFile(restore, []byte(script), 0o700); err != nil {
 		return err
 	}
-	_ = os.MkdirAll(filepath.Join(root, "data", "backups"), 0o755)
-	_ = os.WriteFile(filepath.Join(root, "data", "backups", "firewall-latest"), []byte(restore+"\n"), 0o600)
+	backups := config.ResolvePaths(root).Backups
+	_ = os.MkdirAll(backups, 0o755)
+	_ = os.WriteFile(filepath.Join(backups, "firewall-latest"), []byte(restore+"\n"), 0o600)
 	fmt.Printf("旧规则备份: %s\n", backup)
 	fmt.Printf("恢复命令: %s\n", restore)
 

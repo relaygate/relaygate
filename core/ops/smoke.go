@@ -8,6 +8,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/relaygate/relaygate/core/config"
+	"github.com/relaygate/relaygate/core/resources"
 )
 
 // Smoke runs post-deploy smoke checks; host is optional canary target (default 127.0.0.1).
@@ -74,6 +77,7 @@ func Smoke(root string, host string) error {
 }
 
 // Canary probes TCP/UDP canary ports on host.
+// Prefer listen ports from enabled canary rules in resources.yaml; fall back to TCP_PORT/UDP_PORT env.
 func Canary(root string, host string) error {
 	env, err := LoadEnv(root)
 	if err != nil {
@@ -84,6 +88,23 @@ func Canary(root string, host string) error {
 	}
 	tcpPort := env.TCPPort
 	udpPort := env.UDPPort
+	resPath := config.ResolvePaths(root).Resources
+	if res, err := resources.Load(resPath); err == nil {
+		fmt.Print(resources.FormatLifecycle(res))
+		if t, u := res.CanaryListenPorts(); t > 0 || u > 0 {
+			if t > 0 {
+				tcpPort = strconv.Itoa(t)
+			}
+			if u > 0 {
+				udpPort = strconv.Itoa(u)
+			} else if t > 0 {
+				udpPort = tcpPort
+			}
+			fmt.Printf("使用 resources canary 端口 TCP=%s UDP=%s\n", tcpPort, udpPort)
+		} else {
+			fmt.Println("WARN: 无启用的 canary 规则，回退 TCP_PORT/UDP_PORT env")
+		}
+	}
 	timeoutSec, _ := strconv.Atoi(env.Timeout)
 	if timeoutSec <= 0 {
 		timeoutSec = 3
@@ -112,7 +133,7 @@ func Canary(root string, host string) error {
 			}
 		}
 	}
-	fmt.Println("下一步: relaygate server enable server-01 && relaygate reload")
+	fmt.Println("下一步: relaygate server enable <server> && relaygate reload")
 	return nil
 }
 

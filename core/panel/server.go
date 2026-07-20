@@ -552,9 +552,10 @@ func (s *Server) handleServersPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.tmpl.ExecuteTemplate(w, "servers.html", s.withPageData(r, map[string]any{
-		"Title":   "Servers",
-		"Nav":     "servers",
-		"Servers": res.Servers,
+		"Title":     "Servers",
+		"Nav":       "servers",
+		"Servers":   res.Servers,
+		"Lifecycle": lifecycleByName(res),
 	}))
 }
 
@@ -594,7 +595,15 @@ func (s *Server) handleApplyPage(w http.ResponseWriter, r *http.Request) {
 	msg := ""
 	summary := ""
 	if err == nil {
-		summary = envoygen.Summarize(res)
+		var b strings.Builder
+		before, prevStamp, _ := resources.LoadPreviousBackupResources(s.cfg.Root)
+		diff := resources.Diff(before, res)
+		if prevStamp != "" && before != nil {
+			diff.Note = "相对备份 " + prevStamp
+		}
+		b.WriteString(diff.String())
+		b.WriteString(envoygen.Summarize(res))
+		summary = b.String()
 	} else {
 		msg = err.Error()
 	}
@@ -798,12 +807,7 @@ func (s *Server) apiApply(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": err.Error()})
 		return
 	}
-	resourcesPath, envoyOut, _ := resources.DefaultPaths(s.cfg.Root)
-	stamp := time.Now().Format("20060102-150405")
-	if _, err := resources.BackupFiles(s.cfg.Root, stamp, resourcesPath, envoyOut); err != nil {
-		writeJSON(w, 500, map[string]any{"error": "backup failed: " + err.Error()})
-		return
-	}
+	// ReloadTo 内含 backup + change-summary + 分阶段 drain/restart
 	msg, err := ops.ReloadCapture(s.cfg.Root)
 	if err != nil {
 		s.lastApply = time.Now().Format(time.RFC3339) + " FAIL: " + err.Error() + "\n" + msg
@@ -976,12 +980,6 @@ func (s *Server) hxApply(w http.ResponseWriter, r *http.Request) {
 		s.renderApplyResult(w, err.Error(), true, "校验失败", "error")
 		return
 	}
-	resourcesPath, envoyOut, _ := resources.DefaultPaths(s.cfg.Root)
-	stamp := time.Now().Format("20060102-150405")
-	if _, err := resources.BackupFiles(s.cfg.Root, stamp, resourcesPath, envoyOut); err != nil {
-		s.renderApplyResult(w, "backup failed: "+err.Error(), true, "备份失败", "error")
-		return
-	}
 	msg, err := ops.ReloadCapture(s.cfg.Root)
 	if err != nil {
 		body := time.Now().Format(time.RFC3339) + " FAIL: " + err.Error() + "\n" + msg
@@ -989,14 +987,25 @@ func (s *Server) hxApply(w http.ResponseWriter, r *http.Request) {
 		s.renderApplyResult(w, body, true, "Apply 失败", "error")
 		return
 	}
-	body := time.Now().Format(time.RFC3339) + " OK\n" + envoygen.Summarize(res) + "\n" + msg
+	body := time.Now().Format(time.RFC3339) + " OK\n" + msg
 	s.lastApply = body
 	s.renderApplyResult(w, body, false, "Apply 成功", "ok")
 }
 
 func (s *Server) renderServersTable(w http.ResponseWriter, res *resources.Resources, message, kind string) {
 	triggerToast(w, message, kind)
-	_ = s.tmpl.ExecuteTemplate(w, "servers-table", map[string]any{"Servers": res.Servers})
+	_ = s.tmpl.ExecuteTemplate(w, "servers-table", map[string]any{
+		"Servers":   res.Servers,
+		"Lifecycle": lifecycleByName(res),
+	})
+}
+
+func lifecycleByName(res *resources.Resources) map[string]resources.ServerLifecycle {
+	out := make(map[string]resources.ServerLifecycle, len(res.Servers))
+	for _, lc := range res.LifecycleStatus() {
+		out[lc.Name] = lc
+	}
+	return out
 }
 
 func (s *Server) renderApplyResult(w http.ResponseWriter, body string, isErr bool, toastMsg, toastKind string) {

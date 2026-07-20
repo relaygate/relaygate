@@ -24,17 +24,17 @@ vet:
 fmt:
 	gofmt -w $$(find . -name '*.go' -not -path './.git/*')
 
+# Dev validate writes runtime under .runtime/ (not a source-tree data/).
 validate: build
-	@mkdir -p data
-	@test -f .env || cp gateway-01.env.example .env
-	@test -f data/resources.yaml || cp resources.example.yaml data/resources.yaml
+	@test -f .env || cp .env.example .env
+	./$(BIN) setup --noninteractive
 	./$(BIN) validate
 
 panel: build
 	./$(BIN) panel
 
 # Precompiled release tree (what install.sh extracts onto the host).
-# Packs versioned templates + empty data/ skeleton; relaygate setup seeds defaults into data/.
+# Packs versioned packaging/ + empty install-prefix data/ skeleton; setup seeds into DataDir.
 dist: build
 	rm -rf "$(DIST_DIR)"
 	mkdir -p "$(DIST_DIR)/bin" "$(DIST_DIR)/data/envoy" "$(DIST_DIR)/data/firewall" \
@@ -42,8 +42,7 @@ dist: build
 	cp -a "$(BIN)" "$(DIST_DIR)/bin/relaygate"
 	chmod 755 "$(DIST_DIR)/bin/relaygate"
 	cp -a frontend "$(DIST_DIR)/"
-	mkdir -p "$(DIST_DIR)/core"
-	cp -a core/deploy "$(DIST_DIR)/core/"
+	cp -a packaging "$(DIST_DIR)/"
 	# 根级初始化模板（非运行态）
 	cp -a .env.example resources.example.yaml \
 		gateway-01.env.example gateway-02.env.example \
@@ -64,4 +63,4 @@ dist-clean:
 
 clean: dist-clean
 	rm -f $(BIN)
-	rm -rf data/envoy/* data/firewall/* data/prometheus/* data/backups/* data/resources.yaml
+	rm -rf .runtime

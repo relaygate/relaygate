@@ -7,8 +7,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/relaygate/relaygate/core/config"
 	"github.com/relaygate/relaygate/core/doctor"
 	"github.com/relaygate/relaygate/core/envoygen"
+	"github.com/relaygate/relaygate/core/host"
 	"github.com/relaygate/relaygate/core/ops"
 	"github.com/relaygate/relaygate/core/panel"
 	"github.com/relaygate/relaygate/core/resources"
@@ -29,7 +31,7 @@ func Run(args []string) int {
 		return runRender(args[1:])
 	case "validate":
 		return exitErr(ops.Validate(mustRoot()))
-	case "apply", "deploy":
+	case "apply":
 		return exitErr(ops.Apply(mustRoot()))
 	case "reload":
 		return exitErr(ops.Reload(mustRoot()))
@@ -42,17 +44,17 @@ func Run(args []string) int {
 	case "drain":
 		return runDrain(args[1:])
 	case "smoke":
-		host := ""
+		hostArg := ""
 		if len(args) > 1 {
-			host = args[1]
+			hostArg = args[1]
 		}
-		return exitErr(ops.Smoke(mustRoot(), host))
+		return exitErr(ops.Smoke(mustRoot(), hostArg))
 	case "canary":
-		host := ""
+		hostArg := ""
 		if len(args) > 1 {
-			host = args[1]
+			hostArg = args[1]
 		}
-		return exitErr(ops.Canary(mustRoot(), host))
+		return exitErr(ops.Canary(mustRoot(), hostArg))
 	case "firewall":
 		return runFirewall(args[1:])
 	case "baseline":
@@ -157,9 +159,9 @@ func runSetup(args []string) int {
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	nonInteractive := fs.Bool("noninteractive", false, "非交互（读环境变量）")
-	applySysctl := fs.Bool("sysctl", false, "同时应用 core/deploy/sysctl")
+	applySysctl := fs.Bool("sysctl", false, "同时应用 packaging/sysctl")
 	upgrade := fs.Bool("upgrade", false, "升级模式（保留 .env，更新 IMAGE_TAG 等）")
-	resetDefaults := fs.Bool("reset-defaults", false, "用仓库模板覆盖 data/resources.yaml 与 inventory（慎用）")
+	resetDefaults := fs.Bool("reset-defaults", false, "用仓库模板覆盖 DataDir/resources.yaml 与 inventory（慎用）")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "usage: relaygate setup [--noninteractive] [--sysctl] [--upgrade] [--reset-defaults]")
 	}
@@ -201,7 +203,7 @@ func runRender(args []string) int {
 	flags.SetOutput(os.Stderr)
 	resPath := flags.String("resources", defRes, "resources.yaml 路径")
 	envoyOut := flags.String("envoy-out", defEnvoy, "envoy.yaml 输出路径")
-	nftOut := flags.String("nft-out", defNFT, "game-ports.nft 输出路径")
+	nftOut := flags.String("nft-out", defNFT, "forward-ports.nft 输出路径")
 	checkOnly := flags.Bool("check-only", false, "仅校验，不写入文件")
 	withObs := flags.Bool("observability", false, "同时渲染 Prometheus 等可观测性配置")
 	flags.Usage = func() {
@@ -239,8 +241,17 @@ func runRender(args []string) int {
 }
 
 func runServer(args []string) int {
-	if len(args) == 0 || (args[0] != "enable" && args[0] != "disable") {
-		fmt.Fprintln(os.Stderr, "usage: relaygate server enable|disable <server-01> | --all-production")
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: relaygate server status")
+		fmt.Fprintln(os.Stderr, "       relaygate server enable|disable <server-01> | --all-production")
+		return 2
+	}
+	if args[0] == "status" {
+		return runServerStatus(args[1:])
+	}
+	if args[0] != "enable" && args[0] != "disable" {
+		fmt.Fprintln(os.Stderr, "usage: relaygate server status")
+		fmt.Fprintln(os.Stderr, "       relaygate server enable|disable <server-01> | --all-production")
 		return 2
 	}
 	enabled := args[0] == "enable"
@@ -298,7 +309,43 @@ func runServer(args []string) int {
 		return 0
 	}
 	fmt.Printf("已更新 %s（%d 条）\n", resourcesPath, changed)
+	// show post-change lifecycle
+	if res2, err := resources.Load(resourcesPath); err == nil {
+		fmt.Print(resources.FormatLifecycle(res2))
+	}
 	fmt.Println("请执行: relaygate reload   # 或 Panel → Apply")
+	return 0
+}
+
+func runServerStatus(args []string) int {
+	flags := flag.NewFlagSet("server status", flag.ContinueOnError)
+	flags.SetOutput(os.Stderr)
+	resourcesFlag := flags.String("resources", "", "resources.yaml 路径")
+	flags.Usage = func() {
+		fmt.Fprintln(flags.Output(), "usage: relaygate server status [--resources PATH]")
+	}
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if flags.NArg() != 0 {
+		flags.Usage()
+		return 2
+	}
+	resourcesPath := *resourcesFlag
+	if resourcesPath == "" {
+		resourcesPath, _, _ = resources.DefaultPaths(mustRoot())
+	}
+	res, err := resources.Load(resourcesPath)
+	if err != nil {
+		return exitErr(err)
+	}
+	fmt.Print(resources.FormatLifecycle(res))
+	enabled := res.EnabledRules()
+	fmt.Printf("启用规则: %d\n", len(enabled))
+	for _, rule := range enabled {
+		fmt.Printf("  - %s: %s/%d -> %s (%s)\n",
+			rule.Name, strings.ToUpper(rule.Protocol), rule.ListenPort, rule.Server, rule.Kind)
+	}
 	return 0
 }
 
@@ -309,13 +356,13 @@ func runPanel(args []string) int {
 	switch args[0] {
 	case "install":
 		root := mustRoot()
-		return exitErr(ops.PanelInstall(root, ops.PanelInstallOptions{
-			InstallDir: getenv("RELAYGATE_INSTALL_DIR", root),
-			SecretsDir: getenv("RELAYGATE_SECRETS_DIR", "/etc/relaygate/secrets"),
+		return exitErr(host.PanelInstall(root, host.PanelInstallOptions{
+			InstallDir: config.Getenv("RELAYGATE_INSTALL_DIR", root),
+			SecretsDir: config.Getenv("RELAYGATE_SECRETS_DIR", config.DefaultSecretsDir),
 			GrafanaURL: os.Getenv("GRAFANA_URL"),
 		}))
 	case "uninstall":
-		return exitErr(ops.PanelUninstall(false, false))
+		return exitErr(host.PanelUninstall(false, false))
 	case "help", "-h", "--help":
 		fmt.Fprintln(os.Stderr, "usage: relaygate panel")
 		fmt.Fprintln(os.Stderr, "       relaygate panel install|uninstall")
@@ -329,11 +376,11 @@ func runPanel(args []string) int {
 
 func runPanelServe() int {
 	cfg := panel.Config{
-		Root:          getenv("PANEL_ROOT", ""),
-		Bind:          getenv("PANEL_BIND", "127.0.0.1:9000"),
+		Root:          config.Getenv("PANEL_ROOT", ""),
+		Bind:          config.Getenv("PANEL_BIND", config.DefaultPanelBind),
 		AdminPassword: os.Getenv("PANEL_ADMIN_PASSWORD"),
-		EnvoyAdminURL: getenv("ENVOY_ADMIN_URL", "http://127.0.0.1:9901"),
-		PrometheusURL: getenv("PROMETHEUS_URL", "http://127.0.0.1:9090"),
+		EnvoyAdminURL: config.Getenv("ENVOY_ADMIN_URL", "http://127.0.0.1:9901"),
+		PrometheusURL: config.Getenv("PROMETHEUS_URL", "http://127.0.0.1:9090"),
 		GrafanaURL:    grafanaURLFromEnv(),
 	}
 	srv, err := panel.New(cfg)
@@ -351,14 +398,7 @@ func repoRoot() (string, error) {
 	if root := os.Getenv("PANEL_ROOT"); root != "" {
 		return root, nil
 	}
-	return resources.FindRoot()
-}
-
-func getenv(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
+	return config.FindRoot()
 }
 
 func grafanaURLFromEnv() string {
@@ -379,12 +419,13 @@ func usage(out *os.File) {
 配置:
   relaygate render [--check-only] [--observability]
   relaygate validate
+  relaygate server status
   relaygate server enable|disable <server-01>
   relaygate server enable --all-production
 
 数据面:
   relaygate apply                 # 校验 + compose up（首次/全量）
-  relaygate reload                # 渲染 + drain + 重启 Envoy
+  relaygate reload                # 备份摘要 + drain + 重启 Envoy（分阶段计时）
   relaygate rollback [STAMP]
   relaygate drain fail|ok|status
 
@@ -392,6 +433,7 @@ func usage(out *os.File) {
   relaygate smoke [HOST]
   relaygate canary [HOST]
   relaygate baseline
+  relaygate doctor                # 含 admin/drain/双活 env
 
 防火墙 / Panel:
   relaygate firewall [check|apply]   # 默认 check，不改主机

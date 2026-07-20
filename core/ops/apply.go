@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/relaygate/relaygate/core/config"
 )
 
 // Apply deploys the full data plane: backup, observability, validate, sysctl, compose up, wait ready.
@@ -27,24 +29,12 @@ func Apply(root string) error {
 		return err
 	}
 
-	stamp := time.Now().Format("20060102-150405")
-	backupDir := filepath.Join(root, "data", "backups", stamp)
-	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+	fmt.Printf("==> 备份并生成变更摘要 (gateway=%s)\n", env.GatewayName)
+	stamp, backupDir, _, err := BackupWithSummary(root, os.Stdout)
+	if err != nil {
 		return err
 	}
-	fmt.Printf("==> 备份到 %s (gateway=%s)\n", backupDir, env.GatewayName)
-	for _, rel := range []string{
-		"data/envoy/envoy.yaml",
-		"core/deploy/compose.yaml",
-		"data/resources.yaml",
-		"data/prometheus/prometheus.yml",
-	} {
-		src := filepath.Join(root, rel)
-		if b, err := os.ReadFile(src); err == nil {
-			_ = os.WriteFile(filepath.Join(backupDir, filepath.Base(rel)), b, 0o644)
-		}
-	}
-	_ = os.WriteFile(filepath.Join(root, "data", "backups", "latest"), []byte(stamp+"\n"), 0o644)
+	fmt.Printf("备份目录: %s (stamp=%s)\n", backupDir, stamp)
 
 	fmt.Println("==> 渲染并校验")
 	if err := Validate(root); err != nil {
@@ -78,9 +68,9 @@ func Apply(root string) error {
 	return nil
 }
 
-// ApplySysctl copies core/deploy/sysctl/gateway.conf when running as root.
+// ApplySysctl copies packaging/sysctl/gateway.conf when running as root.
 func ApplySysctl(root, gatewayName string) error {
-	src := filepath.Join(root, "core", "deploy", "sysctl", "gateway.conf")
+	src := filepath.Join(root, config.PackagingDirName, "sysctl", "gateway.conf")
 	if _, err := os.Stat(src); err != nil {
 		return nil
 	}

@@ -1,7 +1,7 @@
-# 资产源模板（可安全提交）：语义化主机 / 端口 / 规则
-# 真实业务配置请复制为 data/resources.yaml（该文件已被 .gitignore 忽略，不会入库）：
-#   cp resources.example.yaml data/resources.yaml
-# 修改 data/resources.yaml 后执行: ./bin/relaygate render
+# 资产源模板（可安全提交）。真实业务配置由 `relaygate setup` seed 到 DataDir：
+#   开发：.runtime/resources.yaml ；安装：/opt/relaygate/data/resources.yaml
+# 也可：export RELAYGATE_DATA_DIR=… && cp resources.example.yaml "$RELAYGATE_DATA_DIR/resources.yaml"
+# 修改后执行: ./bin/relaygate render
 
 meta:
   gateway_name: gateway-01
@@ -68,13 +68,13 @@ rules:
     listen_port: 11001
     enabled: true
 
-  - name: rule-server-01-tcp-game
+  - name: rule-server-01-tcp
     kind: production
     server: server-01
     protocol: TCP
     listen_port: 10001
     enabled: false
-  - name: rule-server-02-tcp-game
+  - name: rule-server-02-tcp
     kind: production
     server: server-02
     protocol: TCP

@@ -8,15 +8,18 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/relaygate/relaygate/core/config"
 )
 
 // Baseline collects a read-only host baseline into backups/baseline-*.txt.
 func Baseline(root string, outPath string) error {
-	_ = LoadDotEnv(filepath.Join(root, ".env"))
+	_ = config.LoadDotEnv(filepath.Join(root, ".env"))
 	env, _ := LoadEnv(root)
-	_ = os.MkdirAll(filepath.Join(root, "data", "backups"), 0o755)
+	p := config.ResolvePaths(root)
+	_ = os.MkdirAll(p.Backups, 0o755)
 	if outPath == "" {
-		outPath = filepath.Join(root, "data", "backups", "baseline-"+time.Now().Format("20060102-150405")+".txt")
+		outPath = filepath.Join(p.Backups, "baseline-"+time.Now().Format("20060102-150405")+".txt")
 	}
 	f, err := os.Create(outPath)
 	if err != nil {
@@ -82,9 +85,9 @@ func Baseline(root string, outPath string) error {
 
 // Fleet deploys gateways from inventory one-by-one: drain → sync → reload → smoke.
 func Fleet(root string, gatewaysCSV string) error {
-	inventory := getenv("INVENTORY", filepath.Join(root, "data", "inventory", "gateways.env"))
+	inventory := getenv("INVENTORY", config.ResolvePaths(root).Inventory)
 	if _, err := os.Stat(inventory); err != nil {
-		return fmt.Errorf("缺少 inventory: %s（请复制 gateways.env.example → data/inventory/gateways.env）", inventory)
+		return fmt.Errorf("缺少 inventory: %s（请复制 gateways.env.example → DataDir/inventory/gateways.env）", inventory)
 	}
 	vars, err := parseInventory(inventory)
 	if err != nil {
@@ -122,7 +125,7 @@ func Fleet(root string, gatewaysCSV string) error {
 		host := vars["HOST_"+key]
 		port := vars["SSH_PORT_"+key]
 		if port == "" {
-			port = "30455"
+			port = config.DefaultSSHPort
 		}
 		user := vars["SSH_USER_"+key]
 		if user == "" {
@@ -130,7 +133,7 @@ func Fleet(root string, gatewaysCSV string) error {
 		}
 		rdir := vars["REMOTE_DIR_"+key]
 		if rdir == "" {
-			rdir = "/opt/relaygate"
+			rdir = config.DefaultInstallDir
 		}
 		if host == "" {
 			return fmt.Errorf("inventory 未定义 HOST_%s", key)

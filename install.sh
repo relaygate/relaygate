@@ -263,14 +263,14 @@ Acquire_Release() {
   # tarball 内一层目录 relaygate-VERSION-linux-ARCH/
   PACKAGE_ROOT="$(find "${TMP_DIR}/extract" -mindepth 1 -maxdepth 1 -type d | head -1)"
   [[ -x "${PACKAGE_ROOT}/bin/relaygate" ]] || die "包内缺少 bin/relaygate"
-  [[ -d "${PACKAGE_ROOT}/frontend" && -d "${PACKAGE_ROOT}/core/deploy" ]] || die "包结构不完整"
+  [[ -d "${PACKAGE_ROOT}/frontend" && -d "${PACKAGE_ROOT}/packaging" ]] || die "包结构不完整"
   ok "release 就绪: ${VERSION} (${ARCH})"
 }
 
 Acquire_From_Source() {
   warn "FROM_SOURCE=1：开发兜底路径（默认应使用 release tar）"
   if [[ -n "$SOURCE_DIR" ]]; then
-    [[ -f "$SOURCE_DIR/go.mod" && -f "$SOURCE_DIR/core/deploy/compose.yaml" ]] ||
+    [[ -f "$SOURCE_DIR/go.mod" && -f "$SOURCE_DIR/packaging/compose.yaml" ]] ||
       die "RELAYGATE_SOURCE_DIR 无效: $SOURCE_DIR"
     PACKAGE_ROOT="$SOURCE_DIR"
   else
@@ -329,15 +329,21 @@ Place_Product() {
     rsync -a --delete \
       --exclude '.env' \
       --exclude 'data/' \
+      --exclude '.runtime/' \
+      --exclude 'core/' \
+      --exclude '.git/' \
+      --exclude 'dist/' \
+      --exclude 'bin/' \
       "${PACKAGE_ROOT}/" "${INSTALL_DIR}/"
-  else
-    # 无 rsync：逐项覆盖产品目录
-    mkdir -p "$INSTALL_DIR/bin" "$INSTALL_DIR/core" "$INSTALL_DIR/frontend"
+    mkdir -p "$INSTALL_DIR/bin"
     cp -a "${PACKAGE_ROOT}/bin/relaygate" "$INSTALL_DIR/bin/relaygate"
-    rm -rf "$INSTALL_DIR/frontend" "$INSTALL_DIR/core/deploy"
+  else
+    # 无 rsync：逐项覆盖产品目录（安装前缀含 packaging/ + data/ 运行态骨架）
+    mkdir -p "$INSTALL_DIR/bin" "$INSTALL_DIR/frontend"
+    cp -a "${PACKAGE_ROOT}/bin/relaygate" "$INSTALL_DIR/bin/relaygate"
+    rm -rf "$INSTALL_DIR/frontend" "$INSTALL_DIR/packaging"
     cp -a "${PACKAGE_ROOT}/frontend" "$INSTALL_DIR/"
-    mkdir -p "$INSTALL_DIR/core"
-    cp -a "${PACKAGE_ROOT}/core/deploy" "$INSTALL_DIR/core/"
+    cp -a "${PACKAGE_ROOT}/packaging" "$INSTALL_DIR/"
     for f in .env.example resources.example.yaml gateway-01.env.example gateway-02.env.example \
       gateways.env.example install.sh RELEASE go.mod; do
       [[ -e "${PACKAGE_ROOT}/$f" ]] && cp -a "${PACKAGE_ROOT}/$f" "$INSTALL_DIR/$f"
@@ -345,7 +351,7 @@ Place_Product() {
   fi
 
   mkdir -p "$INSTALL_DIR/data"/{envoy,firewall,prometheus,backups,inventory}
-  # Grafana 持久化用 compose 命名卷；密钥在 SECRETS_DIR（setup 生成），无 data/grafana 骨架
+  # Grafana 持久化用 compose 命名卷；密钥在 SECRETS_DIR（setup 生成）
   mkdir -p "$SECRETS_DIR"
   chmod 750 "$SECRETS_DIR" 2>/dev/null || true
   [[ -n "$saved_env" ]] && cp -a "$saved_env" "$INSTALL_DIR/.env" && rm -f "$saved_env"
@@ -356,7 +362,7 @@ Place_Product() {
   chmod 755 "$INSTALL_DIR/bin/relaygate"
   [[ -f "$INSTALL_DIR/install.sh" ]] || cp -a "$0" "$INSTALL_DIR/install.sh"
   [[ -x "$INSTALL_DIR/bin/relaygate" ]] || die "安装后缺少可执行 bin/relaygate"
-  [[ -d "$INSTALL_DIR/frontend" && -d "$INSTALL_DIR/core/deploy" ]] || die "安装后产品树不完整"
+  [[ -d "$INSTALL_DIR/frontend" && -d "$INSTALL_DIR/packaging" ]] || die "安装后产品树不完整"
   ok "产品已就位"
 }
 
@@ -368,6 +374,7 @@ Invoke_Product() {
   fi
   cd "$INSTALL_DIR"
   export RELAYGATE_INSTALL_DIR="$INSTALL_DIR" RELAYGATE_SECRETS_DIR="$SECRETS_DIR"
+  export RELAYGATE_DATA_DIR="${RELAYGATE_DATA_DIR:-$INSTALL_DIR/data}"
   export NONINTERACTIVE ENABLE_PANEL ENABLE_GRAFANA
   export GATEWAY_NAME="${GATEWAY_NAME:-}" GATEWAY_PUBLIC_IP="${GATEWAY_PUBLIC_IP:-}" GATEWAY_SSH_PORT="${GATEWAY_SSH_PORT:-}"
   export APPLY_FIREWALL FIREWALL_CONFIRM="${FIREWALL_CONFIRM:-}"
@@ -400,12 +407,12 @@ Invoke_Product() {
 
   if [[ "$APPLY_FIREWALL" == "1" ]]; then
     log "→ relaygate firewall apply"
-    SSH_PORT="${GATEWAY_SSH_PORT:-22}" APPLY_FIREWALL=1 \
+    SSH_PORT="${GATEWAY_SSH_PORT:-30455}" APPLY_FIREWALL=1 \
       FIREWALL_CONFIRM="${FIREWALL_CONFIRM:-}" ./bin/relaygate firewall apply ||
       die "firewall apply 失败"
   else
     log "→ relaygate firewall check"
-    SSH_PORT="${GATEWAY_SSH_PORT:-22}" ./bin/relaygate firewall check || true
+    SSH_PORT="${GATEWAY_SSH_PORT:-30455}" ./bin/relaygate firewall check || true
   fi
   ok "编排完成"
 }
@@ -417,7 +424,7 @@ Show_Result() {
   log "目录: ${INSTALL_DIR}  密钥: ${SECRETS_DIR}"
   log "运维: cd ${INSTALL_DIR} && ./bin/relaygate reload|smoke|doctor"
   if [[ "${ENABLE_PANEL:-1}" == "1" ]]; then
-    log "Panel: ssh -p ${GATEWAY_SSH_PORT:-22} -L 9000:127.0.0.1:9000 root@${GATEWAY_PUBLIC_IP:-<IP>}"
+    log "Panel: ssh -p ${GATEWAY_SSH_PORT:-30455} -L 9000:127.0.0.1:9000 root@${GATEWAY_PUBLIC_IP:-<IP>}"
   fi
 }
 
@@ -437,7 +444,7 @@ Uninstall_RelayGate() {
   if [[ -f .env ]]; then
     # shellcheck disable=SC1091
     set -a; source .env; set +a
-    docker compose -f core/deploy/compose.yaml --env-file .env down || true
+    docker compose -f packaging/compose.yaml --env-file .env down || true
   fi
   rm -f "/etc/sysctl.d/99-${GATEWAY_NAME:-gateway-01}.conf"
   [[ "$PURGE" == "1" ]] || { ok "已停止；保留配置。彻底清除加 PURGE=1 PURGE_CONFIRM=DELETE_RELAYGATE_DATA"; return 0; }
@@ -448,7 +455,7 @@ Uninstall_RelayGate() {
     read -r -p "输入 DELETE_RELAYGATE_DATA 确认清除: " answer </dev/tty
     [[ "$answer" == "DELETE_RELAYGATE_DATA" ]] || die "已取消"
   fi
-  docker compose -f core/deploy/compose.yaml --env-file .env down -v --remove-orphans 2>/dev/null || true
+  docker compose -f packaging/compose.yaml --env-file .env down -v --remove-orphans 2>/dev/null || true
   getent passwd relaygate >/dev/null 2>&1 && userdel relaygate 2>/dev/null || true
   getent group relaygate >/dev/null 2>&1 && groupdel relaygate 2>/dev/null || true
   rm -rf "$SECRETS_DIR" "$INSTALL_DIR" /etc/relaygate

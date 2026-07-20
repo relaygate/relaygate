@@ -1,4 +1,6 @@
-package ops
+// Package host implements host-level install tasks (systemd Panel, users, sudoers).
+// It is separate from core/panel (HTTP management UI) and core/ops (data-plane workflows).
+package host
 
 import (
 	"fmt"
@@ -6,6 +8,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/relaygate/relaygate/core/config"
+	"github.com/relaygate/relaygate/core/ops"
 )
 
 // PanelInstallOptions configures systemd panel installation.
@@ -21,13 +26,13 @@ type PanelInstallOptions struct {
 // PanelInstall installs Panel as a host systemd service (binary mode).
 func PanelInstall(root string, opt PanelInstallOptions) error {
 	if opt.InstallDir == "" {
-		opt.InstallDir = getenv("RELAYGATE_INSTALL_DIR", "/opt/relaygate")
+		opt.InstallDir = config.Getenv("RELAYGATE_INSTALL_DIR", config.DefaultInstallDir)
 	}
 	if opt.SecretsDir == "" {
-		opt.SecretsDir = getenv("RELAYGATE_SECRETS_DIR", "/etc/relaygate/secrets")
+		opt.SecretsDir = config.Getenv("RELAYGATE_SECRETS_DIR", config.DefaultSecretsDir)
 	}
 	if opt.GrafanaURL == "" {
-		opt.GrafanaURL = getenv("GRAFANA_URL", "http://127.0.0.1:3000")
+		opt.GrafanaURL = config.Getenv("GRAFANA_URL", "http://127.0.0.1:3000")
 	}
 	if os.Getenv("DRY_RUN") == "1" {
 		opt.DryRun = true
@@ -41,7 +46,7 @@ func PanelInstall(root string, opt PanelInstallOptions) error {
 		opt.EnableNow = true
 	}
 
-	if !IsRoot() && !opt.DryRun {
+	if !ops.IsRoot() && !opt.DryRun {
 		return fmt.Errorf("请以 root 运行（或 DRY_RUN=1）")
 	}
 	if _, err := os.Stat(opt.InstallDir); err != nil {
@@ -52,25 +57,26 @@ func PanelInstall(root string, opt PanelInstallOptions) error {
 		return fmt.Errorf("缺少可执行文件: %s", bin)
 	}
 
-	unitSrc := filepath.Join(root, "core", "deploy", "systemd", "relaygate-panel.service")
-	helperSrc := filepath.Join(root, "core", "deploy", "systemd", "relaygate-apply")
-	sudoersSrc := filepath.Join(root, "core", "deploy", "systemd", "relaygate-panel.sudoers")
-	if _, err := os.Stat(filepath.Join(opt.InstallDir, "core", "deploy", "systemd", "relaygate-panel.service")); err == nil {
-		unitSrc = filepath.Join(opt.InstallDir, "core", "deploy", "systemd", "relaygate-panel.service")
-		helperSrc = filepath.Join(opt.InstallDir, "core", "deploy", "systemd", "relaygate-apply")
-		sudoersSrc = filepath.Join(opt.InstallDir, "core", "deploy", "systemd", "relaygate-panel.sudoers")
+	dataDir := config.ResolveDataDir(opt.InstallDir)
+	unitSrc := filepath.Join(root, config.PackagingDirName, "systemd", "relaygate-panel.service")
+	helperSrc := filepath.Join(root, config.PackagingDirName, "systemd", "relaygate-apply")
+	sudoersSrc := filepath.Join(root, config.PackagingDirName, "systemd", "relaygate-panel.sudoers")
+	if _, err := os.Stat(filepath.Join(opt.InstallDir, config.PackagingDirName, "systemd", "relaygate-panel.service")); err == nil {
+		unitSrc = filepath.Join(opt.InstallDir, config.PackagingDirName, "systemd", "relaygate-panel.service")
+		helperSrc = filepath.Join(opt.InstallDir, config.PackagingDirName, "systemd", "relaygate-apply")
+		sudoersSrc = filepath.Join(opt.InstallDir, config.PackagingDirName, "systemd", "relaygate-panel.sudoers")
 	}
 	for _, p := range []string{unitSrc, helperSrc, sudoersSrc} {
 		if _, err := os.Stat(p); err != nil {
-			return fmt.Errorf("缺少 core/deploy/systemd 模板: %s", p)
+			return fmt.Errorf("缺少 packaging/systemd 模板: %s", p)
 		}
 	}
 
-	fmt.Printf("==> 安装 Panel systemd 服务（INSTALL_DIR=%s）\n", opt.InstallDir)
+	fmt.Printf("==> 安装 Panel systemd 服务（INSTALL_DIR=%s DATA_DIR=%s）\n", opt.InstallDir, dataDir)
 	if err := ensurePanelUser(opt); err != nil {
 		return err
 	}
-	if err := fixPanelPermissions(opt); err != nil {
+	if err := fixPanelPermissions(opt, dataDir); err != nil {
 		return err
 	}
 	if err := installHelperAndSudoers(opt, helperSrc, sudoersSrc); err != nil {
@@ -80,7 +86,7 @@ func PanelInstall(root string, opt PanelInstallOptions) error {
 	if err := renderUnit(opt, unitSrc, unitDst); err != nil {
 		return err
 	}
-	if err := writePanelEnv(opt); err != nil {
+	if err := writePanelEnv(opt, dataDir); err != nil {
 		return err
 	}
 
@@ -109,7 +115,7 @@ func panelRun(opt PanelInstallOptions) func(name string, args ...string) error {
 			fmt.Printf("[dry-run] %s %s\n", name, strings.Join(args, " "))
 			return nil
 		}
-		return RunCmd(opt.InstallDir, name, args...)
+		return ops.RunCmd(opt.InstallDir, name, args...)
 	}
 }
 
@@ -135,7 +141,7 @@ func ensurePanelUser(opt PanelInstallOptions) error {
 	return nil
 }
 
-func fixPanelPermissions(opt PanelInstallOptions) error {
+func fixPanelPermissions(opt PanelInstallOptions, dataDir string) error {
 	if opt.DryRun {
 		fmt.Println("[dry-run] fix permissions")
 		return nil
@@ -149,36 +155,36 @@ func fixPanelPermissions(opt PanelInstallOptions) error {
 		{opt.InstallDir, 0o755, "root", "root"},
 		{filepath.Join(opt.InstallDir, "bin"), 0o755, "root", "root"},
 		{filepath.Join(opt.InstallDir, "frontend"), 0o755, "root", "root"},
-		{filepath.Join(opt.InstallDir, "data"), 0o770, "root", "relaygate"},
-		{filepath.Join(opt.InstallDir, "data", "envoy"), 0o770, "root", "relaygate"},
-		{filepath.Join(opt.InstallDir, "data", "firewall"), 0o770, "root", "relaygate"},
-		{filepath.Join(opt.InstallDir, "data", "prometheus"), 0o770, "root", "relaygate"},
-		{filepath.Join(opt.InstallDir, "data", "backups"), 0o770, "root", "relaygate"},
+		{dataDir, 0o770, "root", "relaygate"},
+		{filepath.Join(dataDir, "envoy"), 0o770, "root", "relaygate"},
+		{filepath.Join(dataDir, "firewall"), 0o770, "root", "relaygate"},
+		{filepath.Join(dataDir, "prometheus"), 0o770, "root", "relaygate"},
+		{filepath.Join(dataDir, "backups"), 0o770, "root", "relaygate"},
 		{opt.SecretsDir, 0o750, "root", "relaygate"},
 	}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d.path, d.mode); err != nil {
 			return err
 		}
-		_ = RunCmd(opt.InstallDir, "chown", d.uid+":"+d.gid, d.path)
+		_ = ops.RunCmd(opt.InstallDir, "chown", d.uid+":"+d.gid, d.path)
 		_ = os.Chmod(d.path, d.mode)
 	}
 	bin := filepath.Join(opt.InstallDir, "bin", "relaygate")
-	_ = RunCmd(opt.InstallDir, "chown", "root:root", bin)
+	_ = ops.RunCmd(opt.InstallDir, "chown", "root:root", bin)
 	_ = os.Chmod(bin, 0o755)
-	res := filepath.Join(opt.InstallDir, "data", "resources.yaml")
+	res := filepath.Join(dataDir, "resources.yaml")
 	if _, err := os.Stat(res); err == nil {
-		_ = RunCmd(opt.InstallDir, "chown", "root:relaygate", res)
+		_ = ops.RunCmd(opt.InstallDir, "chown", "root:relaygate", res)
 		_ = os.Chmod(res, 0o660)
 	}
 	panelPW := filepath.Join(opt.SecretsDir, "panel_admin_password")
 	if _, err := os.Stat(panelPW); err == nil {
-		_ = RunCmd(opt.InstallDir, "chown", "root:relaygate", panelPW)
+		_ = ops.RunCmd(opt.InstallDir, "chown", "root:relaygate", panelPW)
 		_ = os.Chmod(panelPW, 0o640)
 	}
 	grafPW := filepath.Join(opt.SecretsDir, "grafana_admin_password")
 	if _, err := os.Stat(grafPW); err == nil {
-		_ = RunCmd(opt.InstallDir, "chown", "root:root", grafPW)
+		_ = ops.RunCmd(opt.InstallDir, "chown", "root:root", grafPW)
 		// 0640：Grafana 容器 gid=0 可读；勿用 0600（容器内读失败）
 		_ = os.Chmod(grafPW, 0o640)
 	}
@@ -202,7 +208,7 @@ func installHelperAndSudoers(opt PanelInstallOptions, helperSrc, sudoersSrc stri
 		return err
 	}
 	content := string(b)
-	if opt.InstallDir != "/opt/relaygate" {
+	if opt.InstallDir != config.DefaultInstallDir {
 		content = strings.ReplaceAll(content, `RELAYGATE_INSTALL_DIR:-/opt/relaygate`, "RELAYGATE_INSTALL_DIR:-"+opt.InstallDir)
 		content = strings.ReplaceAll(content, `INSTALL_DIR="${RELAYGATE_INSTALL_DIR:-/opt/relaygate}"`,
 			fmt.Sprintf(`INSTALL_DIR="${RELAYGATE_INSTALL_DIR:-%s}"`, opt.InstallDir))
@@ -210,7 +216,7 @@ func installHelperAndSudoers(opt PanelInstallOptions, helperSrc, sudoersSrc stri
 	if err := os.WriteFile(helperPath, []byte(content), 0o755); err != nil {
 		return err
 	}
-	_ = RunCmd(opt.InstallDir, "chown", "root:root", helperPath)
+	_ = ops.RunCmd(opt.InstallDir, "chown", "root:root", helperPath)
 
 	sb, err := os.ReadFile(sudoersSrc)
 	if err != nil {
@@ -219,9 +225,9 @@ func installHelperAndSudoers(opt PanelInstallOptions, helperSrc, sudoersSrc stri
 	if err := os.WriteFile(sudoersDst, sb, 0o440); err != nil {
 		return err
 	}
-	_ = RunCmd(opt.InstallDir, "chown", "root:root", sudoersDst)
-	if LookPath("visudo") {
-		if err := RunCmd(opt.InstallDir, "visudo", "-cf", sudoersDst); err != nil {
+	_ = ops.RunCmd(opt.InstallDir, "chown", "root:root", sudoersDst)
+	if ops.LookPath("visudo") {
+		if err := ops.RunCmd(opt.InstallDir, "visudo", "-cf", sudoersDst); err != nil {
 			return fmt.Errorf("sudoers 校验失败: %s", sudoersDst)
 		}
 	}
@@ -238,17 +244,17 @@ func renderUnit(opt PanelInstallOptions, src, dest string) error {
 		return err
 	}
 	content := string(b)
-	if opt.InstallDir != "/opt/relaygate" || opt.SecretsDir != "/etc/relaygate/secrets" {
-		content = strings.ReplaceAll(content, "/opt/relaygate", opt.InstallDir)
-		content = strings.ReplaceAll(content, "/etc/relaygate/secrets", opt.SecretsDir)
+	if opt.InstallDir != config.DefaultInstallDir || opt.SecretsDir != config.DefaultSecretsDir {
+		content = strings.ReplaceAll(content, config.DefaultInstallDir, opt.InstallDir)
+		content = strings.ReplaceAll(content, config.DefaultSecretsDir, opt.SecretsDir)
 	}
 	if err := os.WriteFile(dest, []byte(content), 0o644); err != nil {
 		return err
 	}
-	return RunCmd(opt.InstallDir, "chown", "root:root", dest)
+	return ops.RunCmd(opt.InstallDir, "chown", "root:root", dest)
 }
 
-func writePanelEnv(opt PanelInstallOptions) error {
+func writePanelEnv(opt PanelInstallOptions, dataDir string) error {
 	role := opt.PanelRole
 	if role == "" {
 		role = os.Getenv("PANEL_ROLE")
@@ -278,7 +284,7 @@ func writePanelEnv(opt PanelInstallOptions) error {
 	if err := os.MkdirAll("/etc/relaygate", 0o750); err != nil {
 		return err
 	}
-	_ = RunCmd(opt.InstallDir, "chown", "root:relaygate", "/etc/relaygate")
+	_ = ops.RunCmd(opt.InstallDir, "chown", "root:relaygate", "/etc/relaygate")
 	helperPath := "/usr/local/libexec/relaygate/apply"
 	body := fmt.Sprintf(`# Managed by relaygate panel install — Panel systemd EnvironmentFile
 PANEL_ROOT=%s
@@ -287,15 +293,16 @@ PANEL_ADMIN_PASSWORD_FILE=%s/panel_admin_password
 PANEL_ROLE=%s
 RELAYGATE_BIN=%s/bin/relaygate
 RELAYGATE_PRIVILEGED_HELPER=%s
+RELAYGATE_DATA_DIR=%s
 ENVOY_ADMIN_URL=http://127.0.0.1:9901
 PROMETHEUS_URL=http://127.0.0.1:9090
 %s
-`, opt.InstallDir, opt.SecretsDir, role, opt.InstallDir, helperPath, grafanaLine)
+`, opt.InstallDir, opt.SecretsDir, role, opt.InstallDir, helperPath, dataDir, grafanaLine)
 	panelEnv := "/etc/relaygate/panel.env"
 	if err := os.WriteFile(panelEnv, []byte(body), 0o640); err != nil {
 		return err
 	}
-	_ = RunCmd(opt.InstallDir, "chown", "root:relaygate", panelEnv)
+	_ = ops.RunCmd(opt.InstallDir, "chown", "root:relaygate", panelEnv)
 	return os.Chmod(panelEnv, 0o640)
 }
 
@@ -307,7 +314,7 @@ func PanelUninstall(purge, dryRun bool) error {
 	if os.Getenv("DRY_RUN") == "1" {
 		dryRun = true
 	}
-	if !IsRoot() && !dryRun {
+	if !ops.IsRoot() && !dryRun {
 		return fmt.Errorf("请以 root 运行（或 DRY_RUN=1）")
 	}
 	run := func(name string, args ...string) error {

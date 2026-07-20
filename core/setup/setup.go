@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/relaygate/relaygate/core/config"
 	"github.com/relaygate/relaygate/core/ops"
 )
 
@@ -32,18 +33,18 @@ type Options struct {
 	ImageTag       string
 	ApplySysctl    bool
 	Upgrade        bool
-	// ResetDefaults overwrites data/resources.yaml and data/inventory/gateways.env
-	// from versioned templates. Never silently overwrite without this flag.
+	// ResetDefaults overwrites DataDir/resources.yaml and inventory from versioned templates.
+	// Never silently overwrite without this flag.
 	ResetDefaults bool
 }
 
-// Run writes/updates .env and secrets scaffolding, then seeds data/ defaults.
+// Run writes/updates .env and secrets scaffolding, then seeds DataDir defaults.
 func Run(opt Options) error {
 	if opt.Root == "" {
 		return fmt.Errorf("root required")
 	}
 	if opt.SecretsDir == "" {
-		opt.SecretsDir = getenv("RELAYGATE_SECRETS_DIR", "/etc/relaygate/secrets")
+		opt.SecretsDir = config.Getenv("RELAYGATE_SECRETS_DIR", config.DefaultSecretsDir)
 	}
 	if opt.NonInteractive || os.Getenv("NONINTERACTIVE") == "1" {
 		opt.NonInteractive = true
@@ -82,6 +83,8 @@ func Run(opt Options) error {
 		_ = ops.ApplySysctl(opt.Root, opt.GatewayName)
 	}
 	fmt.Println("==> setup 完成")
+	fmt.Printf("产品根: %s\n", opt.Root)
+	fmt.Printf("运行态 DataDir: %s\n", config.ResolveDataDir(opt.Root))
 	fmt.Printf("配置: %s/.env；密钥: %s\n", opt.Root, opt.SecretsDir)
 	return nil
 }
@@ -155,9 +158,12 @@ func writeEnv(opt Options) error {
 		grafanaURL = "http://127.0.0.1:3000"
 	}
 
+	dataDir := config.ResolveDataDir(opt.Root)
+	_ = os.Setenv("RELAYGATE_DATA_DIR", dataDir)
+
 	if _, err := os.Stat(envPath); err == nil {
 		fmt.Println("==> 保留现有 .env（更新受管字段）")
-		return patchExistingEnv(envPath, opt, profiles, grafanaURL)
+		return patchExistingEnv(envPath, opt, profiles, grafanaURL, dataDir)
 	}
 
 	fmt.Printf("==> 生成 %s\n", envPath)
@@ -180,27 +186,30 @@ GRAFANA_ROOT_URL=/grafana/
 GRAFANA_ANONYMOUS=true
 PROMETHEUS_RETENTION=15d
 RELAYGATE_SECRETS_DIR=%s
+RELAYGATE_DATA_DIR=%s
 `, opt.GatewayName, opt.PublicIP, opt.SSHPort, opt.EnablePanel, opt.EnableGrafana, opt.GatewayName,
-		profiles, opt.ImageTag, grafanaURL, opt.SecretsDir)
+		profiles, opt.ImageTag, grafanaURL, opt.SecretsDir, dataDir)
 	if err := os.WriteFile(envPath, []byte(body), 0o600); err != nil {
 		return err
 	}
 	return nil
 }
 
-func patchExistingEnv(path string, opt Options, profiles, grafanaURL string) error {
+func patchExistingEnv(path string, opt Options, profiles, grafanaURL, dataDir string) error {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
 	lines := strings.Split(string(b), "\n")
 	set := map[string]string{
-		"IMAGE_TAG":         opt.ImageTag,
-		"ENABLE_PANEL":      opt.EnablePanel,
-		"ENABLE_GRAFANA":    opt.EnableGrafana,
-		"GATEWAY_NAME":      opt.GatewayName,
-		"GATEWAY_PUBLIC_IP": opt.PublicIP,
-		"GATEWAY_SSH_PORT":  opt.SSHPort,
+		"IMAGE_TAG":             opt.ImageTag,
+		"ENABLE_PANEL":          opt.EnablePanel,
+		"ENABLE_GRAFANA":        opt.EnableGrafana,
+		"GATEWAY_NAME":          opt.GatewayName,
+		"GATEWAY_PUBLIC_IP":     opt.PublicIP,
+		"GATEWAY_SSH_PORT":      opt.SSHPort,
+		"RELAYGATE_DATA_DIR":    dataDir,
+		"RELAYGATE_SECRETS_DIR": opt.SecretsDir,
 	}
 	if opt.EnablePanel == "1" && opt.EnableGrafana == "1" {
 		set["GRAFANA_URL"] = grafanaURL
@@ -314,7 +323,7 @@ func detectSSHPort() string {
 			}
 		}
 	}
-	return getenv("GATEWAY_SSH_PORT", "22")
+	return config.Getenv("GATEWAY_SSH_PORT", config.DefaultSSHPort)
 }
 
 func detectImageTag(root string) string {
@@ -372,13 +381,6 @@ func confirm(message string) bool {
 	}
 	a := strings.TrimSpace(sc.Text())
 	return a == "y" || a == "Y"
-}
-
-func getenv(k, d string) string {
-	if v := strings.TrimSpace(os.Getenv(k)); v != "" {
-		return v
-	}
-	return d
 }
 
 func firstNonEmpty(vals ...string) string {

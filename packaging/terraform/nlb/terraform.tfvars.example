@@ -25,7 +25,7 @@ health_check_protocol = "HTTP"
 health_check_port     = 9901
 health_check_path     = "/ready"
 
-# 可选：自动给实例 SG 加游戏端口与健康检查入站
+# 可选：自动给实例 SG 加转发端口与健康检查入站
 # gateway_security_group_id = "sg-xxxxxxxx"
 # client_cidrs = ["0.0.0.0/0"]
 
