@@ -56,6 +56,31 @@ func TestRenderNFTIncludesPortsAndRateLimits(t *testing.T) {
 		"FORWARD_TCP_NEW_CONN_BURST = 80",
 		"FORWARD_UDP_PPS_RATE = 600/second",
 		"FORWARD_UDP_PPS_BURST = 1200",
+		"ACL_DENY = { 192.0.2.255 }",
+		"ACL_ALLOW = { 0.0.0.0/0 }",
+		"ACL_ALLOW_STRICT = 0",
+	} {
+		if !strings.Contains(nft, needle) {
+			t.Fatalf("nft missing %q\n%s", needle, nft)
+		}
+	}
+}
+
+func TestRenderNFTIncludesACLSets(t *testing.T) {
+	r := testResources()
+	r.ACL = resources.ACL{
+		Deny:  []string{"1.2.3.4/32", "10.0.0.0/8"},
+		Allow: []string{"203.0.113.0/24"},
+	}
+	_, nft, err := Render(r)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	for _, needle := range []string{
+		"1.2.3.4/32",
+		"10.0.0.0/8",
+		"203.0.113.0/24",
+		"ACL_ALLOW_STRICT = 1",
 	} {
 		if !strings.Contains(nft, needle) {
 			t.Fatalf("nft missing %q\n%s", needle, nft)

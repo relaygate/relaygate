@@ -5,9 +5,10 @@
 ## 功能
 
 - **数据面**：Envoy 固定目标 TCP/UDP 转发，连接/PPS 限流
-- **运维入口**：`relaygate`（setup、doctor、渲染、部署、drain、冒烟、防火墙、Panel）
+- **运维入口**：`relaygate`（setup、doctor、渲染、部署、drain、冒烟、防火墙、ACL、profile、Panel）
 - **管理面**：Panel 默认 `127.0.0.1:9000`（Grafana 同源反代）；监控仅 loopback
 - **智能化**：增服自动分配端口；`reload` 自动 drain → 校验 → 重启 → ready
+- **加深能力**：IP 黑白名单（nft）、defaults 变更摘要、游戏类型 profile、per-rule 限速观测、NLB/drain 协同检查
 
 ## 安装
 
@@ -88,23 +89,63 @@ make dist VERSION=dev
          relaygate doctor [--strict-ports]   # 含 admin / drain 端点 / 双活 env
 
 配置     relaygate render [--check-only] [--observability]
-         relaygate validate                  # 端口冲突、rule→server、nft 同源校验
+         relaygate validate                  # 端口冲突、rule→server、nft/ACL 同源校验
          relaygate server status             # 每服 canary / production 是否生效
          relaygate server enable|disable <server-01>
+         relaygate acl list|add|remove …     # IP 黑白名单（写 resources → firewall apply）
+         relaygate profile list|show|apply   # 游戏类型 defaults 模板
+         relaygate changes [--limit N]       # 列出 backups/*/change-summary.txt
 
-数据面   relaygate apply                 # 首次/全量（含变更摘要备份）
+数据面   relaygate apply                 # 首次/全量（含变更摘要备份，含 defaults/acl）
          relaygate reload                # 改配置后：backup→drain→restart→ready（分阶段计时）
          relaygate rollback [STAMP]
-         relaygate drain fail|ok|status  # NLB 摘流 / 恢复（DRAIN_WAIT）
+         relaygate drain fail|ok|status  # NLB 摘流 / 恢复（DRAIN_WAIT + 控制台提示）
 
 检查     relaygate smoke [HOST]
          relaygate canary [HOST]         # 读 resources 启用 canary 端口
          relaygate baseline
+         relaygate doctor                # admin/drain/双活 + NLB/高防清单
 
-防火墙   relaygate firewall [check|apply]  # 端口集 + defaults.nft 限速同源
+防火墙   relaygate firewall [check|apply]  # 端口集 + defaults.nft + ACL set
 Panel    sudo relaygate panel install | uninstall
 多机     GATEWAYS=gateway-01,gateway-02 relaygate fleet
 ```
+
+### IP 黑白名单（ACL）
+
+`resources.yaml` 顶层 `acl`（nft 为真相源；SSH 不受约束）：
+
+```yaml
+acl:
+  deny: ["1.2.3.4/32"]   # 立即丢弃
+  allow: []              # 非空 = 严格模式，仅名单可进转发口
+```
+
+```bash
+relaygate acl add deny 1.2.3.4/32
+relaygate acl list
+relaygate validate
+sudo FIREWALL_CONFIRM=YES_FLUSH_NFTABLES ./bin/relaygate firewall apply
+# Panel → ACL 页亦可 CRUD；改名单通常无需 reload Envoy
+```
+
+### 游戏类型 profile
+
+预设在 `packaging/profiles/`（`default-safe`、`fps-udp-heavy`、`moba-tcp-stable`）：
+
+```bash
+relaygate profile list
+relaygate profile show fps-udp-heavy
+relaygate profile apply fps-udp-heavy   # 覆盖 resources defaults
+relaygate validate && relaygate reload
+sudo ./bin/relaygate firewall apply     # 若改了 nft 档位
+```
+
+### 变更摘要与限速观测
+
+- `reload`/`apply` 备份含 `change-summary.txt`，对比 **servers/rules/defaults/acl**
+- `relaygate changes --limit 10` 浏览历史摘要
+- Panel Overview：聚合 RL + **per-rule Top**（Envoy `rl_<rule>`）；Grafana 按 `envoy_local_rate_limit` 分解
 
 ### 推荐流程（增服 → canary → production）
 
@@ -147,11 +188,12 @@ relaygate smoke                  # 冒烟
 
 | 字段 | 生成物 |
 |------|--------|
-| `tcp_local_rate_limit_*` | Envoy TCP listener 本地限速 |
+| `tcp_local_rate_limit_*` | Envoy TCP listener 本地限速（`stat_prefix: rl_<rule>`） |
 | `defaults.nft.*` | `DataDir/firewall/forward-ports.nft` 中的 `FORWARD_*_RATE/BURST` |
 | 启用中的 rules 端口 | Envoy listeners + `FORWARD_TCP/UDP_PORTS` |
+| `acl.deny` / `acl.allow` | `ACL_DENY` / `ACL_ALLOW`（`gateway.nft` 在限速前 drop） |
 
-`packaging/firewall/gateway.nft` 引用这些 define，不再硬编码限速数字。改档位：编辑 `resources.yaml` → `validate` / `firewall check` → `firewall apply`。
+`packaging/firewall/gateway.nft` 引用这些 define，不再硬编码限速数字。改档位：编辑 `resources.yaml` 或 `profile apply` → `validate` / `firewall check` → `firewall apply`。
 
 ### 双活（可选）
 
@@ -197,12 +239,12 @@ sudo PURGE=1 bash /tmp/relaygate-install.sh --uninstall
 ```text
 *.example / .env.example   # seed 源（setup 复制到 DataDir）
 packaging/                 # 版本化安装资产：compose、systemd、grafana、
-                           # prometheus tpl、firewall、sysctl、terraform、observability
+                           # prometheus tpl、firewall、profiles、sysctl、terraform、observability
 core/
   cmd/relaygate/           # 薄 main
   config/                  # 路径 / 默认值 / LoadEnv（唯一入口）
-  cli/ panel/ setup/ doctor/ envoygen/ status/ resources/
-  ops/                     # 数据面运维（apply/reload/seed/firewall…）
+  cli/ panel/ setup/ doctor/ envoygen/ status/ resources/ profile/
+  ops/                     # 数据面运维（apply/reload/seed/firewall/changes…）
   host/                    # 宿主安装（Panel systemd），与 panel HTTP 分离
 frontend/                  # Panel UI
 install.sh                 # bootstrap：下载 release tar → setup/apply

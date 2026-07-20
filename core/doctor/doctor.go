@@ -196,6 +196,21 @@ func Run(opt Options) error {
 		return nil
 	})
 
+	check("NLB / 高防清单", func() error {
+		fmt.Println("检查项（人工核对，不接云 SDK）：")
+		fmt.Printf("  [ ] GATEWAY_PUBLIC_IP=%s 已写入高防回源 / 后端放行\n", env.GatewayPublicIP)
+		fmt.Printf("  [ ] NLB HC 目标 = %s （/ready）或 admin TCP\n", env.AdminURL("/ready"))
+		fmt.Printf("  [ ] DRAIN_WAIT=%ds ≥ HC unhealthy_threshold × interval\n", env.DrainWait)
+		if env.DrainWait < 10 {
+			fmt.Println("  WARN: DRAIN_WAIT < 10s，NLB 可能来不及摘流")
+		}
+		role := strings.ToLower(strings.TrimSpace(env.PanelRole))
+		fmt.Printf("  [ ] 双活角色 PANEL_ROLE=%s（滚动时先 drain 变更节点）\n", role)
+		fmt.Println("  [ ] 维护剧本: doctor → drain fail →（控制台确认 unhealthy）→ reload → smoke")
+		fmt.Println("  详见 packaging/terraform/nlb/README.md 与 README「L4 维护窗口」")
+		return nil
+	})
+
 	if opt.EnablePanel {
 		check("panel login", func() error {
 			if ops.HTTPGetOK("http://127.0.0.1:9000/login") {

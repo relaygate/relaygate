@@ -183,6 +183,7 @@ func Validate(root string) error {
 	for _, needle := range []string{
 		"FORWARD_TCP_PORTS", "FORWARD_UDP_PORTS",
 		"FORWARD_TCP_NEW_CONN_RATE", "FORWARD_UDP_PPS_RATE",
+		"ACL_DENY", "ACL_ALLOW", "ACL_ALLOW_STRICT",
 	} {
 		if !strings.Contains(string(nftBody), needle) {
 			return fmt.Errorf("forward-ports.nft 缺少 %s（resources→nft 同源渲染失败）", needle)

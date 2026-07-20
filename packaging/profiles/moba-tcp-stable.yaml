@@ -1,0 +1,23 @@
+# MOBA / 偏 TCP 稳定：适中连接与空闲超时，保守 UDP PPS
+name: moba-tcp-stable
+description: 适合 MOBA/偏 TCP 长连接；熔断与本地限速更稳
+
+defaults:
+  backend_tcp_port: 7777
+  backend_udp_port: 7778
+  tcp_idle_timeout: 3600s
+  udp_idle_timeout: 120s
+  max_connections: 1536
+  max_pending_requests: 384
+  tcp_local_rate_limit_per_sec: 250
+  tcp_local_rate_limit_burst: 500
+  health_check:
+    timeout: 2s
+    interval: 10s
+    unhealthy_threshold: 3
+    healthy_threshold: 2
+  nft:
+    tcp_new_conn_per_ip: 35/second
+    udp_pps_per_ip: 600/second
+    tcp_burst: 70
+    udp_burst: 1200

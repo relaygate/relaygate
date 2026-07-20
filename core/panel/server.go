@@ -226,6 +226,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/", s.handleOverview)
 	mux.HandleFunc("/servers", s.handleServersPage)
 	mux.HandleFunc("/rules", s.handleRulesPage)
+	mux.HandleFunc("/acl", s.handleACLPage)
 	mux.HandleFunc("/apply", s.handleApplyPage)
 	mux.HandleFunc("/monitoring", s.handleMonitoringPage)
 	if s.grafanaProxy != nil {
@@ -249,6 +250,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/servers/", s.withAuth(s.apiServerByName))
 	mux.HandleFunc("/api/rules", s.withAuth(s.apiRules))
 	mux.HandleFunc("/api/rules/", s.withAuth(s.apiRulePatch))
+	mux.HandleFunc("/api/acl", s.withAuth(s.apiACL))
 	mux.HandleFunc("/api/apply", s.withAuth(s.apiApply))
 	mux.HandleFunc("/api/status/envoy", s.withAuth(s.apiEnvoyStatus))
 	mux.HandleFunc("/api/status/traffic", s.withAuth(s.apiTrafficStatus))
@@ -256,6 +258,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/hx/servers", s.withAuth(s.hxServers))
 	mux.HandleFunc("/hx/servers/", s.withAuth(s.hxServerByName))
 	mux.HandleFunc("/hx/rules/", s.withAuth(s.hxRulePatch))
+	mux.HandleFunc("/hx/acl", s.withAuth(s.hxACLAdd))
+	mux.HandleFunc("/hx/acl/remove", s.withAuth(s.hxACLRemove))
 	mux.HandleFunc("/hx/apply", s.withAuth(s.hxApply))
 	return mux
 }
@@ -575,6 +579,24 @@ func (s *Server) handleRulesPage(w http.ResponseWriter, r *http.Request) {
 	}))
 }
 
+func (s *Server) handleACLPage(w http.ResponseWriter, r *http.Request) {
+	if !s.requirePageAuth(w, r) {
+		return
+	}
+	res, err := s.load()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	_ = res.ACL.NormalizeACL()
+	_ = s.tmpl.ExecuteTemplate(w, "acl.html", s.withPageData(r, map[string]any{
+		"Title": "ACL",
+		"Nav":   "acl",
+		"Deny":  res.ACL.Deny,
+		"Allow": res.ACL.Allow,
+	}))
+}
+
 func (s *Server) handleMonitoringPage(w http.ResponseWriter, r *http.Request) {
 	if !s.requirePageAuth(w, r) {
 		return
@@ -757,6 +779,73 @@ func (s *Server) apiRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, res.Rules)
+}
+
+func (s *Server) apiACL(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		res, err := s.load()
+		if err != nil {
+			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			return
+		}
+		_ = res.ACL.NormalizeACL()
+		writeJSON(w, 200, res.ACL)
+	case http.MethodPost:
+		var body struct {
+			List string `json:"list"`
+			CIDR string `json:"cidr"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSON(w, 400, map[string]any{"error": err.Error()})
+			return
+		}
+		res, err := s.load()
+		if err != nil {
+			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			return
+		}
+		canonical, err := res.AddACLEntry(body.List, body.CIDR)
+		if err != nil {
+			code := 400
+			if strings.Contains(err.Error(), "已存在") {
+				code = 409
+			}
+			writeJSON(w, code, map[string]any{"error": err.Error()})
+			return
+		}
+		if err := resources.Save(s.resourcesPath(), res); err != nil {
+			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 201, map[string]any{"ok": true, "cidr": canonical, "acl": res.ACL})
+	case http.MethodDelete:
+		var body struct {
+			List string `json:"list"`
+			CIDR string `json:"cidr"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSON(w, 400, map[string]any{"error": err.Error()})
+			return
+		}
+		res, err := s.load()
+		if err != nil {
+			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			return
+		}
+		canonical, err := res.RemoveACLEntry(body.List, body.CIDR)
+		if err != nil {
+			writeJSON(w, 404, map[string]any{"error": err.Error()})
+			return
+		}
+		if err := resources.Save(s.resourcesPath(), res); err != nil {
+			writeJSON(w, 500, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "cidr": canonical, "acl": res.ACL})
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
 }
 
 func (s *Server) apiRulePatch(w http.ResponseWriter, r *http.Request) {
@@ -964,6 +1053,71 @@ func (s *Server) hxRulePatch(w http.ResponseWriter, r *http.Request) {
 	}
 	triggerToast(w, state+name+"（尚未 Apply）", "ok")
 	_ = s.tmpl.ExecuteTemplate(w, "rules-table", map[string]any{"Rules": res.Rules})
+}
+
+func (s *Server) hxACLAdd(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		hxError(w, 400, err.Error())
+		return
+	}
+	res, err := s.load()
+	if err != nil {
+		hxError(w, 500, err.Error())
+		return
+	}
+	canonical, err := res.AddACLEntry(r.FormValue("list"), r.FormValue("cidr"))
+	if err != nil {
+		code := 400
+		if strings.Contains(err.Error(), "已存在") {
+			code = 409
+		}
+		hxError(w, code, err.Error())
+		return
+	}
+	if err := resources.Save(s.resourcesPath(), res); err != nil {
+		hxError(w, 500, err.Error())
+		return
+	}
+	s.renderACLTable(w, res, "已添加 "+canonical+"（请 firewall apply）", "ok")
+}
+
+func (s *Server) hxACLRemove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		hxError(w, 400, err.Error())
+		return
+	}
+	res, err := s.load()
+	if err != nil {
+		hxError(w, 500, err.Error())
+		return
+	}
+	canonical, err := res.RemoveACLEntry(r.FormValue("list"), r.FormValue("cidr"))
+	if err != nil {
+		hxError(w, 404, err.Error())
+		return
+	}
+	if err := resources.Save(s.resourcesPath(), res); err != nil {
+		hxError(w, 500, err.Error())
+		return
+	}
+	s.renderACLTable(w, res, "已移除 "+canonical+"（请 firewall apply）", "ok")
+}
+
+func (s *Server) renderACLTable(w http.ResponseWriter, res *resources.Resources, message, kind string) {
+	_ = res.ACL.NormalizeACL()
+	triggerToast(w, message, kind)
+	_ = s.tmpl.ExecuteTemplate(w, "acl-table", map[string]any{
+		"Deny":  res.ACL.Deny,
+		"Allow": res.ACL.Allow,
+	})
 }
 
 func (s *Server) hxApply(w http.ResponseWriter, r *http.Request) {

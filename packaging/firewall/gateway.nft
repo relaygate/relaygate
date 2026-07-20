@@ -2,8 +2,8 @@
 # RelayGate 网关防火墙模板（版本化，随 packaging 发布）
 # 勿直接 nft -f 本文件：SSH 端口与 include 路径由 `relaygate firewall` 改写后
 # 写入 DataDir/firewall/.gateway-*.nft 再校验/应用。
-# 端口定义与限速 define 由 render 生成：DataDir/firewall/forward-ports.nft
-# （FORWARD_*_PORTS + FORWARD_*_RATE/BURST，同源自 resources.yaml defaults.nft）
+# 端口定义、限速与 ACL define 由 render 生成：DataDir/firewall/forward-ports.nft
+# （FORWARD_*_PORTS + FORWARD_*_RATE/BURST + ACL_DENY/ALLOW，同源自 resources.yaml）
 #
 # 警告：错误应用可能导致 SSH 断开。请保留现有会话并准备控制台。
 
@@ -29,8 +29,15 @@ table inet gateway {
     ip protocol icmp accept
     ip6 nexthdr ipv6-icmp accept
 
-    # SSH 运维入口（必须保留）
+    # SSH 运维入口（必须保留；不受游戏 ACL 约束）
     tcp dport $SSH_PORT ct state new limit rate 10/second burst 20 packets accept comment "allow-ops-ssh"
+
+    # ACL deny（nft 真相源）：命中即丢，先于限速/放行
+    tcp dport $FORWARD_TCP_PORTS ip saddr $ACL_DENY counter drop comment "acl-deny-tcp"
+    udp dport $FORWARD_UDP_PORTS ip saddr $ACL_DENY counter drop comment "acl-deny-udp"
+    # ACL allow：allow 非空时渲染为严格名单；空时 ACL_ALLOW=0.0.0.0/0，下列规则不生效
+    tcp dport $FORWARD_TCP_PORTS ip saddr != $ACL_ALLOW counter drop comment "acl-allow-miss-tcp"
+    udp dport $FORWARD_UDP_PORTS ip saddr != $ACL_ALLOW counter drop comment "acl-allow-miss-udp"
 
     # 转发 TCP 入口（rules 监听端口）+ 新建连接限速
     tcp dport $FORWARD_TCP_PORTS jump allow-forward-tcp
@@ -51,7 +58,7 @@ table inet gateway {
   }
 
   chain allow-forward-tcp {
-    # 每源 IP 新建连接限速：超速丢弃，其余放行（阈值来自 forward-ports.nft / resources defaults.nft）
+    # 每源 IP 新建连接限速：超速丢弃，其余放行（频率来自 forward-ports.nft / resources defaults.nft）
     ct state new meter tcp-new-per-ip size 65535 {
       ip saddr limit rate over $FORWARD_TCP_NEW_CONN_RATE burst $FORWARD_TCP_NEW_CONN_BURST packets
     } counter drop comment "limit-new-tcp"

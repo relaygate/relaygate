@@ -1,0 +1,23 @@
+# FPS / 高 UDP 吞吐：放宽 nft UDP PPS，缩短 UDP idle，略提高 TCP 本地限速
+name: fps-udp-heavy
+description: 适合 FPS 等高 UDP 包率场景；仍需云高防挡大流量洪泛
+
+defaults:
+  backend_tcp_port: 7777
+  backend_udp_port: 7778
+  tcp_idle_timeout: 1800s
+  udp_idle_timeout: 60s
+  max_connections: 2048
+  max_pending_requests: 512
+  tcp_local_rate_limit_per_sec: 400
+  tcp_local_rate_limit_burst: 800
+  health_check:
+    timeout: 2s
+    interval: 10s
+    unhealthy_threshold: 3
+    healthy_threshold: 2
+  nft:
+    tcp_new_conn_per_ip: 40/second
+    udp_pps_per_ip: 1200/second
+    tcp_burst: 80
+    udp_burst: 2400

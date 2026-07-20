@@ -21,6 +21,7 @@ type Resources struct {
 	Meta     Meta     `yaml:"meta"`
 	Gateway  Gateway  `yaml:"gateway"`
 	Defaults Defaults `yaml:"defaults"`
+	ACL      ACL      `yaml:"acl,omitempty"`
 	Servers  []Server `yaml:"servers"`
 	Rules    []Rule   `yaml:"rules"`
 }
@@ -138,6 +139,9 @@ func (r *Resources) EnabledRules() []Rule {
 }
 
 func (r *Resources) Validate() error {
+	if err := r.ACL.NormalizeACL(); err != nil {
+		return err
+	}
 	if len(r.Servers) == 0 {
 		return fmt.Errorf("servers 不能为空")
 	}

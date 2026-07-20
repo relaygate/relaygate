@@ -37,6 +37,29 @@
     <pre class="rg-card overflow-auto p-4 font-mono text-xs leading-relaxed text-rg-muted whitespace-pre-wrap">{{if .LastApply}}{{.LastApply}}{{else}}尚无{{end}}</pre>
   </section>
 
+  <section class="mb-8">
+    <h2 class="mb-3 text-lg font-semibold">限速命中 Top（按规则，5m）</h2>
+    {{if .Traffic.TopLimitedRules}}
+    <div class="rg-table-wrap">
+      <table class="rg-table">
+        <thead><tr><th>Rule</th><th>Prefix</th><th>Hits (5m)</th></tr></thead>
+        <tbody>
+          {{range .Traffic.TopLimitedRules}}
+          <tr>
+            <td class="font-medium">{{.Rule}}</td>
+            <td class="font-mono text-xs text-rg-muted">{{.Prefix}}</td>
+            <td>{{printf "%.0f" .Hits5m}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    <p class="mt-2 text-xs text-rg-muted">来自 Envoy <code>rl_&lt;rule&gt;</code> local_ratelimit。飙升时可考虑 ACL deny 或 <code>profile apply</code> 调档。</p>
+    {{else}}
+    <p class="rg-card p-4 text-sm text-rg-muted">暂无 per-rule 数据（Prometheus 不可达或近 5 分钟无命中）。</p>
+    {{end}}
+  </section>
+
   <section>
     <h2 class="mb-3 text-lg font-semibold">访问说明</h2>
     <ul class="rg-card space-y-2 p-4 text-sm text-rg-muted">

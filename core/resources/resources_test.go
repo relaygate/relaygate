@@ -240,6 +240,54 @@ func TestDiffDetectsToggleAndPortChange(t *testing.T) {
 	}
 }
 
+func TestDiffDefaultsAndACL(t *testing.T) {
+	before := sampleResources()
+	before.Defaults.TCPLocalRateLimitPerSec = 200
+	before.Defaults.Nft.UDPPPSPerIP = "500/second"
+	after := sampleResources()
+	after.Defaults = before.Defaults
+	after.Defaults.TCPLocalRateLimitPerSec = 400
+	after.Defaults.Nft.UDPPPSPerIP = "1200/second"
+	after.ACL.Deny = []string{"1.2.3.4/32"}
+	sum := Diff(before, after)
+	if len(sum.DefaultsChanged) == 0 {
+		t.Fatalf("expected defaults change: %+v", sum)
+	}
+	if len(sum.ACLChanged) == 0 {
+		t.Fatalf("expected acl change: %+v", sum)
+	}
+	text := sum.String()
+	if !strings.Contains(text, "defaults") || !strings.Contains(text, "acl") {
+		t.Fatalf("summary: %s", text)
+	}
+}
+
+func TestACLNormalizeAndCRUD(t *testing.T) {
+	r := sampleResources()
+	c, err := r.AddACLEntry("deny", "8.8.8.8")
+	if err != nil || c != "8.8.8.8/32" {
+		t.Fatalf("add deny: %v %q", err, c)
+	}
+	if _, err := r.AddACLEntry("deny", "8.8.8.8/32"); err == nil {
+		t.Fatal("expected duplicate")
+	}
+	if _, err := r.AddACLEntry("allow", "10.0.0.0/8"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.RemoveACLEntry("deny", "8.8.8.8"); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.ACL.Deny) != 0 {
+		t.Fatalf("deny should be empty: %+v", r.ACL.Deny)
+	}
+	if _, err := NormalizeCIDR("not-a-cidr"); err == nil {
+		t.Fatal("expected invalid cidr")
+	}
+}
+
 func TestApplyNftDefaults(t *testing.T) {
 	d := Defaults{}
 	d.ApplyNftDefaults()

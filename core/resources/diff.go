@@ -19,6 +19,8 @@ type ChangeSummary struct {
 	RulesRemoved   []string
 	RulesToggled   []string
 	PortChanges    []string
+	DefaultsChanged []string
+	ACLChanged     []string
 	Note           string
 }
 
@@ -26,7 +28,8 @@ func (c ChangeSummary) Empty() bool {
 	return len(c.ServersAdded) == 0 && len(c.ServersRemoved) == 0 &&
 		len(c.ServersChanged) == 0 && len(c.RulesAdded) == 0 &&
 		len(c.RulesRemoved) == 0 && len(c.RulesToggled) == 0 &&
-		len(c.PortChanges) == 0
+		len(c.PortChanges) == 0 && len(c.DefaultsChanged) == 0 &&
+		len(c.ACLChanged) == 0
 }
 
 func (c ChangeSummary) String() string {
@@ -35,7 +38,7 @@ func (c ChangeSummary) String() string {
 		fmt.Fprintf(&b, "%s\n", c.Note)
 	}
 	if c.Empty() {
-		b.WriteString("变更摘要: （相对上次备份无 server/rule 差异）\n")
+		b.WriteString("变更摘要: （相对上次备份无 server/rule/defaults/acl 差异）\n")
 		return b.String()
 	}
 	b.WriteString("变更摘要:\n")
@@ -46,6 +49,8 @@ func (c ChangeSummary) String() string {
 	writeList(&b, "  - rule", c.RulesRemoved)
 	writeList(&b, "  ~ rule", c.RulesToggled)
 	writeList(&b, "  ~ port", c.PortChanges)
+	writeList(&b, "  ~ defaults", c.DefaultsChanged)
+	writeList(&b, "  ~ acl", c.ACLChanged)
 	return b.String()
 }
 
@@ -74,6 +79,8 @@ func Diff(before, after *Resources) ChangeSummary {
 			c.RulesAdded = append(c.RulesAdded, fmt.Sprintf("%s (%s %s/%d → %s, %s)",
 				rule.Name, rule.Kind, strings.ToUpper(rule.Protocol), rule.ListenPort, rule.Server, state))
 		}
+		c.DefaultsChanged = append(c.DefaultsChanged, summarizeDefaults(after.Defaults)...)
+		c.ACLChanged = append(c.ACLChanged, summarizeACL(after.ACL)...)
 		return c
 	}
 
@@ -148,6 +155,9 @@ func Diff(before, after *Resources) ChangeSummary {
 		}
 	}
 
+	c.DefaultsChanged = diffDefaults(before.Defaults, after.Defaults)
+	c.ACLChanged = diffACL(before.ACL, after.ACL)
+
 	sort.Strings(c.ServersAdded)
 	sort.Strings(c.ServersRemoved)
 	sort.Strings(c.ServersChanged)
@@ -155,7 +165,101 @@ func Diff(before, after *Resources) ChangeSummary {
 	sort.Strings(c.RulesRemoved)
 	sort.Strings(c.RulesToggled)
 	sort.Strings(c.PortChanges)
+	sort.Strings(c.DefaultsChanged)
+	sort.Strings(c.ACLChanged)
 	return c
+}
+
+func diffDefaults(before, after Defaults) []string {
+	var parts []string
+	add := func(field string, a, b any) {
+		as, bs := fmt.Sprint(a), fmt.Sprint(b)
+		if as != bs {
+			parts = append(parts, fmt.Sprintf("%s %s→%s", field, as, bs))
+		}
+	}
+	add("backend_tcp_port", before.BackendTCPPort, after.BackendTCPPort)
+	add("backend_udp_port", before.BackendUDPPort, after.BackendUDPPort)
+	add("tcp_idle_timeout", before.TCPIdleTimeout, after.TCPIdleTimeout)
+	add("udp_idle_timeout", before.UDPIdleTimeout, after.UDPIdleTimeout)
+	add("max_connections", before.MaxConnections, after.MaxConnections)
+	add("max_pending_requests", before.MaxPendingRequests, after.MaxPendingRequests)
+	add("tcp_local_rate_limit_per_sec", before.TCPLocalRateLimitPerSec, after.TCPLocalRateLimitPerSec)
+	add("tcp_local_rate_limit_burst", before.TCPLocalRateLimitBurst, after.TCPLocalRateLimitBurst)
+	add("health.timeout", before.HealthCheck.Timeout, after.HealthCheck.Timeout)
+	add("health.interval", before.HealthCheck.Interval, after.HealthCheck.Interval)
+	add("health.unhealthy_threshold", before.HealthCheck.UnhealthyThreshold, after.HealthCheck.UnhealthyThreshold)
+	add("health.healthy_threshold", before.HealthCheck.HealthyThreshold, after.HealthCheck.HealthyThreshold)
+	add("nft.tcp_new_conn_per_ip", before.Nft.TCPNewConnPerIP, after.Nft.TCPNewConnPerIP)
+	add("nft.udp_pps_per_ip", before.Nft.UDPPPSPerIP, after.Nft.UDPPPSPerIP)
+	add("nft.tcp_burst", before.Nft.TCPBurst, after.Nft.TCPBurst)
+	add("nft.udp_burst", before.Nft.UDPBurst, after.Nft.UDPBurst)
+	return parts
+}
+
+func summarizeDefaults(d Defaults) []string {
+	return []string{
+		fmt.Sprintf("tcp_rl=%d/%d max_conn=%d nft.tcp=%s nft.udp=%s",
+			d.TCPLocalRateLimitPerSec, d.TCPLocalRateLimitBurst, d.MaxConnections,
+			d.Nft.TCPNewConnPerIP, d.Nft.UDPPPSPerIP),
+	}
+}
+
+func diffACL(before, after ACL) []string {
+	var parts []string
+	added, removed := listDelta(before.Deny, after.Deny)
+	for _, e := range added {
+		parts = append(parts, "+deny "+e)
+	}
+	for _, e := range removed {
+		parts = append(parts, "-deny "+e)
+	}
+	added, removed = listDelta(before.Allow, after.Allow)
+	for _, e := range added {
+		parts = append(parts, "+allow "+e)
+	}
+	for _, e := range removed {
+		parts = append(parts, "-allow "+e)
+	}
+	return parts
+}
+
+func summarizeACL(a ACL) []string {
+	var parts []string
+	if len(a.Deny) > 0 {
+		parts = append(parts, fmt.Sprintf("deny=%s", strings.Join(a.Deny, ",")))
+	}
+	if len(a.Allow) > 0 {
+		parts = append(parts, fmt.Sprintf("allow=%s (strict)", strings.Join(a.Allow, ",")))
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	return parts
+}
+
+func listDelta(before, after []string) (added, removed []string) {
+	bm := map[string]struct{}{}
+	am := map[string]struct{}{}
+	for _, e := range before {
+		bm[e] = struct{}{}
+	}
+	for _, e := range after {
+		am[e] = struct{}{}
+	}
+	for e := range am {
+		if _, ok := bm[e]; !ok {
+			added = append(added, e)
+		}
+	}
+	for e := range bm {
+		if _, ok := am[e]; !ok {
+			removed = append(removed, e)
+		}
+	}
+	sort.Strings(added)
+	sort.Strings(removed)
+	return added, removed
 }
 
 func ruleMap(r *Resources) map[string]Rule {
@@ -199,4 +303,52 @@ func WriteChangeSummaryFile(backupDir string, summary ChangeSummary) error {
 		return nil
 	}
 	return os.WriteFile(filepath.Join(backupDir, "change-summary.txt"), []byte(summary.String()), 0o644)
+}
+
+// ChangeEntry is one backup stamp with its change-summary.txt body.
+type ChangeEntry struct {
+	Stamp   string
+	Summary string
+	Path    string
+}
+
+// ListChangeSummaries reads DataDir/backups/*/change-summary.txt newest first.
+func ListChangeSummaries(root string, limit int) ([]ChangeEntry, error) {
+	p := config.ResolvePaths(root)
+	entries, err := os.ReadDir(p.Backups)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var stamps []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if name == "" || strings.HasPrefix(name, ".") {
+			continue
+		}
+		sumPath := filepath.Join(p.Backups, name, "change-summary.txt")
+		if _, err := os.Stat(sumPath); err != nil {
+			continue
+		}
+		stamps = append(stamps, name)
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(stamps)))
+	if limit > 0 && len(stamps) > limit {
+		stamps = stamps[:limit]
+	}
+	out := make([]ChangeEntry, 0, len(stamps))
+	for _, stamp := range stamps {
+		path := filepath.Join(p.Backups, stamp, "change-summary.txt")
+		b, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		out = append(out, ChangeEntry{Stamp: stamp, Summary: string(b), Path: path})
+	}
+	return out, nil
 }

@@ -55,7 +55,19 @@ groups:
           severity: warning
         annotations:
           summary: "{{ $labels.gateway }} TCP 本地限速命中频繁"
-          description: "近 5 分钟本地限速拒绝超过 50 次，可能存在扫描或突发流量。"
+          description: "近 5 分钟本地限速拒绝超过 50 次，可能存在扫描或突发流量。Panel Overview 可看 per-rule Top。"
+
+      - alert: EnvoyTcpLocalRateLimitedPerRule
+        expr: |
+          sum by (gateway, envoy_local_rate_limit) (
+            increase(envoy_local_rate_limit_rate_limited[5m])
+          ) > 30
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.gateway }} 规则 {{ $labels.envoy_local_rate_limit }} 限速命中偏高"
+          description: "单规则近 5 分钟限速超过 30 次；可考虑 ACL deny 或 profile 调档。"
 
       - alert: EnvoyUdpSessionErrors
         expr: |

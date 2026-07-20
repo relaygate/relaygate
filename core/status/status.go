@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -21,11 +22,19 @@ type EnvoyStatus struct {
 	Stats           map[string]string `json:"stats,omitempty"`
 }
 
+// RuleRateLimit is per-rule TCP local rate-limit hits (from Envoy rl_<rule> stat_prefix).
+type RuleRateLimit struct {
+	Rule   string  `json:"rule"`
+	Prefix string  `json:"prefix"`
+	Hits5m float64 `json:"hits_5m"`
+}
+
 type TrafficStatus struct {
-	TCPActiveConnections float64 `json:"tcp_active_connections"`
-	UDPActiveSessions    float64 `json:"udp_active_sessions"`
-	LocalRateLimited5m   float64 `json:"local_rate_limited_5m"`
-	Error                string  `json:"error,omitempty"`
+	TCPActiveConnections float64         `json:"tcp_active_connections"`
+	UDPActiveSessions    float64         `json:"udp_active_sessions"`
+	LocalRateLimited5m   float64         `json:"local_rate_limited_5m"`
+	TopLimitedRules      []RuleRateLimit `json:"top_limited_rules,omitempty"`
+	Error                string          `json:"error,omitempty"`
 }
 
 type Client struct {
@@ -107,6 +116,11 @@ func (c *Client) Traffic() TrafficStatus {
 	tcp, err1 := c.promQuery(`sum(envoy_cluster_upstream_cx_active{envoy_cluster_name=~"cluster-server-.*-tcp"}) or vector(0)`)
 	udp, err2 := c.promQuery(`sum(envoy_udp_downstream_sess_active) or vector(0)`)
 	rl, err3 := c.promQuery(`sum(increase(envoy_local_rate_limit_rate_limited[5m])) or vector(0)`)
+	top, err4 := c.promQueryVector(`topk(5, sum by (envoy_local_rate_limit) (increase(envoy_local_rate_limit_rate_limited[5m])))`)
+	if err4 != nil {
+		// Older/alternate label for local_ratelimit stat_prefix
+		top, err4 = c.promQueryVector(`topk(5, sum by (stat_prefix) (increase(envoy_local_rate_limit_rate_limited[5m])))`)
+	}
 	if err1 != nil || err2 != nil || err3 != nil {
 		var errs []string
 		if err1 != nil {
@@ -123,7 +137,35 @@ func (c *Client) Traffic() TrafficStatus {
 	st.TCPActiveConnections = tcp
 	st.UDPActiveSessions = udp
 	st.LocalRateLimited5m = rl
+	if err4 == nil {
+		st.TopLimitedRules = parseTopLimited(top)
+	}
 	return st
+}
+
+type promSample struct {
+	Metric map[string]string
+	Value  float64
+}
+
+func parseTopLimited(samples []promSample) []RuleRateLimit {
+	out := make([]RuleRateLimit, 0, len(samples))
+	for _, s := range samples {
+		prefix := s.Metric["envoy_local_rate_limit"]
+		if prefix == "" {
+			prefix = s.Metric["stat_prefix"]
+		}
+		if prefix == "" {
+			continue
+		}
+		rule := prefix
+		if strings.HasPrefix(rule, "rl_") {
+			rule = strings.ReplaceAll(strings.TrimPrefix(rule, "rl_"), "_", "-")
+		}
+		out = append(out, RuleRateLimit{Rule: rule, Prefix: prefix, Hits5m: s.Value})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Hits5m > out[j].Hits5m })
+	return out
 }
 
 func (c *Client) get(u string) (string, error) {
@@ -143,10 +185,21 @@ func (c *Client) get(u string) (string, error) {
 }
 
 func (c *Client) promQuery(expr string) (float64, error) {
+	samples, err := c.promQueryVector(expr)
+	if err != nil {
+		return 0, err
+	}
+	if len(samples) == 0 {
+		return 0, nil
+	}
+	return samples[0].Value, nil
+}
+
+func (c *Client) promQueryVector(expr string) ([]promSample, error) {
 	u := c.Prometheus + "/api/v1/query?query=" + url.QueryEscape(expr)
 	resp, err := c.HTTP.Get(u)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	var payload struct {
@@ -154,21 +207,30 @@ func (c *Client) promQuery(expr string) (float64, error) {
 		Data   struct {
 			ResultType string `json:"resultType"`
 			Result     []struct {
-				Value []any `json:"value"`
+				Metric map[string]string `json:"metric"`
+				Value  []any             `json:"value"`
 			} `json:"result"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return 0, err
+		return nil, err
 	}
 	if payload.Status != "success" {
-		return 0, fmt.Errorf("prometheus query failed")
+		return nil, fmt.Errorf("prometheus query failed")
 	}
-	if len(payload.Data.Result) == 0 || len(payload.Data.Result[0].Value) < 2 {
-		return 0, nil
+	out := make([]promSample, 0, len(payload.Data.Result))
+	for _, r := range payload.Data.Result {
+		if len(r.Value) < 2 {
+			continue
+		}
+		s, _ := r.Value[1].(string)
+		v, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			continue
+		}
+		out = append(out, promSample{Metric: r.Metric, Value: v})
 	}
-	s, _ := payload.Data.Result[0].Value[1].(string)
-	return strconv.ParseFloat(s, 64)
+	return out, nil
 }
 
 func findStat(body, key string) (string, bool) {

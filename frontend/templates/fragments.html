@@ -122,3 +122,52 @@
 {{define "apply-result"}}
 <pre id="apply-result" class="rg-card mt-4 overflow-auto p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap {{if .ApplyError}}text-rg-danger{{else}}text-rg-muted{{end}}">{{.ApplyBody}}</pre>
 {{end}}
+
+{{define "acl-table"}}
+<div id="acl-table" class="space-y-6">
+  <section class="rg-table-wrap">
+    <h2 class="mb-2 px-1 text-sm font-semibold uppercase tracking-wide text-rg-muted">deny</h2>
+    <table class="rg-table">
+      <thead><tr><th>CIDR</th><th></th></tr></thead>
+      <tbody>
+        {{range .Deny}}
+        <tr>
+          <td class="font-mono">{{.}}</td>
+          <td>
+            <form hx-post="/hx/acl/remove" hx-target="#acl-table" hx-swap="outerHTML" class="inline">
+              <input type="hidden" name="list" value="deny"/>
+              <input type="hidden" name="cidr" value="{{.}}"/>
+              <button type="submit" class="rg-btn-danger">移除</button>
+            </form>
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="2" class="px-3 py-6 text-center text-rg-muted">（空）</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </section>
+  <section class="rg-table-wrap">
+    <h2 class="mb-2 px-1 text-sm font-semibold uppercase tracking-wide text-rg-muted">allow {{if .Allow}}<span class="text-rg-accent">（严格模式）</span>{{else}}（非严格）{{end}}</h2>
+    <table class="rg-table">
+      <thead><tr><th>CIDR</th><th></th></tr></thead>
+      <tbody>
+        {{range .Allow}}
+        <tr>
+          <td class="font-mono">{{.}}</td>
+          <td>
+            <form hx-post="/hx/acl/remove" hx-target="#acl-table" hx-swap="outerHTML" class="inline">
+              <input type="hidden" name="list" value="allow"/>
+              <input type="hidden" name="cidr" value="{{.}}"/>
+              <button type="submit" class="rg-btn-danger">移除</button>
+            </form>
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="2" class="px-3 py-6 text-center text-rg-muted">（空 — 不启用严格白名单）</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </section>
+</div>
+{{end}}

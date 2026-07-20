@@ -43,6 +43,12 @@ defaults:
     tcp_burst: 60
     udp_burst: 1000
 
+# IP 黑白名单（nft 真相源；SSH 不受此约束）
+# deny: 立即丢弃；allow 非空时进入严格模式（仅名单可进转发口）
+acl:
+  deny: []
+  allow: []
+
 # 后端游戏服：请将 address 替换为真实 IP（仅示例，非真实业务地址）
 servers:
   - name: server-01

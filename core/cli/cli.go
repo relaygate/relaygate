@@ -13,6 +13,7 @@ import (
 	"github.com/relaygate/relaygate/core/host"
 	"github.com/relaygate/relaygate/core/ops"
 	"github.com/relaygate/relaygate/core/panel"
+	"github.com/relaygate/relaygate/core/profile"
 	"github.com/relaygate/relaygate/core/resources"
 	"github.com/relaygate/relaygate/core/setup"
 )
@@ -57,6 +58,12 @@ func Run(args []string) int {
 		return exitErr(ops.Canary(mustRoot(), hostArg))
 	case "firewall":
 		return runFirewall(args[1:])
+	case "acl":
+		return runACL(args[1:])
+	case "changes":
+		return runChanges(args[1:])
+	case "profile":
+		return runProfile(args[1:])
 	case "baseline":
 		out := ""
 		if len(args) > 1 {
@@ -153,6 +160,149 @@ func runFirewall(args []string) int {
 	}
 	_ = rest
 	return exitErr(ops.Firewall(mustRoot(), apply))
+}
+
+func runACL(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: relaygate acl list")
+		fmt.Fprintln(os.Stderr, "       relaygate acl add deny|allow CIDR")
+		fmt.Fprintln(os.Stderr, "       relaygate acl remove deny|allow CIDR")
+		return 2
+	}
+	root := mustRoot()
+	resPath, _, _ := resources.DefaultPaths(root)
+	switch args[0] {
+	case "list":
+		res, err := resources.Load(resPath)
+		if err != nil {
+			return exitErr(err)
+		}
+		_ = res.ACL.NormalizeACL()
+		fmt.Println("deny:")
+		if len(res.ACL.Deny) == 0 {
+			fmt.Println("  (empty)")
+		}
+		for _, c := range res.ACL.Deny {
+			fmt.Printf("  - %s\n", c)
+		}
+		fmt.Println("allow:")
+		if len(res.ACL.Allow) == 0 {
+			fmt.Println("  (empty — 非严格模式)")
+		} else {
+			fmt.Println("  (strict — 仅下列 CIDR 可进转发口)")
+		}
+		for _, c := range res.ACL.Allow {
+			fmt.Printf("  - %s\n", c)
+		}
+		fmt.Println("变更后请: relaygate validate && sudo relaygate firewall apply")
+		return 0
+	case "add", "remove":
+		if len(args) != 3 {
+			fmt.Fprintf(os.Stderr, "usage: relaygate acl %s deny|allow CIDR\n", args[0])
+			return 2
+		}
+		list, cidr := args[1], args[2]
+		res, err := resources.Load(resPath)
+		if err != nil {
+			return exitErr(err)
+		}
+		var canonical string
+		if args[0] == "add" {
+			canonical, err = res.AddACLEntry(list, cidr)
+		} else {
+			canonical, err = res.RemoveACLEntry(list, cidr)
+		}
+		if err != nil {
+			return exitErr(err)
+		}
+		if err := resources.Save(resPath, res); err != nil {
+			return exitErr(err)
+		}
+		fmt.Printf("%s %s %s → %s\n", args[0], list, canonical, resPath)
+		fmt.Println("请执行: relaygate validate && sudo relaygate firewall apply")
+		return 0
+	case "help", "-h", "--help":
+		fmt.Fprintln(os.Stderr, "usage: relaygate acl list|add|remove …")
+		return 2
+	default:
+		fmt.Fprintf(os.Stderr, "未知 acl 子命令: %s\n", args[0])
+		return 2
+	}
+}
+
+func runChanges(args []string) int {
+	fs := flag.NewFlagSet("changes", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	limit := fs.Int("limit", 20, "最多显示条数")
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "usage: relaygate changes [--limit N]")
+	}
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	return exitErr(ops.ListChanges(mustRoot(), *limit, os.Stdout))
+}
+
+func runProfile(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: relaygate profile list|show NAME|apply NAME")
+		return 2
+	}
+	root := mustRoot()
+	switch args[0] {
+	case "list":
+		names, err := profile.List(root)
+		if err != nil {
+			return exitErr(err)
+		}
+		if len(names) == 0 {
+			fmt.Println("（无预设）")
+			return 0
+		}
+		for _, n := range names {
+			p, err := profile.Load(root, n)
+			if err != nil {
+				fmt.Printf("- %s\n", n)
+				continue
+			}
+			desc := p.Description
+			if desc == "" {
+				desc = "(no description)"
+			}
+			fmt.Printf("- %s — %s\n", p.Name, desc)
+		}
+		return 0
+	case "show":
+		if len(args) != 2 {
+			fmt.Fprintln(os.Stderr, "usage: relaygate profile show NAME")
+			return 2
+		}
+		p, err := profile.Load(root, args[1])
+		if err != nil {
+			return exitErr(err)
+		}
+		fmt.Print(profile.FormatShow(p))
+		return 0
+	case "apply":
+		if len(args) != 2 {
+			fmt.Fprintln(os.Stderr, "usage: relaygate profile apply NAME")
+			return 2
+		}
+		sum, err := profile.Apply(root, args[1])
+		if err != nil {
+			return exitErr(err)
+		}
+		fmt.Print(sum.String())
+		fmt.Println("已写入 defaults。请: relaygate validate && relaygate reload")
+		fmt.Println("若改了 nft 档位，另需: sudo relaygate firewall apply")
+		return 0
+	case "help", "-h", "--help":
+		fmt.Fprintln(os.Stderr, "usage: relaygate profile list|show|apply")
+		return 2
+	default:
+		fmt.Fprintf(os.Stderr, "未知 profile 子命令: %s\n", args[0])
+		return 2
+	}
 }
 
 func runSetup(args []string) int {
@@ -422,6 +572,9 @@ func usage(out *os.File) {
   relaygate server status
   relaygate server enable|disable <server-01>
   relaygate server enable --all-production
+  relaygate acl list|add|remove deny|allow CIDR
+  relaygate profile list|show|apply NAME
+  relaygate changes [--limit N]
 
 数据面:
   relaygate apply                 # 校验 + compose up（首次/全量）
@@ -433,10 +586,10 @@ func usage(out *os.File) {
   relaygate smoke [HOST]
   relaygate canary [HOST]
   relaygate baseline
-  relaygate doctor                # 含 admin/drain/双活 env
+  relaygate doctor                # 含 admin/drain/双活/NLB 清单
 
 防火墙 / Panel:
-  relaygate firewall [check|apply]   # 默认 check，不改主机
+  relaygate firewall [check|apply]   # 默认 check；含 ACL set
   relaygate panel                    # 前台运行管理面
   relaygate panel install|uninstall  # systemd（需 root）
 
