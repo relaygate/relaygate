@@ -16,7 +16,18 @@ define SSH_PORT = 30455
 # 可选：限制管理面来源（示例，按需取消注释并修改）
 # define OPS_IPV4 = { 203.0.113.10 }
 
-table inet gateway {
+table inet relaygate {
+  set tcp_new_per_ip {
+    type ipv4_addr
+    flags dynamic
+    size 65535
+  }
+  set udp_pps_per_ip {
+    type ipv4_addr
+    flags dynamic
+    size 65535
+  }
+
   chain input {
     type filter hook input priority filter; policy drop;
 
@@ -58,18 +69,14 @@ table inet gateway {
   }
 
   chain allow-forward-tcp {
-    # 每源 IP 新建连接限速：超速丢弃，其余放行（频率来自 forward-ports.nft / resources defaults.nft）
-    ct state new meter tcp-new-per-ip size 65535 {
-      ip saddr limit rate over $FORWARD_TCP_NEW_CONN_RATE burst $FORWARD_TCP_NEW_CONN_BURST packets
-    } counter drop comment "limit-new-tcp"
+    # 每源 IP 新建连接限速（nft 1.0.x：dynamic set + 内联 rate/burst）
+    ct state new ip saddr @tcp_new_per_ip limit rate over @INLINE_TCP_NEW_CONN_RATE@ burst @INLINE_TCP_NEW_CONN_BURST@ packets counter drop comment "limit-new-tcp"
     accept comment "allow-forward-tcp"
   }
 
   chain allow-forward-udp {
     # 每源 IP UDP PPS 限速（防扫描/小流量洪泛；大流量仍需高防）
-    meter udp-pps-per-ip size 65535 {
-      ip saddr limit rate over $FORWARD_UDP_PPS_RATE burst $FORWARD_UDP_PPS_BURST packets
-    } counter drop comment "limit-udp-pps"
+    ip saddr @udp_pps_per_ip limit rate over @INLINE_UDP_PPS_RATE@ burst @INLINE_UDP_PPS_BURST@ packets counter drop comment "limit-udp-pps"
     accept comment "allow-forward-udp"
   }
 }

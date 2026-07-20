@@ -36,9 +36,9 @@ func testResources() *resources.Resources {
 			{Name: "server-01", Address: "10.0.0.11", TCPPort: 7777, UDPPort: 7778, HealthCheckPort: 7777, Enabled: true},
 		},
 		Rules: []resources.Rule{
-			{Name: "rule-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
-			{Name: "rule-canary-udp", Kind: "canary", Server: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
-			{Name: "rule-prod-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
+			{Name: "server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
+			{Name: "server-01-canary-udp", Kind: "canary", Server: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
+			{Name: "server-01-production-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
 		},
 	}
 }
@@ -52,9 +52,9 @@ func TestRenderNFTIncludesPortsAndRateLimits(t *testing.T) {
 	for _, needle := range []string{
 		"FORWARD_TCP_PORTS = { 11001 }",
 		"FORWARD_UDP_PORTS = { 11001 }",
-		"FORWARD_TCP_NEW_CONN_RATE = 40/second",
+		"FORWARD_TCP_NEW_CONN_RATE = 40",
 		"FORWARD_TCP_NEW_CONN_BURST = 80",
-		"FORWARD_UDP_PPS_RATE = 600/second",
+		"FORWARD_UDP_PPS_RATE = 600",
 		"FORWARD_UDP_PPS_BURST = 1200",
 		"ACL_DENY = { 192.0.2.255 }",
 		"ACL_ALLOW = { 0.0.0.0/0 }",
@@ -95,7 +95,7 @@ func TestRenderNFTAppliesDefaultRateLimits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
-	if !strings.Contains(nft, "FORWARD_TCP_NEW_CONN_RATE = 30/second") {
+	if !strings.Contains(nft, "FORWARD_TCP_NEW_CONN_RATE = 30") {
 		t.Fatalf("expected default rate, got:\n%s", nft)
 	}
 }

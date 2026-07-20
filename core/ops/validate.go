@@ -95,8 +95,13 @@ func ValidateEnvoyContainer(root string, env Env, skipWarn bool) error {
 	if _, err := os.Stat(envoyYAML); err != nil {
 		return fmt.Errorf("缺少 %s", envoyYAML)
 	}
+	logsDir := filepath.Join(config.ResolvePaths(root).DataDir, "envoy", "logs")
+	if err := os.MkdirAll(logsDir, 0o777); err != nil {
+		return fmt.Errorf("创建 Envoy 日志目录: %w", err)
+	}
 	err := RunCmd(root, "docker", "run", "--rm",
 		"-v", envoyYAML+":/etc/envoy/envoy.yaml:ro",
+		"-v", logsDir+":/var/log/envoy",
 		env.EnvoyImage,
 		"/usr/local/bin/envoy", "-c", "/etc/envoy/envoy.yaml", "--mode", "validate")
 	if err != nil && skipWarn {
@@ -138,7 +143,6 @@ func ValidateCompose(root string, env Env) error {
 	cmd.Stderr = os.Stderr
 	cmd.Env = append(os.Environ(),
 		"GATEWAY_NAME="+env.GatewayName,
-		"GRAFANA_ADMIN_PASSWORD=validate-only",
 		"RELAYGATE_DATA_DIR="+env.DataDir,
 	)
 	return cmd.Run()

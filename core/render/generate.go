@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/relaygate/relaygate/core/resources"
@@ -346,22 +347,23 @@ func renderNFT(rules []resources.Rule, nft resources.NftDefaults, acl resources.
 define FORWARD_TCP_PORTS = { %s }
 # UDP forward (listen) ports from enabled rules
 define FORWARD_UDP_PORTS = { %s }
-# Per-IP rate limits (nft) — same intent as defaults.nft
-define FORWARD_TCP_NEW_CONN_RATE = %s
+# Per-IP rate limits (nft) — numeric defines for nft 1.0.x (rate unit inlined in gateway.nft)
+define FORWARD_TCP_NEW_CONN_RATE = %d
 define FORWARD_TCP_NEW_CONN_BURST = %d
-define FORWARD_UDP_PPS_RATE = %s
+define FORWARD_UDP_PPS_RATE = %d
 define FORWARD_UDP_PPS_BURST = %d
 # ACL (nft truth): deny always applied; allow strict when ACL_ALLOW_STRICT=1
 define ACL_DENY = { %s }
 define ACL_ALLOW = { %s }
 define ACL_ALLOW_STRICT = %d
 `, joinInts(tcp), joinInts(udp),
-		nft.TCPNewConnPerIP, nft.TCPBurst,
-		nft.UDPPPSPerIP, nft.UDPBurst,
+		nftRateNumber(nft.TCPNewConnPerIP, 30), nft.TCPBurst,
+		nftRateNumber(nft.UDPPPSPerIP, 500), nft.UDPBurst,
 		strings.Join(denySet, ", "),
 		strings.Join(allowSet, ", "),
 		allowStrict)
 }
+
 
 func sortedPorts(set map[int]struct{}) []int {
 	out := make([]int, 0, len(set))
@@ -370,6 +372,23 @@ func sortedPorts(set map[int]struct{}) []int {
 	}
 	sort.Ints(out)
 	return out
+}
+
+// nftRateNumber extracts the numeric part of a rate like "30/second" for nft define.
+// Old nft (e.g. 1.0.2) rejects string defines; gateway.nft appends "/second" inline.
+func nftRateNumber(rate string, fallback int) int {
+	rate = strings.TrimSpace(rate)
+	if rate == "" {
+		return fallback
+	}
+	if i := strings.IndexByte(rate, '/'); i > 0 {
+		rate = rate[:i]
+	}
+	v, err := strconv.Atoi(strings.TrimSpace(rate))
+	if err != nil || v <= 0 {
+		return fallback
+	}
+	return v
 }
 
 func joinInts(ports []int) string {

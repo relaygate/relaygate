@@ -60,10 +60,7 @@ func EnsureGrafanaRuntime(root string, env Env) error {
 	pwFile := filepath.Join(secretsDir, "grafana_admin_password")
 	st, err := os.Stat(pwFile)
 	if err != nil || st.Size() == 0 {
-		if strings.TrimSpace(getenv("GRAFANA_ADMIN_PASSWORD", "")) != "" {
-			return nil
-		}
-		return fmt.Errorf("缺少 %s（先跑 relaygate setup）或设置 GRAFANA_ADMIN_PASSWORD", pwFile)
+		return fmt.Errorf("缺少 %s（先跑 relaygate setup）", pwFile)
 	}
 	// Ensure container (gid 0) can read; leave ownership to install/setup.
 	if err := os.Chmod(pwFile, 0o640); err != nil {

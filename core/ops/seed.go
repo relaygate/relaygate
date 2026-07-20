@@ -12,6 +12,7 @@ import (
 // runtimeDataDirs are created empty under DataDir (runtime only; not versioned).
 var runtimeDataDirs = []string{
 	"envoy",
+	"envoy/logs",
 	"firewall",
 	"prometheus",
 	"backups",
@@ -43,7 +44,12 @@ func SeedDefaults(root string, reset bool) error {
 
 func ensureDataDirs(dataDir string) error {
 	for _, name := range runtimeDataDirs {
-		if err := os.MkdirAll(filepath.Join(dataDir, name), 0o755); err != nil {
+		mode := os.FileMode(0o755)
+		if name == "envoy/logs" {
+			// Envoy 容器 uid=101 需写 access log；bind mount 到 DataDir。
+			mode = 0o777
+		}
+		if err := os.MkdirAll(filepath.Join(dataDir, name), mode); err != nil {
 			return err
 		}
 	}
