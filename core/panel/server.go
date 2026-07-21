@@ -32,7 +32,7 @@ const (
 	csrfCookie    = "panel_csrf"
 	csrfHeader    = "X-CSRF-Token"
 	csrfFormField = "csrf_token"
-	standbyRefuse = "standby Panel 拒绝写操作：请在 primary 节点操作；standby 应设置 ENABLE_PANEL=0 且 PANEL_ROLE=standby"
+	standbyRefuse = "standby 只读，请到 primary 操作"
 )
 
 type Config struct {

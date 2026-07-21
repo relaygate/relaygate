@@ -1,11 +1,11 @@
 {{template "page-start" .}}
   <header class="mb-6">
     <h1 class="text-2xl font-bold tracking-tight">ACL</h1>
-    <p class="mt-1 text-sm text-rg-muted">IP 黑白名单写入 resources.yaml → nftables 为真相源。改完后请 <code>firewall apply</code>（多数情况无需 reload Envoy）。SSH 不受此名单约束。</p>
+    <p class="mt-1 text-sm text-rg-muted">改完后请执行 <code>firewall apply</code>。</p>
   </header>
 
-  <section class="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-    <form class="rg-card space-y-3 p-5"
+  <section class="mb-6">
+    <form class="rg-card max-w-md space-y-3 p-5"
       hx-post="/hx/acl"
       hx-target="#acl-table"
       hx-swap="outerHTML"
@@ -14,8 +14,8 @@
       <label class="block space-y-1 text-xs text-rg-muted">
         <span>名单</span>
         <select class="rg-input" name="list" required>
-          <option value="deny">deny（黑名单）</option>
-          <option value="allow">allow（严格白名单）</option>
+          <option value="deny">deny</option>
+          <option value="allow">allow</option>
         </select>
       </label>
       <label class="block space-y-1 text-xs text-rg-muted">
@@ -24,15 +24,6 @@
       </label>
       <button class="rg-btn" type="submit">添加</button>
     </form>
-    <div class="rg-card space-y-2 p-5 text-sm text-rg-muted">
-      <h2 class="text-base font-semibold text-rg-text">说明</h2>
-      <ul class="list-disc space-y-1 pl-5">
-        <li><strong class="text-rg-text">deny</strong>：命中源 IP 在转发口立即 drop</li>
-        <li><strong class="text-rg-text">allow</strong> 非空时进入严格模式：仅名单可进游戏端口</li>
-        <li>allow 为空 = 不启用严格模式（仅 deny 生效）</li>
-        <li>生效：Panel 保存后执行 <code>sudo relaygate firewall apply</code></li>
-      </ul>
-    </div>
   </section>
 
   {{template "acl-table" .}}
