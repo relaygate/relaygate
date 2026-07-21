@@ -3,7 +3,9 @@ import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import { PlusIcon } from "lucide-react"
 
+import { IntentSourceNote } from "@/components/layout/IntentSourceNote"
 import { Page, PageHeader, Section } from "@/components/layout/PageParts"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -81,10 +83,12 @@ export function ACLPage() {
   function renderList(name: "deny" | "allow", entries: string[], strict?: boolean) {
     const title = name === "deny" ? "ACL_DENY" : "ACL_ALLOW"
     return (
-      <Section
-        title={`${title} ${strict ? t("acl.strict") : t("acl.non_strict")}`}
-        className="flex-1"
-      >
+      <Section title={title} className="flex-1">
+        {strict !== undefined ? (
+          <Badge variant={strict ? "default" : "secondary"} className="w-fit text-[10px]">
+            {strict ? t("acl.strict") : t("acl.non_strict")}
+          </Badge>
+        ) : null}
         {loading ? (
           <div className="flex flex-col gap-2">
             <div className="h-8 animate-pulse rounded-md bg-muted" />
@@ -138,6 +142,7 @@ export function ACLPage() {
           </Button>
         }
       />
+      <IntentSourceNote />
 
       <div className="grid gap-6 lg:grid-cols-2">
         {renderList("deny", deny)}

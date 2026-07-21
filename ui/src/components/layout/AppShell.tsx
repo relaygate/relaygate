@@ -238,7 +238,7 @@ export function AppShell() {
       <SidebarInset>
         <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b border-border/70 bg-background/90 px-3 backdrop-blur-sm">
           <SidebarTrigger className="-ml-0.5" />
-          <Separator orientation="vertical" className="mx-0.5 h-4" />
+          <Separator orientation="vertical" className="mx-0.5 h-4 self-center" />
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-xs font-medium text-muted-foreground">
               RelayGate Panel
@@ -252,7 +252,7 @@ export function AppShell() {
           <div className="ml-auto flex items-center gap-0.5">
             <LangMenu />
             <ThemeMenu />
-            <Separator orientation="vertical" className="mx-1 h-4" />
+            <Separator orientation="vertical" className="mx-1 h-4 self-center" />
             <UserMenu />
           </div>
         </header>

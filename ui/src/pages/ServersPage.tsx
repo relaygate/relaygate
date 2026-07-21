@@ -37,6 +37,7 @@ import {
   updateServer,
 } from "@/lib/api"
 import type { Server, ServerLifecycle } from "@/lib/types"
+import { stageLabel } from "@/lib/stage"
 import { tf } from "@/i18n"
 
 const emptyForm = {
@@ -201,7 +202,7 @@ export function ServersPage() {
       <div className="flex flex-wrap gap-1">
         {lc.canary_rule_count > 0 ? (
           <Badge variant={lc.canary_enabled ? "default" : "secondary"} className="text-[10px]">
-            {t("servers.canary")}
+            {stageLabel("canary")}
             {lc.canary_enabled && lc.canary_ports.length
               ? ` ${lc.canary_ports.join(",")}`
               : ""}
@@ -209,7 +210,7 @@ export function ServersPage() {
         ) : null}
         {lc.production_rule_count > 0 ? (
           <Badge variant={lc.production_enabled ? "default" : "outline"} className="text-[10px]">
-            {t("servers.production")}
+            {stageLabel("production")}
             {lc.production_enabled && lc.production_ports.length
               ? ` ${lc.production_ports.join(",")}`
               : ""}
@@ -333,7 +334,7 @@ export function ServersPage() {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{t("servers.add_heading")}</DialogTitle>
-            <DialogDescription>{t("servers.hint")}</DialogDescription>
+            <DialogDescription>{t("servers.add_description")}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAdd} className="flex flex-col gap-4">
             <FieldGroup className="grid gap-3 sm:grid-cols-2">

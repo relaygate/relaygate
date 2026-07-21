@@ -33,8 +33,11 @@
 ```
 
 - **意图源**：`DataDir/resources.yaml`（servers / rules / defaults / acl）
+- **声明即意图 · UI/文件同源**：Panel 表单与「配置」页读写**同一份**文件（结构化 vs 原文），不是两套库；「应用」把已声明意图推到 Envoy / nft（执行面拆分，意图仍合一）
 - **生成物**：Envoy 配置、`firewall/forward-ports.nft`（由 `render` / `apply` / `reload`）
 - **摘流**：Envoy admin `/healthcheck/fail|ok` + `/ready`，供 NLB 健康检查
+
+不按模块拆多份运行态 YAML（与 Komodo 多文件 Resource Sync 不同）；编辑面可分「后端节点 / 转发规则 / ACL」，磁盘真相源始终单文件。
 
 ## 快速开始 / 安装
 
@@ -125,7 +128,7 @@ Panel    sudo relaygate panel install|uninstall
 | 总览 | 聚合限速指标 + 转发规则限速 Top |
 | 后端节点 / 转发规则 | CRUD、启停、自动分配端口；后端节点「放量」启用正式转发 |
 | ACL 集合 | 访问控制名单 CRUD（改后需「应用防火墙」） |
-| 配置 | 整文件预览 / 校验 / 导入导出 `resources.yaml`（保存后需应用） |
+| 配置 | 整文件预览 / 编辑保存（含校验）/ 导出 `resources.yaml`（保存后需应用） |
 | 应用 | 变更摘要分流标签；**应用配置**（Envoy reload）与 **应用防火墙**（nft，强确认）分按钮 |
 | 运维 | 诊断 / 摘流（强确认）/ 冒烟·验证 / 防火墙检查（应用链到「应用」页）/ 运维档位预览与写入 |
 | 变更 | `backups/*/change-summary` 历史；回滚预览与强确认 |

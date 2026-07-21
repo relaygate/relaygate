@@ -49,6 +49,8 @@ type BusyKey =
   | "profile"
   | null
 
+type ProbeKind = "smoke" | "canary" | null
+
 export function OpsPage() {
   const { t } = useTranslation()
   const standby = useStandby()
@@ -57,6 +59,7 @@ export function OpsPage() {
   const [drainConfirm, setDrainConfirm] = useState("")
   const [drainAction, setDrainAction] = useState<"fail" | "ok" | null>(null)
   const [host, setHost] = useState("127.0.0.1")
+  const [probeKind, setProbeKind] = useState<ProbeKind>(null)
   const [smokeOut, setSmokeOut] = useState("")
   const [canaryOut, setCanaryOut] = useState("")
   const [firewallOut, setFirewallOut] = useState("")
@@ -64,6 +67,7 @@ export function OpsPage() {
   const [profileName, setProfileName] = useState("")
   const [profileOut, setProfileOut] = useState("")
   const [profileConfirm, setProfileConfirm] = useState("")
+  const [profileApplyOpen, setProfileApplyOpen] = useState(false)
   const [busy, setBusy] = useState<BusyKey>(null)
 
   useEffect(() => {
@@ -109,30 +113,30 @@ export function OpsPage() {
     }
   }
 
-  async function runSmoke() {
-    setBusy("smoke")
+  async function runProbe() {
+    if (!probeKind) return
+    setBusy(probeKind)
     try {
-      const res = await opsSmoke(host.trim() || "127.0.0.1")
-      setSmokeOut(res.output ?? res.error ?? t("error.no_output"))
-      toast.success(t("ops.toast_smoke_ok"))
+      const target = host.trim() || "127.0.0.1"
+      if (probeKind === "smoke") {
+        const res = await opsSmoke(target)
+        setSmokeOut(res.output ?? res.error ?? t("error.no_output"))
+        toast.success(t("ops.toast_smoke_ok"))
+      } else {
+        const res = await opsCanary(target)
+        setCanaryOut(res.output ?? res.error ?? t("error.no_output"))
+        toast.success(t("ops.toast_canary_ok"))
+      }
+      setProbeKind(null)
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : t("ops.toast_smoke_err")
-      setSmokeOut(msg)
-      toast.error(msg)
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function runCanary() {
-    setBusy("canary")
-    try {
-      const res = await opsCanary(host.trim() || "127.0.0.1")
-      setCanaryOut(res.output ?? res.error ?? t("error.no_output"))
-      toast.success(t("ops.toast_canary_ok"))
-    } catch (err) {
-      const msg = err instanceof ApiError ? err.message : t("ops.toast_canary_err")
-      setCanaryOut(msg)
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : probeKind === "smoke"
+            ? t("ops.toast_smoke_err")
+            : t("ops.toast_canary_err")
+      if (probeKind === "smoke") setSmokeOut(msg)
+      else setCanaryOut(msg)
       toast.error(msg)
     } finally {
       setBusy(null)
@@ -177,6 +181,7 @@ export function OpsPage() {
       const res = await opsProfileApply(profileName, profileConfirm.trim())
       setProfileOut((res.output ?? "") + t("ops.profile_applied_body"))
       setProfileConfirm("")
+      setProfileApplyOpen(false)
       toast.success(t("ops.toast_profile_ok"))
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : t("ops.toast_profile_err")
@@ -203,34 +208,37 @@ export function OpsPage() {
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
+            title={t("ops.btn_drain_status")}
             onClick={() => runDrain("status")}
             disabled={busy === "drain"}
           >
             {busy === "drain" ? <Spinner data-icon="inline-start" /> : null}
-            status
+            {t("ops.btn_drain_status")}
           </Button>
           <Button
             variant="outline"
+            title={t("ops.btn_drain_fail")}
             onClick={() => {
               setDrainAction("fail")
               setDrainConfirm("")
             }}
             disabled={standby}
           >
-            fail
+            {t("ops.btn_drain_fail")}
           </Button>
           <Button
             variant="outline"
+            title={t("ops.btn_drain_ok")}
             onClick={() => {
               setDrainAction("ok")
               setDrainConfirm("")
             }}
             disabled={standby}
           >
-            ok
+            {t("ops.btn_drain_ok")}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">{t("ops.drain_hint")}</p>
+        <p className="mt-2 text-xs text-muted-foreground">{t("ops.drain_hint")}</p>
         <DiffView value={drainOut} placeholder={t("error.no_output")} />
       </Section>
 
@@ -279,24 +287,66 @@ export function OpsPage() {
       </Dialog>
 
       <Section title={t("ops.smoke_canary")}>
-        <FieldGroup className="max-w-md">
-          <Field>
-            <FieldLabel htmlFor="ops-host">{t("ops.host")}</FieldLabel>
-            <Input id="ops-host" value={host} onChange={(e) => setHost(e.target.value)} />
-          </Field>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={runSmoke} disabled={busy === "smoke"}>
-              {busy === "smoke" ? <Spinner data-icon="inline-start" /> : null}
-              {t("ops.btn_smoke")}
-            </Button>
-            <Button variant="outline" onClick={runCanary} disabled={busy === "canary"}>
-              {busy === "canary" ? <Spinner data-icon="inline-start" /> : null}
-              {t("ops.btn_canary")}
-            </Button>
-          </div>
-        </FieldGroup>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setProbeKind("smoke")}
+            disabled={busy === "smoke" || busy === "canary"}
+          >
+            {t("ops.btn_smoke")}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setProbeKind("canary")}
+            disabled={busy === "smoke" || busy === "canary"}
+          >
+            {t("ops.btn_canary")}
+          </Button>
+        </div>
         <DiffView value={smokeOut || canaryOut} placeholder={t("error.no_output")} />
       </Section>
+
+      <Dialog
+        open={!!probeKind}
+        onOpenChange={(open) => {
+          if (!open && busy !== "smoke" && busy !== "canary") setProbeKind(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {probeKind === "canary" ? t("ops.btn_canary") : t("ops.btn_smoke")}
+            </DialogTitle>
+            <DialogDescription>{t("ops.smoke_canary")}</DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="ops-host">{t("ops.host")}</FieldLabel>
+              <Input
+                id="ops-host"
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
+                disabled={busy === "smoke" || busy === "canary"}
+              />
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setProbeKind(null)}
+              disabled={busy === "smoke" || busy === "canary"}
+            >
+              {t("ops.cancel")}
+            </Button>
+            <Button onClick={runProbe} disabled={busy === "smoke" || busy === "canary"}>
+              {busy === "smoke" || busy === "canary" ? (
+                <Spinner data-icon="inline-start" />
+              ) : null}
+              {t("ops.run")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Section title={t("ops.firewall")}>
         <p className="text-xs text-muted-foreground">
@@ -345,26 +395,71 @@ export function OpsPage() {
                 {busy === "preview" ? <Spinner data-icon="inline-start" /> : null}
                 {t("ops.profile_preview")}
               </Button>
+              <Button
+                onClick={() => {
+                  setProfileConfirm("")
+                  setProfileApplyOpen(true)
+                }}
+                disabled={standby || !profileName}
+              >
+                {t("ops.profile_apply")}
+              </Button>
             </div>
+          </FieldGroup>
+        )}
+        <DiffView value={profileOut} placeholder={t("error.no_output")} />
+      </Section>
+
+      <Dialog
+        open={profileApplyOpen}
+        onOpenChange={(open) => {
+          if (!open && busy !== "profile") {
+            setProfileApplyOpen(false)
+            setProfileConfirm("")
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("ops.profile_apply")}</DialogTitle>
+            <DialogDescription>
+              {profileName ? (
+                <>
+                  {t("ops.profile_select")}:{" "}
+                  <code className="font-mono text-foreground">{profileName}</code>
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
             <Field>
               <FieldLabel>{t("ops.profile_confirm")}</FieldLabel>
               <Input
                 value={profileConfirm}
                 onChange={(e) => setProfileConfirm(e.target.value)}
-                disabled={standby}
+                disabled={standby || busy === "profile"}
+                autoComplete="off"
               />
             </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setProfileApplyOpen(false)}
+              disabled={busy === "profile"}
+            >
+              {t("ops.cancel")}
+            </Button>
             <Button
               onClick={runProfileApply}
               disabled={standby || busy === "profile" || profileConfirm !== "APPLY_PROFILE"}
             >
               {busy === "profile" ? <Spinner data-icon="inline-start" /> : null}
-              Apply profile
+              {t("ops.profile_apply")}
             </Button>
-          </FieldGroup>
-        )}
-        <DiffView value={profileOut} placeholder={t("error.no_output")} />
-      </Section>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Page>
   )
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 import { DiffView } from "@/components/layout/DiffView"
+import { IntentSourceNote } from "@/components/layout/IntentSourceNote"
 import { Page, PageHeader, Section, StatBlock, StatGrid } from "@/components/layout/PageParts"
 import {
   Table,
@@ -49,7 +50,10 @@ export function OverviewPage() {
 
   return (
     <Page>
-      <PageHeader title={t("overview.title")} />
+      <PageHeader title={t("overview.title")} hint={t("overview.intent_body")} />
+      <Section title={t("overview.intent_title")}>
+        <IntentSourceNote />
+      </Section>
       <StatGrid>
         <StatBlock
           label={t("overview.envoy")}

@@ -1,16 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
-import {
-  DownloadIcon,
-  FileCodeIcon,
-  PackageIcon,
-  PencilIcon,
-  SaveIcon,
-  ShieldCheckIcon,
-} from "lucide-react"
+import { DownloadIcon, PencilIcon, SaveIcon } from "lucide-react"
 
+import { IntentSourceNote } from "@/components/layout/IntentSourceNote"
 import { Page, PageHeader, OutputPre, Section } from "@/components/layout/PageParts"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -22,18 +16,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { Textarea } from "@/components/ui/textarea"
 import { useStandby } from "@/context/SessionContext"
 import {
   ApiError,
-  exportConfigPack,
   exportConfigYAML,
   getConfigResources,
   putConfigResources,
@@ -44,7 +30,6 @@ import {
 export function ConfigPage() {
   const { t } = useTranslation()
   const standby = useStandby()
-  const fileRef = useRef<HTMLInputElement>(null)
 
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
@@ -52,7 +37,6 @@ export function ConfigPage() {
   const [mtime, setMtime] = useState("")
   const [etag, setEtag] = useState("")
   const [dirty, setDirty] = useState(false)
-  const [validating, setValidating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [result, setResult] = useState<ConfigValidateResult | null>(null)
@@ -78,24 +62,28 @@ export function ConfigPage() {
 
   function enterEdit() {
     setEditing(true)
-    toast.message(t("config.edit_warning"))
+    setResult(null)
+    setSaveDiff("")
   }
 
   function cancelEdit() {
     setEditing(false)
+    setConfirmOpen(false)
     load().catch(() => {})
   }
 
-  async function handleValidate() {
-    setValidating(true)
+  /** Validate then open confirm; save itself re-validates on the server. */
+  async function requestSave() {
+    if (standby || !dirty) return
+    setSaving(true)
     try {
       const res = await validateConfigResources(content)
       setResult(res)
-      if (res.ok) {
-        toast.success(t("config.toast_validate_ok"))
-      } else {
+      if (!res.ok) {
         toast.error(t("config.toast_validate_fail"))
+        return
       }
+      setConfirmOpen(true)
     } catch (err) {
       if (err instanceof ApiError && err.body && typeof err.body === "object") {
         const body = err.body as ConfigValidateResult
@@ -107,7 +95,7 @@ export function ConfigPage() {
       }
       toast.error(err instanceof ApiError ? err.message : t("config.toast_validate_fail"))
     } finally {
-      setValidating(false)
+      setSaving(false)
     }
   }
 
@@ -126,7 +114,7 @@ export function ConfigPage() {
       toast.success(t("config.toast_save_ok"))
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        const body = err.body as { content?: string; etag?: string; mtime?: string; error?: string }
+        const body = err.body as { content?: string; etag?: string; mtime?: string }
         toast.error(t("config.toast_conflict"))
         if (typeof body?.content === "string") {
           setContent(body.content)
@@ -134,6 +122,7 @@ export function ConfigPage() {
           setMtime(body.mtime ?? "")
           setDirty(false)
         }
+        setConfirmOpen(false)
         return
       }
       if (err instanceof ApiError && err.body && typeof err.body === "object") {
@@ -160,29 +149,6 @@ export function ConfigPage() {
     }
   }
 
-  async function handleExportZip() {
-    try {
-      await exportConfigPack()
-      toast.success(t("config.toast_export_ok"))
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : t("config.toast_export_fail"))
-    }
-  }
-
-  function onImportFile(file: File | null) {
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const text = typeof reader.result === "string" ? reader.result : ""
-      setContent(text)
-      setDirty(true)
-      setEditing(true)
-      setResult(null)
-      toast.message(t("config.import_ready"))
-    }
-    reader.readAsText(file)
-  }
-
   const errorText =
     result && !result.ok && result.errors?.length
       ? result.errors
@@ -203,66 +169,22 @@ export function ConfigPage() {
       ) : (
         <>
           <Button
-            variant="outline"
-            size="sm"
-            disabled={validating || loading}
-            onClick={handleValidate}
-          >
-            <ShieldCheckIcon data-icon="inline-start" />
-            {validating ? t("common.working") : t("config.validate")}
-          </Button>
-          <Button
             size="sm"
             disabled={standby || saving || loading || !dirty}
-            onClick={() => setConfirmOpen(true)}
+            onClick={requestSave}
           >
             <SaveIcon data-icon="inline-start" />
-            {t("config.save")}
+            {saving && !confirmOpen ? t("common.working") : t("config.save")}
           </Button>
           <Button variant="ghost" size="sm" disabled={saving} onClick={cancelEdit}>
             {t("config.cancel")}
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={standby}
-            onClick={() => fileRef.current?.click()}
-          >
-            <FileCodeIcon data-icon="inline-start" />
-            {t("config.import")}
-          </Button>
         </>
       )}
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={<Button variant="outline" size="sm" disabled={loading} />}
-        >
-          <DownloadIcon data-icon="inline-start" />
-          {t("config.export")}
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuGroup>
-            <DropdownMenuItem onClick={handleExportYAML}>
-              <DownloadIcon data-icon="inline-start" />
-              {t("config.export")} YAML
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleExportZip}>
-              <PackageIcon data-icon="inline-start" />
-              {t("config.export_pack")}
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".yaml,.yml,text/yaml,text/plain"
-        className="hidden"
-        onChange={(e) => {
-          onImportFile(e.target.files?.[0] ?? null)
-          e.target.value = ""
-        }}
-      />
+      <Button variant="outline" size="sm" disabled={loading || editing} onClick={handleExportYAML}>
+        <DownloadIcon data-icon="inline-start" />
+        {t("config.export")}
+      </Button>
     </div>
   )
 
@@ -270,13 +192,10 @@ export function ConfigPage() {
     <Page>
       <PageHeader
         title={t("config.title")}
-        hint={
-          mtime
-            ? `${t("config.hint")} · mtime ${mtime}`
-            : t("config.hint")
-        }
+        hint={mtime ? `${t("config.hint")} · mtime ${mtime}` : t("config.hint")}
         actions={headerActions}
       />
+      <IntentSourceNote />
 
       {editing ? (
         <Alert>

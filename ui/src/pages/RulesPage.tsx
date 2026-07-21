@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
+import { IntentSourceNote } from "@/components/layout/IntentSourceNote"
 import { Page, PageHeader } from "@/components/layout/PageParts"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
@@ -58,6 +59,7 @@ export function RulesPage() {
   return (
     <Page>
       <PageHeader title={t("rules.title")} hint={t("rules.hint")} />
+      <IntentSourceNote />
       <div className="rounded-md border border-border/60">
         <Table>
           <TableHeader>
@@ -97,6 +99,8 @@ export function RulesPage() {
                   <TableCell>{rule.server}</TableCell>
                   <TableCell>
                     <Switch
+                      title={t("rules.col_enabled")}
+                      aria-label={t("rules.col_enabled")}
                       checked={rule.enabled}
                       onCheckedChange={(v) => toggleRule(rule, v)}
                       disabled={standby || toggling === rule.name}
