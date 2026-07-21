@@ -152,7 +152,9 @@ export function ChangesPage({ embedded = false }: { embedded?: boolean }) {
                 >
                   <TableCell className="font-mono text-xs">{entry.stamp}</TableCell>
                   <TableCell className="max-w-md truncate text-xs text-muted-foreground">
-                    {stripChangeSummaryNoise(entry.summary).split("\n")[0] || entry.summary.split("\n")[0]}
+                    {stripChangeSummaryNoise(entry.summary, {
+                      noDiffLabel: t("changes.no_diff"),
+                    }).split("\n")[0] || entry.summary.split("\n")[0]}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">

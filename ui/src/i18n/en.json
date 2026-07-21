@@ -242,6 +242,7 @@
   "changes.rollback_ellipsis": "Rollback…",
   "changes.empty": "No change summaries yet",
   "changes.empty_hint": "Applies leave timestamped summaries you can review or roll back.",
+  "changes.no_diff": "No changes",
   "changes.detail": "Summary detail",
   "changes.detail_placeholder": "Select an entry",
   "changes.rollback": "Rollback",

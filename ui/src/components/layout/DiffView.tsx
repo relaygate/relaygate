@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { useTranslation } from "react-i18next"
 
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
@@ -94,12 +95,32 @@ function looksLikeChangeSummary(lines: string[]): boolean {
   return false
 }
 
+/** Legacy / canonical "no diff" one-liners from change-summary.txt. */
+function isNoDiffLine(trimmed: string): boolean {
+  if (!trimmed) return false
+  if (/^无差异$|^无变更$|^No changes$/i.test(trimmed)) return true
+  // （相对上次备份无 server/rule/defaults/acl 差异） / （无 server/rule/defaults/acl 差异）
+  if (
+    /^[（(]?(?:相对上次备份)?无(?:\s*server\/rule\/defaults\/acl\s*)?差异[）)]?$/i.test(
+      trimmed,
+    )
+  ) {
+    return true
+  }
+  return false
+}
+
 /**
  * Strip legacy redundant headers from change-summary text:
  * "相对备份 …" / "vs backup …" (incl. stamp lines) and bare
- * "变更摘要:" / "Change summary:" labels. Keeps historical files readable.
+ * "变更摘要:" / "Change summary:" labels. Normalizes empty-diff lines
+ * to a short label (default 无差异). Keeps historical files readable.
  */
-export function stripChangeSummaryNoise(text: string): string {
+export function stripChangeSummaryNoise(
+  text: string,
+  opts?: { noDiffLabel?: string },
+): string {
+  const noDiffLabel = opts?.noDiffLabel?.trim() || "无差异"
   return text
     .replace(/\r\n/g, "\n")
     .split("\n")
@@ -110,9 +131,12 @@ export function stripChangeSummaryNoise(text: string): string {
       if (/^(变更摘要|Change summary)\s*:?\s*$/i.test(trimmed)) return []
       const labeled = trimmed.match(/^(?:变更摘要|Change summary)\s*:\s*(.*)$/i)
       if (labeled) {
-        const rest = labeled[1]
-        return rest ? [rest] : []
+        const rest = labeled[1]?.trim() ?? ""
+        if (!rest) return []
+        if (isNoDiffLine(rest)) return [noDiffLabel]
+        return [rest]
       }
+      if (isNoDiffLine(trimmed)) return [noDiffLabel]
       return [line]
     })
     .join("\n")
@@ -134,12 +158,13 @@ export function DiffView({
   className?: string
   fixedHeight?: boolean
 }) {
+  const { t } = useTranslation()
   // Backend may return localized sentinels (e.g. 「尚无」/ "None") instead of "".
   const trimmed = value?.trim() ?? ""
   const text =
     !trimmed || trimmed === "尚无" || trimmed === "None"
       ? ""
-      : stripChangeSummaryNoise(value ?? "")
+      : stripChangeSummaryNoise(value ?? "", { noDiffLabel: t("changes.no_diff") })
   const shell = cn(
     "rounded-md border border-border bg-muted/50 font-mono text-[12px] leading-[1.55] text-foreground",
     fixedHeight && "h-44",

@@ -242,6 +242,7 @@
   "changes.rollback_ellipsis": "回滚…",
   "changes.empty": "尚无变更摘要",
   "changes.empty_hint": "应用配置后会按时间戳留下可回看的摘要。",
+  "changes.no_diff": "无差异",
   "changes.detail": "摘要详情",
   "changes.detail_placeholder": "选择一条查看",
   "changes.rollback": "回滚",

@@ -113,10 +113,12 @@ func (c ChangeSummary) String() string {
 		if c.Note != "" {
 			fmt.Fprintf(&b, "%s\n", c.Note)
 		} else {
-			b.WriteString("（无 server/rule/defaults/acl 差异）\n")
+			// Keep terse: no "相对备份" / "相对上次备份…" boilerplate.
+			b.WriteString("无差异\n")
 		}
 		return b.String()
 	}
+	// Non-empty: list +/-/~ only (callers must not prepend backup stamp headers).
 	if c.Note != "" {
 		fmt.Fprintf(&b, "%s\n", c.Note)
 	}

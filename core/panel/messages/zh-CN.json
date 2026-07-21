@@ -11,6 +11,7 @@
   "login.error_session": "无法创建会话",
   "apply.none": "尚无",
   "changes.no_summary": "（无变更摘要文件，仍可回滚该时间戳）",
+  "changes.no_diff": "无差异",
   "ops.fw_root_hint": "需要 root。请在主机执行：\nsudo relaygate firewall check\n",
   "ops.profile_applied_body": "\n默认配置已写入。请先应用配置；若改了 nftables 档位，另需执行防火墙应用。\n"
 }

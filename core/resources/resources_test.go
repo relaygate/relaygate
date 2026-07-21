@@ -368,6 +368,20 @@ func TestDiffDetectsToggleAndPortChange(t *testing.T) {
 	}
 }
 
+func TestChangeSummaryStringEmpty(t *testing.T) {
+	text := (ChangeSummary{}).String()
+	if strings.TrimSpace(text) != "无差异" {
+		t.Fatalf("empty summary want 无差异, got %q", text)
+	}
+	if strings.Contains(text, "相对") || strings.Contains(text, "server/rule") {
+		t.Fatalf("empty summary must stay terse: %q", text)
+	}
+	withNote := ChangeSummary{Note: "（无当前配置）"}.String()
+	if strings.TrimSpace(withNote) != "（无当前配置）" {
+		t.Fatalf("note preserved: %q", withNote)
+	}
+}
+
 func TestDiffDefaultsAndACL(t *testing.T) {
 	before := sampleResources()
 	before.Defaults.TCPLocalRateLimitPerSec = 200
