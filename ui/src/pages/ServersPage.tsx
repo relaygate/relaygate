@@ -5,7 +5,6 @@ import { toast } from "sonner"
 import { Page, PageHeader } from "@/components/layout/PageParts"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -16,6 +15,9 @@ import {
 } from "@/components/ui/dialog"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Spinner } from "@/components/ui/spinner"
+import { Switch } from "@/components/ui/switch"
 import {
   Table,
   TableBody,
@@ -52,10 +54,15 @@ export function ServersPage() {
   const [lifecycle, setLifecycle] = useState<Record<string, ServerLifecycle>>({})
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState(emptyForm)
+  const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<Server | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [toggling, setToggling] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const [promoteTarget, setPromoteTarget] = useState<string | null>(null)
+  const [promoting, setPromoting] = useState(false)
 
   const load = useCallback(async () => {
     const data = await getServers()
@@ -70,6 +77,7 @@ export function ServersPage() {
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
     if (standby) return
+    setAdding(true)
     try {
       const res = await createServer({
         name: form.name.trim(),
@@ -94,6 +102,8 @@ export function ServersPage() {
       }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : t("apply.toast_fail"))
+    } finally {
+      setAdding(false)
     }
   }
 
@@ -104,6 +114,7 @@ export function ServersPage() {
 
   async function saveEdit() {
     if (!editDraft || standby) return
+    setSaving(true)
     try {
       await updateServer(editDraft.name, {
         address: editDraft.address,
@@ -118,11 +129,43 @@ export function ServersPage() {
       toast.success(tf("servers.toast_saved", editDraft.name))
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : t("apply.toast_fail"))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function toggleEnabled(server: Server, enabled: boolean) {
+    if (standby || editing === server.name) return
+    setToggling(server.name)
+    setServers((prev) =>
+      prev.map((s) => (s.name === server.name ? { ...s, enabled } : s)),
+    )
+    try {
+      await updateServer(server.name, {
+        address: server.address,
+        tcp_port: server.tcp_port,
+        udp_port: server.udp_port,
+        health_check_port: server.health_check_port,
+        enabled,
+      })
+      toast.success(
+        enabled
+          ? tf("servers.toast_enabled", server.name)
+          : tf("servers.toast_disabled", server.name),
+      )
+    } catch (err) {
+      setServers((prev) =>
+        prev.map((s) => (s.name === server.name ? { ...s, enabled: server.enabled } : s)),
+      )
+      toast.error(err instanceof ApiError ? err.message : t("apply.toast_fail"))
+    } finally {
+      setToggling(null)
     }
   }
 
   async function confirmDelete() {
     if (!deleteTarget || standby) return
+    setDeleting(true)
     try {
       const res = await deleteServer(deleteTarget)
       await load()
@@ -130,11 +173,14 @@ export function ServersPage() {
       setDeleteTarget(null)
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : t("apply.toast_fail"))
+    } finally {
+      setDeleting(false)
     }
   }
 
   async function confirmPromote() {
     if (!promoteTarget || standby) return
+    setPromoting(true)
     try {
       const res = await promoteServer(promoteTarget)
       await load()
@@ -142,6 +188,8 @@ export function ServersPage() {
       setPromoteTarget(null)
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : t("apply.toast_fail"))
+    } finally {
+      setPromoting(false)
     }
   }
 
@@ -174,9 +222,12 @@ export function ServersPage() {
     <Page>
       <PageHeader title={t("servers.title")} hint={t("servers.hint")} />
 
-      <form onSubmit={handleAdd} className="flex flex-col gap-4 rounded-lg border border-border bg-card/30 p-4">
-        <h2 className="text-sm font-semibold">{t("servers.add_heading")}</h2>
-        <FieldGroup className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <form
+        onSubmit={handleAdd}
+        className="flex flex-col gap-3 rounded-md border border-border/60 bg-card/30 p-3.5"
+      >
+        <h2 className="text-[13px] font-semibold">{t("servers.add_heading")}</h2>
+        <FieldGroup className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           <Field>
             <FieldLabel htmlFor="srv-name">{t("servers.name")}</FieldLabel>
             <Input
@@ -227,21 +278,22 @@ export function ServersPage() {
               disabled={standby}
             />
           </Field>
-          <Field orientation="horizontal" className="items-end">
-            <Checkbox
+          <Field orientation="horizontal" className="items-center gap-2 pt-6">
+            <Switch
               checked={form.enabled}
-              onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v === true }))}
+              onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v }))}
               disabled={standby}
             />
             <FieldLabel>{t("servers.enabled")}</FieldLabel>
           </Field>
         </FieldGroup>
-        <Button type="submit" disabled={standby} className="w-fit">
+        <Button type="submit" disabled={standby || adding} className="w-fit">
+          {adding ? <Spinner data-icon="inline-start" /> : null}
           {t("servers.add")}
         </Button>
       </form>
 
-      <div className="rounded-lg border border-border">
+      <div className="rounded-md border border-border/60">
         <Table>
           <TableHeader>
             <TableRow>
@@ -251,20 +303,24 @@ export function ServersPage() {
               <TableHead>{t("servers.udp")}</TableHead>
               <TableHead>{t("servers.health")}</TableHead>
               <TableHead>{t("servers.enabled")}</TableHead>
-              <TableHead>Stage</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead>{t("servers.stage")}</TableHead>
+              <TableHead className="text-right">{t("shell.actions")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-muted-foreground">
-                  …
-                </TableCell>
-              </TableRow>
+              Array.from({ length: 4 }).map((_, i) => (
+                <TableRow key={i}>
+                  {Array.from({ length: 8 }).map((__, j) => (
+                    <TableCell key={j}>
+                      <Skeleton className="h-4 w-full" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
             ) : servers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-muted-foreground">
+                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                   {t("servers.empty")}
                 </TableCell>
               </TableRow>
@@ -339,25 +395,25 @@ export function ServersPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {isEditing ? (
-                        <Checkbox
-                          checked={row.enabled}
-                          onCheckedChange={(v) =>
-                            setEditDraft((d) => (d ? { ...d, enabled: v === true } : d))
+                      <Switch
+                        checked={row.enabled}
+                        disabled={standby || toggling === srv.name}
+                        onCheckedChange={(v) => {
+                          if (isEditing) {
+                            setEditDraft((d) => (d ? { ...d, enabled: v } : d))
+                          } else {
+                            void toggleEnabled(srv, v)
                           }
-                        />
-                      ) : row.enabled ? (
-                        t("common.on")
-                      ) : (
-                        t("common.off")
-                      )}
+                        }}
+                      />
                     </TableCell>
                     <TableCell>{lifecycleBadges(srv.name)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         {isEditing ? (
                           <>
-                            <Button size="sm" onClick={saveEdit} disabled={standby}>
+                            <Button size="sm" onClick={saveEdit} disabled={standby || saving}>
+                              {saving ? <Spinner data-icon="inline-start" /> : null}
                               {t("servers.save")}
                             </Button>
                             <Button
@@ -379,7 +435,7 @@ export function ServersPage() {
                               onClick={() => startEdit(srv)}
                               disabled={standby}
                             >
-                              {t("servers.save")}
+                              {t("servers.edit")}
                             </Button>
                             <Button
                               size="sm"
@@ -409,24 +465,27 @@ export function ServersPage() {
         </Table>
       </div>
 
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("servers.confirm")}</DialogTitle>
-            <DialogDescription>{deleteTarget}</DialogDescription>
+            <DialogDescription>
+              {deleteTarget ? tf("servers.confirm_body", deleteTarget) : ""}
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)} disabled={deleting}>
               {t("servers.cancel")}
             </Button>
-            <Button variant="destructive" onClick={confirmDelete} disabled={standby}>
+            <Button variant="destructive" onClick={confirmDelete} disabled={standby || deleting}>
+              {deleting ? <Spinner data-icon="inline-start" /> : null}
               {t("servers.delete")}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!promoteTarget} onOpenChange={(open) => !open && setPromoteTarget(null)}>
+      <Dialog open={!!promoteTarget} onOpenChange={(open) => !open && !promoting && setPromoteTarget(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("servers.promote_title")}</DialogTitle>
@@ -435,10 +494,11 @@ export function ServersPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setPromoteTarget(null)}>
+            <Button variant="ghost" onClick={() => setPromoteTarget(null)} disabled={promoting}>
               {t("servers.cancel")}
             </Button>
-            <Button onClick={confirmPromote} disabled={standby}>
+            <Button onClick={confirmPromote} disabled={standby || promoting}>
+              {promoting ? <Spinner data-icon="inline-start" /> : null}
               {t("servers.promote")}
             </Button>
           </DialogFooter>

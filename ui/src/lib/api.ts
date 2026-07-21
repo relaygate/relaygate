@@ -301,3 +301,115 @@ export async function opsProfilePreview(name: string): Promise<OpsResult> {
 export async function opsProfileApply(name: string, confirm: string): Promise<OpsResult> {
   return normalizeOpsResult(await api.post("/api/ops/profile-apply", { name, confirm }))
 }
+
+export type ConfigResources = {
+  content: string
+  mtime: string
+  etag: string
+}
+
+export type ConfigYAMLError = {
+  line?: number
+  path?: string
+  msg: string
+}
+
+export type ConfigValidateResult = {
+  ok: boolean
+  errors?: ConfigYAMLError[]
+  diff?: string
+}
+
+export type ConfigPutResult = {
+  ok: boolean
+  mtime: string
+  etag: string
+  diff?: string
+  message?: string
+}
+
+export async function getConfigResources(): Promise<ConfigResources> {
+  const data = await api.get<Record<string, unknown>>("/api/config/resources")
+  return {
+    content: pickString(data, "content", "Content"),
+    mtime: pickString(data, "mtime", "Mtime"),
+    etag: pickString(data, "etag", "ETag", "Etag"),
+  }
+}
+
+export async function validateConfigResources(content: string): Promise<ConfigValidateResult> {
+  const data = await api.post<Record<string, unknown>>("/api/config/resources/validate", { content })
+  return normalizeValidateResult(data)
+}
+
+export async function putConfigResources(body: {
+  content: string
+  etag: string
+  mtime?: string
+}): Promise<ConfigPutResult> {
+  const data = await api.put<Record<string, unknown>>("/api/config/resources", body)
+  return {
+    ok: data.ok === true || data.Ok === true,
+    mtime: pickString(data, "mtime", "Mtime"),
+    etag: pickString(data, "etag", "ETag", "Etag"),
+    diff: pickString(data, "diff", "Diff") || undefined,
+    message: pickString(data, "message", "Message") || undefined,
+  }
+}
+
+function normalizeValidateResult(raw: unknown): ConfigValidateResult {
+  const o = (raw ?? {}) as Record<string, unknown>
+  const errorsRaw = o.errors ?? o.Errors
+  const errors: ConfigYAMLError[] = []
+  if (Array.isArray(errorsRaw)) {
+    for (const item of errorsRaw) {
+      const e = (item ?? {}) as Record<string, unknown>
+      const line = e.line ?? e.Line
+      errors.push({
+        line: typeof line === "number" ? line : undefined,
+        path: pickString(e, "path", "Path") || undefined,
+        msg: pickString(e, "msg", "Msg", "message", "Message") || "error",
+      })
+    }
+  }
+  return {
+    ok: o.ok === true || o.Ok === true,
+    errors: errors.length ? errors : undefined,
+    diff: pickString(o, "diff", "Diff") || undefined,
+  }
+}
+
+async function downloadBlob(path: string, fallbackName: string): Promise<void> {
+  const res = await fetch(path, { method: "GET", credentials: "include", headers: { Accept: "*/*" } })
+  if (!res.ok) {
+    const text = await res.text()
+    let message = res.statusText
+    try {
+      const data = JSON.parse(text) as { error?: string }
+      if (data.error) message = data.error
+    } catch {
+      if (text) message = text
+    }
+    throw new ApiError(message, res.status, text)
+  }
+  const blob = await res.blob()
+  const dispo = res.headers.get("Content-Disposition") || ""
+  const match = dispo.match(/filename="?([^";]+)"?/i)
+  const name = match?.[1] || fallbackName
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+export async function exportConfigYAML(): Promise<void> {
+  await downloadBlob("/api/config/export", "resources.yaml")
+}
+
+export async function exportConfigPack(): Promise<void> {
+  await downloadBlob("/api/config/export?pack=zip", "relaygate-config.zip")
+}

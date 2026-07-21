@@ -2,8 +2,10 @@ import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
-import { Page, PageHeader, OutputPre, Section } from "@/components/layout/PageParts"
+import { DiffView } from "@/components/layout/DiffView"
+import { Page, PageHeader, Section } from "@/components/layout/PageParts"
 import { Button } from "@/components/ui/button"
+import { Spinner } from "@/components/ui/spinner"
 import { useStandby } from "@/context/SessionContext"
 import { ApiError, applyConfig, getApplyPreview } from "@/lib/api"
 
@@ -55,24 +57,27 @@ export function ApplyPage() {
 
   return (
     <Page>
-      <PageHeader title={t("apply.title")} />
+      <PageHeader
+        title={t("apply.title")}
+        actions={
+          <Button onClick={handleApply} disabled={standby || applying}>
+            {applying ? <Spinner data-icon="inline-start" /> : null}
+            {applying ? t("common.working") : t("apply.submit")}
+          </Button>
+        }
+      />
       <Section title={t("apply.summary")}>
-        <OutputPre
+        <DiffView
           value={loading ? "" : summary}
-          placeholder={loading ? "…" : t("apply.none")}
+          placeholder={loading ? t("common.loading") : t("apply.none")}
         />
       </Section>
       <Section title={t("overview.last_apply")}>
-        <OutputPre value={lastApply} placeholder={t("apply.none")} />
+        <DiffView value={lastApply} placeholder={t("apply.none")} />
       </Section>
-      <div className="flex items-center gap-3">
-        <Button onClick={handleApply} disabled={standby || applying}>
-          {t("apply.submit")}
-        </Button>
-      </div>
       {result ? (
         <Section title="Result">
-          <OutputPre value={result} error={error} />
+          <DiffView value={result} error={error} />
         </Section>
       ) : null}
     </Page>

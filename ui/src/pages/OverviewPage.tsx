@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-import { Page, PageHeader, OutputPre, Section, StatBlock, StatGrid } from "@/components/layout/PageParts"
+import { DiffView } from "@/components/layout/DiffView"
+import { Page, PageHeader, Section, StatBlock, StatGrid } from "@/components/layout/PageParts"
 import {
   Table,
   TableBody,
@@ -11,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Spinner } from "@/components/ui/spinner"
+import { Skeleton } from "@/components/ui/skeleton"
 import { getApplyPreview, getEnvoyStatus, getTrafficStatus } from "@/lib/api"
 import type { EnvoyStatus, TrafficStatus } from "@/lib/types"
 
@@ -34,9 +35,15 @@ export function OverviewPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <Spinner className="size-6 text-primary" />
-      </div>
+      <Page>
+        <PageHeader title={t("overview.title")} />
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-20 rounded-md" />
+          ))}
+        </div>
+        <Skeleton className="h-40 rounded-md" />
+      </Page>
     )
   }
 
@@ -67,12 +74,12 @@ export function OverviewPage() {
       </StatGrid>
 
       <Section title={t("overview.last_apply")}>
-        <OutputPre value={lastApply} placeholder={t("overview.none")} />
+        <DiffView value={lastApply} placeholder={t("overview.none")} />
       </Section>
 
       <Section title={t("overview.top_limited")}>
         {traffic?.top_limited_rules?.length ? (
-          <div className="rounded-lg border border-border">
+          <div className="rounded-md border border-border/60">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -97,7 +104,7 @@ export function OverviewPage() {
             </Table>
           </div>
         ) : (
-          <p className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+          <p className="rounded-md border border-dashed border-border/60 bg-muted/10 px-3 py-4 text-sm text-muted-foreground">
             {t("overview.top_empty")}
           </p>
         )}

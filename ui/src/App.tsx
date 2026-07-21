@@ -5,6 +5,7 @@ import { AppShell } from "@/components/layout/AppShell"
 import { ACLPage } from "@/pages/ACLPage"
 import { ApplyPage } from "@/pages/ApplyPage"
 import { ChangesPage } from "@/pages/ChangesPage"
+import { ConfigPage } from "@/pages/ConfigPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { MonitoringPage } from "@/pages/MonitoringPage"
 import { OpsPage } from "@/pages/OpsPage"
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="servers" element={<ServersPage />} />
           <Route path="rules" element={<RulesPage />} />
           <Route path="acl" element={<ACLPage />} />
+          <Route path="config" element={<ConfigPage />} />
           <Route path="apply" element={<ApplyPage />} />
           <Route path="ops" element={<OpsPage />} />
           <Route path="changes" element={<ChangesPage />} />

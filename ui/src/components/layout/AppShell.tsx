@@ -4,21 +4,37 @@ import {
   ActivityIcon,
   ArrowLeftRightIcon,
   FileClockIcon,
-  GlobeIcon,
+  FileCodeIcon,
+  LanguagesIcon,
   LayoutDashboardIcon,
   LogOutIcon,
+  MoonIcon,
+  MonitorIcon,
   PlayIcon,
   ServerIcon,
   ShieldIcon,
+  SunIcon,
   WrenchIcon,
 } from "lucide-react"
 
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Separator } from "@/components/ui/separator"
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
@@ -32,6 +48,7 @@ import {
 } from "@/components/ui/sidebar"
 import { changePanelLang, type PanelLang } from "@/i18n"
 import { useSession } from "@/context/SessionContext"
+import { useTheme } from "@/components/theme-provider"
 import { cn } from "@/lib/utils"
 
 const navItems = [
@@ -39,88 +56,172 @@ const navItems = [
   { to: "/servers", labelKey: "nav.servers", icon: ServerIcon },
   { to: "/rules", labelKey: "nav.rules", icon: ArrowLeftRightIcon },
   { to: "/acl", labelKey: "nav.acl", icon: ShieldIcon },
+  { to: "/config", labelKey: "nav.config", icon: FileCodeIcon },
   { to: "/apply", labelKey: "nav.apply", icon: PlayIcon },
   { to: "/ops", labelKey: "nav.ops", icon: WrenchIcon },
   { to: "/changes", labelKey: "nav.changes", icon: FileClockIcon },
   { to: "/monitoring", labelKey: "nav.monitoring", icon: ActivityIcon },
 ] as const
 
-function LangSwitch() {
-  const { i18n } = useTranslation()
+function LangMenu() {
+  const { t, i18n } = useTranslation()
   const lang = i18n.language === "en" ? "en" : "zh-CN"
 
-  async function switchLang(next: PanelLang) {
+  async function switchLang(next: string) {
+    if (next !== "en" && next !== "zh-CN") return
     if (next === lang) return
-    await changePanelLang(next)
+    await changePanelLang(next as PanelLang)
   }
 
   return (
-    <div className="flex items-center gap-2 text-[11px]">
-      <button
-        type="button"
-        onClick={() => switchLang("zh-CN")}
-        className={cn(
-          lang === "zh-CN" ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground",
-        )}
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground" />
+        }
       >
-        中文
-      </button>
-      <span className="text-border">|</span>
-      <button
-        type="button"
-        onClick={() => switchLang("en")}
-        className={cn(
-          lang === "en" ? "font-semibold text-foreground" : "text-muted-foreground hover:text-foreground",
-        )}
-      >
-        EN
-      </button>
-    </div>
+        <LanguagesIcon data-icon="inline-start" />
+        <span className="hidden sm:inline">{lang === "en" ? "EN" : "中文"}</span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-36">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>{t("shell.language")}</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={lang} onValueChange={switchLang}>
+            <DropdownMenuRadioItem value="zh-CN">{t("lang.zh_CN")}</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="en">{t("lang.en")}</DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
-export function AppShell() {
+function ThemeMenu() {
+  const { t } = useTranslation()
+  const { theme, setTheme } = useTheme()
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="ghost" size="icon-sm" className="text-muted-foreground" />
+        }
+      >
+        {theme === "light" ? <SunIcon /> : theme === "system" ? <MonitorIcon /> : <MoonIcon />}
+        <span className="sr-only">{t("shell.theme")}</span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-40">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>{t("shell.theme")}</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={theme}
+            onValueChange={(v) => setTheme(v as "dark" | "light" | "system")}
+          >
+            <DropdownMenuRadioItem value="dark">
+              <MoonIcon />
+              {t("shell.theme_dark")}
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="light">
+              <SunIcon />
+              {t("shell.theme_light")}
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="system">
+              <MonitorIcon />
+              {t("shell.theme_system")}
+            </DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function UserMenu() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const location = useLocation()
   const { session, logout, standby } = useSession()
-
-  function navActive(to: string, end?: boolean) {
-    if (end) return location.pathname === to
-    return location.pathname === to || location.pathname.startsWith(`${to}/`)
-  }
+  const roleLabel = standby ? "standby" : session?.role ?? "operator"
 
   async function handleLogout() {
     await logout()
     navigate("/login", { replace: true })
   }
 
-  const roleLabel = standby ? "standby" : session?.role ?? "primary"
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="ghost" size="sm" className="gap-2 px-1.5 text-muted-foreground" />
+        }
+      >
+        <Avatar className="size-6">
+          <AvatarFallback className="bg-primary/15 text-[10px] text-primary">
+            {roleLabel.slice(0, 2).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+        <span className="hidden max-w-24 truncate text-xs font-medium text-foreground sm:inline">
+          {roleLabel}
+        </span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-48">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="font-normal">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium text-foreground">{t("shell.signed_in")}</span>
+              <span className="font-mono text-[11px] text-muted-foreground">{roleLabel}</span>
+            </div>
+          </DropdownMenuLabel>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuItem variant="destructive" onClick={handleLogout}>
+            <LogOutIcon />
+            {t("nav.logout")}
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+export function AppShell() {
+  const { t } = useTranslation()
+  const location = useLocation()
+  const { standby } = useSession()
+
+  function navActive(to: string, end?: boolean) {
+    if (end) return location.pathname === to
+    return location.pathname === to || location.pathname.startsWith(`${to}/`)
+  }
 
   return (
     <SidebarProvider>
-      <Sidebar collapsible="icon" variant="inset">
-        <SidebarHeader className="border-b border-sidebar-border">
-          <div className="flex items-center gap-2.5 px-1 py-1">
-            <img src="/favicon.svg" alt="" className="size-8 rounded-lg" />
+      <Sidebar collapsible="icon" variant="sidebar" className="border-r border-sidebar-border">
+        <SidebarHeader className="h-12 justify-center border-b border-sidebar-border px-2">
+          <div className="flex items-center gap-2 px-1">
+            <img src="/favicon.svg" alt="" className="size-6 rounded-md" />
             <div className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
-              <span className="truncate text-sm font-semibold tracking-wide">RelayGate</span>
-              <span className="text-[11px] text-muted-foreground">Panel</span>
+              <span className="truncate text-[13px] font-semibold tracking-wide">RelayGate</span>
             </div>
           </div>
         </SidebarHeader>
-        <SidebarContent>
-          <SidebarGroup>
+        <SidebarContent className="px-1 py-2">
+          <SidebarGroup className="p-0">
             <SidebarGroupContent>
-              <SidebarMenu>
+              <SidebarMenu className="gap-0.5">
                 {navItems.map(({ to, labelKey, icon: Icon, ...rest }) => (
                   <SidebarMenuItem key={to}>
                     <SidebarMenuButton
+                      size="sm"
                       isActive={navActive(to, "end" in rest ? rest.end : false)}
                       render={
                         <NavLink to={to} end={"end" in rest ? rest.end : false} />
                       }
                       tooltip={t(labelKey)}
+                      className={cn(
+                        "transition-[background-color,color,box-shadow] duration-150",
+                        "data-active:bg-sidebar-accent data-active:shadow-[inset_2px_0_0_0_var(--sidebar-primary)]",
+                      )}
                     >
                       <Icon />
                       <span>{t(labelKey)}</span>
@@ -131,45 +232,31 @@ export function AppShell() {
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
-        <SidebarFooter className="gap-3 border-t border-sidebar-border">
-          <div className="flex flex-col gap-2 px-1 group-data-[collapsible=icon]:hidden">
-            <LangSwitch />
-            <div className="flex items-center gap-2">
-              <Badge variant={standby ? "secondary" : "outline"} className="font-mono text-[10px] uppercase">
-                {roleLabel}
-              </Badge>
-              {standby ? (
-                <span className="text-[11px] text-muted-foreground">{t("error.standby")}</span>
-              ) : null}
-            </div>
-          </div>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={handleLogout} tooltip={t("nav.logout")}>
-                <LogOutIcon data-icon="inline-start" />
-                <span>{t("nav.logout")}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarFooter>
         <SidebarRail />
       </Sidebar>
       <SidebarInset>
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
-          <SidebarTrigger />
-          <Separator orientation="vertical" className="mx-1 h-4" />
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <GlobeIcon className="size-3.5" />
-            <span>RelayGate Panel</span>
+        <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b border-border/70 bg-background/90 px-3 backdrop-blur-sm">
+          <SidebarTrigger className="-ml-0.5" />
+          <Separator orientation="vertical" className="mx-0.5 h-4" />
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-xs font-medium text-muted-foreground">
+              RelayGate Panel
+            </span>
+            {standby ? (
+              <Badge variant="secondary" className="font-mono text-[10px] uppercase">
+                read-only
+              </Badge>
+            ) : null}
           </div>
-          {standby ? (
-            <Badge variant="secondary" className="ml-auto font-mono text-[10px] uppercase">
-              read-only
-            </Badge>
-          ) : null}
+          <div className="ml-auto flex items-center gap-0.5">
+            <LangMenu />
+            <ThemeMenu />
+            <Separator orientation="vertical" className="mx-1 h-4" />
+            <UserMenu />
+          </div>
         </header>
-        <div className="flex flex-1 flex-col p-4 md:p-6">
-          <Outlet />
+        <div className="flex flex-1 flex-col p-4 md:p-5">
+          <Outlet key={location.pathname} />
         </div>
       </SidebarInset>
     </SidebarProvider>

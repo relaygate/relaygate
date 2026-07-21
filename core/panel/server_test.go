@@ -441,7 +441,7 @@ func TestStandbyRejectsWrites(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("standby api status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "standby") {
+	if !strings.Contains(rec.Body.String(), "standby") && !strings.Contains(rec.Body.String(), "备用") {
 		t.Fatalf("expected standby message: %s", rec.Body.String())
 	}
 

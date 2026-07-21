@@ -1,23 +1,35 @@
 import type { ReactNode } from "react"
 
+import { DiffView } from "@/components/layout/DiffView"
 import { cn } from "@/lib/utils"
 
 export function Page({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn("page-enter flex flex-col gap-6", className)}>{children}</div>
+  return <div className={cn("page-enter flex flex-col gap-5", className)}>{children}</div>
 }
 
-export function PageHeader({ title, hint }: { title: string; hint?: string }) {
+export function PageHeader({
+  title,
+  hint,
+  actions,
+}: {
+  title: string
+  hint?: string
+  actions?: ReactNode
+}) {
   return (
-    <header className="flex flex-col gap-1 border-b border-border pb-4">
-      <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-      {hint ? <p className="text-sm text-muted-foreground">{hint}</p> : null}
+    <header className="flex flex-col gap-1 border-b border-border/60 pb-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
+        {hint ? <p className="max-w-2xl text-sm text-muted-foreground">{hint}</p> : null}
+      </div>
+      {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
     </header>
   )
 }
 
 export function StatGrid({ children }: { children: ReactNode }) {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       {children}
     </div>
   )
@@ -35,13 +47,13 @@ export function StatBlock({
   tone?: "ok" | "danger" | "default"
 }) {
   return (
-    <div className="flex flex-col gap-1 rounded-lg border border-border bg-card/40 px-4 py-3">
+    <div className="flex flex-col gap-1 rounded-md border border-border/60 bg-card/50 px-3.5 py-2.5">
       <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
       <span
         className={cn(
-          "text-2xl font-semibold tabular-nums",
+          "text-xl font-semibold tabular-nums",
           tone === "ok" && "text-primary",
           tone === "danger" && "text-destructive",
         )}
@@ -53,6 +65,7 @@ export function StatBlock({
   )
 }
 
+/** Plain console-style output (ops logs). Prefer DiffView for summaries. */
 export function OutputPre({
   value,
   placeholder,
@@ -62,18 +75,7 @@ export function OutputPre({
   placeholder?: string
   error?: boolean
 }) {
-  const text = value?.trim() ? value : placeholder ?? ""
-  return (
-    <pre
-      className={cn(
-        "max-h-[28rem] overflow-auto rounded-lg border border-border bg-muted/30 p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap",
-        error && "border-destructive/40 text-destructive",
-        !value?.trim() && "text-muted-foreground",
-      )}
-    >
-      {text}
-    </pre>
-  )
+  return <DiffView value={value} placeholder={placeholder} error={error} />
 }
 
 export function Section({
@@ -86,8 +88,13 @@ export function Section({
   className?: string
 }) {
   return (
-    <section className={cn("flex flex-col gap-3", className)}>
-      <h2 className="text-sm font-semibold tracking-wide text-foreground">{title}</h2>
+    <section
+      className={cn(
+        "flex flex-col gap-2.5 rounded-md border border-border/60 bg-card/30 p-3.5",
+        className,
+      )}
+    >
+      <h2 className="text-[13px] font-semibold tracking-wide text-foreground">{title}</h2>
       {children}
     </section>
   )

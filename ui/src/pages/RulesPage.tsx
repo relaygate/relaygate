@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
 import { Page, PageHeader } from "@/components/layout/PageParts"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import {
   Table,
@@ -22,6 +23,7 @@ export function RulesPage() {
   const standby = useStandby()
   const [rules, setRules] = useState<Rule[]>([])
   const [loading, setLoading] = useState(true)
+  const [toggling, setToggling] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setRules(await getRules())
@@ -33,23 +35,29 @@ export function RulesPage() {
 
   async function toggleRule(rule: Rule, enabled: boolean) {
     if (standby) return
+    setToggling(rule.name)
+    setRules((prev) =>
+      prev.map((r) => (r.name === rule.name ? { ...r, enabled } : r)),
+    )
     try {
       await patchRule(rule.name, enabled)
-      setRules((prev) =>
-        prev.map((r) => (r.name === rule.name ? { ...r, enabled } : r)),
-      )
       toast.success(
         enabled ? tf("rules.toast_enabled", rule.name) : tf("rules.toast_disabled", rule.name),
       )
     } catch (err) {
+      setRules((prev) =>
+        prev.map((r) => (r.name === rule.name ? { ...r, enabled: rule.enabled } : r)),
+      )
       toast.error(err instanceof ApiError ? err.message : t("apply.toast_fail"))
+    } finally {
+      setToggling(null)
     }
   }
 
   return (
     <Page>
       <PageHeader title={t("rules.title")} hint={t("rules.hint")} />
-      <div className="rounded-lg border border-border">
+      <div className="rounded-md border border-border/60">
         <Table>
           <TableHeader>
             <TableRow>
@@ -63,14 +71,18 @@ export function RulesPage() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-muted-foreground">
-                  …
-                </TableCell>
-              </TableRow>
+              Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i}>
+                  {Array.from({ length: 6 }).map((__, j) => (
+                    <TableCell key={j}>
+                      <Skeleton className="h-4 w-full" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
             ) : rules.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-muted-foreground">
+                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                   {t("rules.empty")}
                 </TableCell>
               </TableRow>
@@ -85,8 +97,8 @@ export function RulesPage() {
                   <TableCell>
                     <Switch
                       checked={rule.enabled}
-                      onCheckedChange={(v) => toggleRule(rule, v === true)}
-                      disabled={standby}
+                      onCheckedChange={(v) => toggleRule(rule, v)}
+                      disabled={standby || toggling === rule.name}
                     />
                   </TableCell>
                 </TableRow>

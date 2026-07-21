@@ -70,9 +70,12 @@ export function ACLPage() {
         className="flex-1"
       >
         {loading ? (
-          <p className="text-sm text-muted-foreground">…</p>
+          <div className="flex flex-col gap-2">
+            <div className="h-8 animate-pulse rounded-md bg-muted" />
+            <div className="h-8 animate-pulse rounded-md bg-muted" />
+          </div>
         ) : entries.length === 0 ? (
-          <p className="rounded-lg border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+          <p className="rounded-md border border-dashed border-border/60 bg-muted/10 px-3 py-3 text-sm text-muted-foreground">
             {t("acl.empty")}
           </p>
         ) : (
@@ -80,7 +83,7 @@ export function ACLPage() {
             {entries.map((entry) => (
               <li
                 key={entry}
-                className="flex items-center justify-between gap-2 rounded-md border border-border bg-card/30 px-3 py-2 font-mono text-xs"
+                className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-background/40 px-3 py-2 font-mono text-xs"
               >
                 <span>{entry}</span>
                 <Button
@@ -105,7 +108,7 @@ export function ACLPage() {
 
       <form
         onSubmit={handleAdd}
-        className="flex flex-col gap-4 rounded-lg border border-border bg-card/30 p-4"
+        className="flex flex-col gap-3 rounded-md border border-border/60 bg-card/30 p-3.5"
       >
         <h2 className="text-sm font-semibold">{t("acl.add_heading")}</h2>
         <FieldGroup className="grid gap-4 md:grid-cols-3">

@@ -233,6 +233,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/rollback/preview", s.withAuthReadonly(s.apiRollbackPreview))
 	mux.HandleFunc("/api/rollback", s.withAuth(s.apiRollback))
 
+	// Config YAML (resources.yaml mirror + export; validate/put for P1)
+	mux.HandleFunc("/api/config/resources", s.withAuthOpts(s.apiConfigResources, true))
+	mux.HandleFunc("/api/config/resources/validate", s.withAuthReadonly(s.apiConfigResourcesValidate))
+	mux.HandleFunc("/api/config/export", s.withAuthReadonly(s.apiConfigExport))
+
 	// Legacy lang redirect (optional bookmark)
 	mux.HandleFunc("/lang", s.handleLangRedirect)
 

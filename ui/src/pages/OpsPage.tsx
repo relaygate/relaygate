@@ -2,8 +2,17 @@ import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
-import { Page, PageHeader, OutputPre, Section } from "@/components/layout/PageParts"
+import { DiffView } from "@/components/layout/DiffView"
+import { Page, PageHeader, Section } from "@/components/layout/PageParts"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import {
@@ -13,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Spinner } from "@/components/ui/spinner"
 import { useStandby } from "@/context/SessionContext"
 import {
   ApiError,
@@ -27,6 +37,16 @@ import {
 } from "@/lib/api"
 import type { Profile } from "@/lib/types"
 import { tf } from "@/i18n"
+
+type BusyKey =
+  | "doctor"
+  | "drain"
+  | "smoke"
+  | "canary"
+  | "firewall"
+  | "preview"
+  | "profile"
+  | null
 
 export function OpsPage() {
   const { t } = useTranslation()
@@ -43,6 +63,7 @@ export function OpsPage() {
   const [profileName, setProfileName] = useState("")
   const [profileOut, setProfileOut] = useState("")
   const [profileConfirm, setProfileConfirm] = useState("")
+  const [busy, setBusy] = useState<BusyKey>(null)
 
   useEffect(() => {
     getProfiles()
@@ -54,6 +75,7 @@ export function OpsPage() {
   }, [])
 
   async function runDoctor() {
+    setBusy("doctor")
     try {
       const res = await opsDoctor()
       setDoctorOut(res.output ?? res.error ?? t("error.no_output"))
@@ -62,15 +84,16 @@ export function OpsPage() {
       const msg = err instanceof ApiError ? err.message : t("ops.toast_doctor_err")
       setDoctorOut(msg)
       toast.error(msg)
+    } finally {
+      setBusy(null)
     }
   }
 
   async function runDrain(action: "status" | "fail" | "ok") {
+    setBusy("drain")
     try {
       const confirm =
-        action === "fail" || action === "ok"
-          ? drainConfirm.trim()
-          : undefined
+        action === "fail" || action === "ok" ? drainConfirm.trim() : undefined
       const res = await opsDrain(action, confirm)
       setDrainOut(res.output ?? res.error ?? t("error.no_output"))
       setDrainAction(null)
@@ -80,10 +103,13 @@ export function OpsPage() {
       const msg = err instanceof ApiError ? err.message : tf("ops.toast_drain_err", action)
       setDrainOut(msg)
       toast.error(msg)
+    } finally {
+      setBusy(null)
     }
   }
 
   async function runSmoke() {
+    setBusy("smoke")
     try {
       const res = await opsSmoke(host.trim() || "127.0.0.1")
       setSmokeOut(res.output ?? res.error ?? t("error.no_output"))
@@ -92,10 +118,13 @@ export function OpsPage() {
       const msg = err instanceof ApiError ? err.message : t("ops.toast_smoke_err")
       setSmokeOut(msg)
       toast.error(msg)
+    } finally {
+      setBusy(null)
     }
   }
 
   async function runCanary() {
+    setBusy("canary")
     try {
       const res = await opsCanary(host.trim() || "127.0.0.1")
       setCanaryOut(res.output ?? res.error ?? t("error.no_output"))
@@ -104,10 +133,13 @@ export function OpsPage() {
       const msg = err instanceof ApiError ? err.message : t("ops.toast_canary_err")
       setCanaryOut(msg)
       toast.error(msg)
+    } finally {
+      setBusy(null)
     }
   }
 
   async function runFirewall() {
+    setBusy("firewall")
     try {
       const res = await opsFirewallCheck()
       setFirewallOut(res.output ?? res.error ?? t("error.no_output"))
@@ -116,11 +148,14 @@ export function OpsPage() {
       const msg = err instanceof ApiError ? err.message : t("ops.toast_fw_err")
       setFirewallOut(msg)
       toast.error(msg)
+    } finally {
+      setBusy(null)
     }
   }
 
   async function runProfilePreview() {
     if (!profileName) return
+    setBusy("preview")
     try {
       const res = await opsProfilePreview(profileName)
       setProfileOut(res.output ?? t("error.no_output"))
@@ -129,11 +164,14 @@ export function OpsPage() {
       const msg = err instanceof ApiError ? err.message : t("ops.toast_preview_err")
       setProfileOut(msg)
       toast.error(msg)
+    } finally {
+      setBusy(null)
     }
   }
 
   async function runProfileApply() {
     if (!profileName) return
+    setBusy("profile")
     try {
       const res = await opsProfileApply(profileName, profileConfirm.trim())
       setProfileOut((res.output ?? "") + t("ops.profile_applied_body"))
@@ -143,56 +181,101 @@ export function OpsPage() {
       const msg = err instanceof ApiError ? err.message : t("ops.toast_profile_err")
       setProfileOut(msg)
       toast.error(msg)
+    } finally {
+      setBusy(null)
     }
   }
 
   return (
-    <Page className="gap-8">
+    <Page className="gap-5">
       <PageHeader title={t("ops.title")} />
 
       <Section title={t("ops.doctor")}>
-        <Button onClick={runDoctor}>{t("ops.run")}</Button>
-        <OutputPre value={doctorOut} placeholder={t("ops.doctor_placeholder")} />
+        <Button onClick={runDoctor} disabled={busy === "doctor"}>
+          {busy === "doctor" ? <Spinner data-icon="inline-start" /> : null}
+          {t("ops.run")}
+        </Button>
+        <DiffView value={doctorOut} placeholder={t("ops.doctor_placeholder")} />
       </Section>
 
       <Section title={t("ops.drain")}>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => runDrain("status")}>
+          <Button
+            variant="outline"
+            onClick={() => runDrain("status")}
+            disabled={busy === "drain"}
+          >
+            {busy === "drain" ? <Spinner data-icon="inline-start" /> : null}
             status
           </Button>
-          <Button variant="outline" onClick={() => setDrainAction("fail")} disabled={standby}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setDrainAction("fail")
+              setDrainConfirm("")
+            }}
+            disabled={standby}
+          >
             fail
           </Button>
-          <Button variant="outline" onClick={() => setDrainAction("ok")} disabled={standby}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setDrainAction("ok")
+              setDrainConfirm("")
+            }}
+            disabled={standby}
+          >
             ok
           </Button>
         </div>
-        {drainAction ? (
-          <FieldGroup className="max-w-md">
+        <p className="text-xs text-muted-foreground">{t("ops.drain_hint")}</p>
+        <DiffView value={drainOut} placeholder={t("error.no_output")} />
+      </Section>
+
+      <Dialog
+        open={!!drainAction}
+        onOpenChange={(open) => !open && busy !== "drain" && setDrainAction(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("ops.drain")}</DialogTitle>
+            <DialogDescription>
+              {drainAction === "fail" ? t("ops.drain_label_fail") : t("ops.drain_label_ok")}
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
             <Field>
               <FieldLabel>
-                {drainAction === "fail"
-                  ? t("ops.drain_label_fail")
-                  : t("ops.drain_label_ok")}
+                {drainAction === "fail" ? "DRAIN_FAIL" : "DRAIN_OK"}
               </FieldLabel>
-              <Input value={drainConfirm} onChange={(e) => setDrainConfirm(e.target.value)} />
+              <Input
+                value={drainConfirm}
+                onChange={(e) => setDrainConfirm(e.target.value)}
+                autoComplete="off"
+              />
             </Field>
-            <div className="flex gap-2">
-              <Button
-                onClick={() => runDrain(drainAction)}
-                disabled={standby || drainConfirm !== `DRAIN_${drainAction.toUpperCase()}`}
-              >
-                {t("ops.run")}
-              </Button>
-              <Button variant="ghost" onClick={() => setDrainAction(null)}>
-                {t("ops.cancel")}
-              </Button>
-            </div>
           </FieldGroup>
-        ) : null}
-        <p className="text-xs text-muted-foreground">{t("ops.drain_hint")}</p>
-        <OutputPre value={drainOut} placeholder={t("error.no_output")} />
-      </Section>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDrainAction(null)} disabled={busy === "drain"}>
+              {t("ops.cancel")}
+            </Button>
+            <Button
+              variant={drainAction === "fail" ? "destructive" : "default"}
+              onClick={() => drainAction && runDrain(drainAction)}
+              disabled={
+                standby ||
+                busy === "drain" ||
+                !drainAction ||
+                drainConfirm !== `DRAIN_${drainAction.toUpperCase()}`
+              }
+            >
+              {busy === "drain" ? <Spinner data-icon="inline-start" /> : null}
+              {t("ops.run")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Section title={t("ops.smoke_canary")}>
         <FieldGroup className="max-w-md">
@@ -201,15 +284,17 @@ export function OpsPage() {
             <Input id="ops-host" value={host} onChange={(e) => setHost(e.target.value)} />
           </Field>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={runSmoke}>
+            <Button variant="outline" onClick={runSmoke} disabled={busy === "smoke"}>
+              {busy === "smoke" ? <Spinner data-icon="inline-start" /> : null}
               smoke
             </Button>
-            <Button variant="outline" onClick={runCanary}>
+            <Button variant="outline" onClick={runCanary} disabled={busy === "canary"}>
+              {busy === "canary" ? <Spinner data-icon="inline-start" /> : null}
               canary
             </Button>
           </div>
         </FieldGroup>
-        <OutputPre value={smokeOut || canaryOut} placeholder={t("error.no_output")} />
+        <DiffView value={smokeOut || canaryOut} placeholder={t("error.no_output")} />
       </Section>
 
       <Section title={t("ops.firewall")}>
@@ -222,17 +307,18 @@ export function OpsPage() {
             sudo APPLY_FIREWALL=1 FIREWALL_CONFIRM=YES_FLUSH_NFTABLES relaygate firewall apply
           </code>
         </p>
-        <Button variant="outline" onClick={runFirewall}>
+        <Button variant="outline" onClick={runFirewall} disabled={busy === "firewall"}>
+          {busy === "firewall" ? <Spinner data-icon="inline-start" /> : null}
           {t("ops.run")} check
         </Button>
-        <OutputPre value={firewallOut} placeholder={t("error.no_output")} />
+        <DiffView value={firewallOut} placeholder={t("error.no_output")} />
       </Section>
 
       <Section title={t("ops.profile")}>
         {profiles.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t("ops.profile_empty")}</p>
         ) : (
-          <FieldGroup className="max-w-lg gap-4">
+          <FieldGroup className="max-w-lg gap-3">
             <Field>
               <FieldLabel>{t("ops.profile_select")}</FieldLabel>
               <Select value={profileName} onValueChange={(v) => setProfileName(v ?? "")}>
@@ -250,7 +336,12 @@ export function OpsPage() {
               </Select>
             </Field>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={runProfilePreview}>
+              <Button
+                variant="outline"
+                onClick={runProfilePreview}
+                disabled={busy === "preview"}
+              >
+                {busy === "preview" ? <Spinner data-icon="inline-start" /> : null}
                 {t("ops.profile_preview")}
               </Button>
             </div>
@@ -264,13 +355,14 @@ export function OpsPage() {
             </Field>
             <Button
               onClick={runProfileApply}
-              disabled={standby || profileConfirm !== "APPLY_PROFILE"}
+              disabled={standby || busy === "profile" || profileConfirm !== "APPLY_PROFILE"}
             >
+              {busy === "profile" ? <Spinner data-icon="inline-start" /> : null}
               Apply profile
             </Button>
           </FieldGroup>
         )}
-        <OutputPre value={profileOut} placeholder={t("error.no_output")} />
+        <DiffView value={profileOut} placeholder={t("error.no_output")} />
       </Section>
     </Page>
   )
