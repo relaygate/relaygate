@@ -17,9 +17,9 @@ func UpstreamClusterName(server, protocol string) string {
 }
 
 // IngressListenerName is the Envoy listener for a rule (user ingress).
+// Uses the rule name so it stays aligned with resources.yaml identifiers.
 func IngressListenerName(rule resources.Rule) string {
-	return fmt.Sprintf("ingress-%s-%s-%s",
-		rule.Server, strings.ToLower(rule.Kind), strings.ToLower(rule.Protocol))
+	return "ingress-" + rule.Name
 }
 
 func rateLimitStatPrefix(rule resources.Rule) string {

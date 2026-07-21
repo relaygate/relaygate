@@ -292,11 +292,11 @@ docker compose --env-file .env up -d
 |-----------|----------|------|
 | 网关 | gateway | `gateway-01`、nftables 表 `inet relaygate` |
 | 后端节点 | server / backend | `servers[].name` → `server-01` |
-| 用户入口 | ingress | listener `ingress-server-01-production-tcp` |
+| 用户入口 | ingress | listener `ingress-rule-server-01-production-tcp` |
 | 阶段 | production / canary | `rules[].kind` |
 | 上游 | upstream | cluster `upstream-server-01-tcp` |
-| 规则名 | `{server}-{stage}-{proto}` | `server-01-production-tcp` |
-| 限速 stat_prefix | `rl_{rule_name}` | `rl_server_01_canary_tcp` |
+| 规则名 | `rule-{server}-{stage}-{proto}` | `rule-server-01-production-tcp` |
+| 限速 stat_prefix | `rl_{rule_name}` | `rl_rule_server_01_canary_tcp` |
 | 防火墙端口集 | forward-ports / FORWARD_* | `DataDir/firewall/forward-ports.nft`（`.nft` 为扩展名；应用用 `nft -f`） |
 | YAML 限流键 | `defaults.nftables.*` | 与 Go `NftablesDefaults` 对齐 |
 

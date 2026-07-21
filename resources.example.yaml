@@ -66,32 +66,32 @@ servers:
 # 用户入口（ingress）：production 端口固定映射到对应 server
 # 旁路 canary：11001 指向 server-01，验证通过后再启用 production
 rules:
-  - name: server-01-canary-tcp
+  - name: rule-server-01-canary-tcp
     kind: canary
     server: server-01
     protocol: TCP
     listen_port: 11001
     enabled: true
 
-  - name: server-01-production-tcp
+  - name: rule-server-01-production-tcp
     kind: production
     server: server-01
     protocol: TCP
     listen_port: 10001
     enabled: false
-  - name: server-01-production-udp
+  - name: rule-server-01-production-udp
     kind: production
     server: server-01
     protocol: UDP
     listen_port: 10001
     enabled: false
-  - name: server-02-production-tcp
+  - name: rule-server-02-production-tcp
     kind: production
     server: server-02
     protocol: TCP
     listen_port: 10002
     enabled: false
-  - name: server-02-production-udp
+  - name: rule-server-02-production-udp
     kind: production
     server: server-02
     protocol: UDP

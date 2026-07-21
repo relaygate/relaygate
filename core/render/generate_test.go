@@ -36,9 +36,9 @@ func testResources() *resources.Resources {
 			{Name: "server-01", Address: "10.0.0.11", TCPPort: 7777, UDPPort: 7778, HealthCheckPort: 7777, Enabled: true},
 		},
 		Rules: []resources.Rule{
-			{Name: "server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
-			{Name: "server-01-canary-udp", Kind: "canary", Server: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
-			{Name: "server-01-production-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
+			{Name: "rule-server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
+			{Name: "rule-server-01-canary-udp", Kind: "canary", Server: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
+			{Name: "rule-server-01-production-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
 		},
 	}
 }
@@ -63,7 +63,7 @@ func TestEnvoyNaming(t *testing.T) {
 	}
 	for _, l := range listeners {
 		name := l.(map[string]any)["name"].(string)
-		if !strings.HasPrefix(name, "ingress-server-01-") {
+		if !strings.HasPrefix(name, "ingress-rule-server-01-") {
 			t.Fatalf("unexpected listener name: %s", name)
 		}
 	}
