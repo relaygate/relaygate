@@ -276,8 +276,9 @@ func (r *Resources) DeleteServer(name string) (removedRules int, err error) {
 	return removedRules, nil
 }
 
-// RuleName is the canonical rule identifier: rule-{server}-{stage}-{proto}.
+// RuleName is the canonical forwarding-rule identifier: rule-{server}-{stage}-{proto}.
 // Example: rule-server-01-production-tcp, rule-server-01-canary-udp.
+// This is the product "规则"; Envoy listeners/clusters and rl_* stats are derived from it.
 func RuleName(server, kind, protocol string) string {
 	return fmt.Sprintf("rule-%s-%s-%s",
 		server, strings.ToLower(strings.TrimSpace(kind)), strings.ToLower(strings.TrimSpace(protocol)))

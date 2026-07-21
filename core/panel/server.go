@@ -573,7 +573,7 @@ func (s *Server) handleRulesPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.tmpl.ExecuteTemplate(w, "rules.html", s.withPageData(r, map[string]any{
-		"Title": "Rules",
+		"Title": "转发规则",
 		"Nav":   "rules",
 		"Rules": res.Rules,
 	}))
@@ -959,7 +959,7 @@ func (s *Server) hxServers(w http.ResponseWriter, r *http.Request) {
 	}
 	msg := "已添加 " + strings.TrimSpace(r.FormValue("name"))
 	if len(names) > 0 {
-		msg += "，生成规则: " + strings.Join(names, ", ")
+		msg += "，生成转发规则: " + strings.Join(names, ", ")
 	}
 	msg += "（尚未 Apply）"
 	s.renderServersTable(w, res, msg, "ok")
@@ -1009,7 +1009,7 @@ func (s *Server) hxServerByName(w http.ResponseWriter, r *http.Request) {
 			hxError(w, 500, err.Error())
 			return
 		}
-		s.renderServersTable(w, res, fmt.Sprintf("已删除 %s（移除规则 %d 条，尚未 Apply）", name, removed), "ok")
+		s.renderServersTable(w, res, fmt.Sprintf("已删除 %s（移除转发规则 %d 条，尚未 Apply）", name, removed), "ok")
 	default:
 		http.Error(w, "method not allowed", 405)
 	}

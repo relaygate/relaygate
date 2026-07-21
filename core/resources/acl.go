@@ -7,7 +7,8 @@ import (
 	"strings"
 )
 
-// ACL holds host-firewall IP allow/deny lists (nftables is the source of truth).
+// ACL holds host-firewall IP allow/deny sets (nftables is the source of truth).
+// Rendered as ACL_DENY / ACL_ALLOW set defines — not "forwarding rules".
 // When Allow is non-empty, only listed CIDRs may reach forward ports (strict mode).
 // SSH remains governed by gateway.nft SSH_PORT rules, not this list.
 type ACL struct {

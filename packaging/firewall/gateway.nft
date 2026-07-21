@@ -2,8 +2,9 @@
 # RelayGate 网关防火墙模板（版本化，随 packaging 发布）
 # 勿直接 nft -f 本文件：SSH 端口与 include 路径由 `relaygate firewall` 改写后
 # 写入 DataDir/firewall/.gateway-*.nft 再校验/应用。
-# 端口定义、限速与 ACL define 由 render 生成：DataDir/firewall/forward-ports.nft
-# （FORWARD_*_PORTS + FORWARD_*_RATE/BURST + ACL_DENY/ALLOW，同源自 resources.yaml）
+# 端口定义、限速与 ACL 集合由 render 生成：DataDir/firewall/forward-ports.nft
+# （FORWARD_*_PORTS / FORWARD_*_RATE/BURST / ACL_DENY|ALLOW — 防火墙集合，非「转发规则」）
+# 转发规则真相源仍是 resources.yaml rules[]；此处只消费其启用端口与 acl。
 #
 # 警告：错误应用可能导致 SSH 断开。请保留现有会话并准备控制台。
 

@@ -11,17 +11,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// UpstreamClusterName is the Envoy cluster for a backend server/protocol pair.
+// UpstreamClusterName is the Envoy upstream cluster for a backend server/protocol pair.
+// Format: upstream-{server}-{proto} — shared by all forwarding rules for that pair.
 func UpstreamClusterName(server, protocol string) string {
 	return fmt.Sprintf("upstream-%s-%s", server, strings.ToLower(protocol))
 }
 
-// IngressListenerName is the Envoy listener for a rule (user ingress).
-// Uses the rule name so it stays aligned with resources.yaml identifiers.
+// IngressListenerName is the Envoy ingress listener for one forwarding rule (1:1).
+// Format: ingress-{ruleName} so it stays aligned with resources.yaml rules[].name.
 func IngressListenerName(rule resources.Rule) string {
 	return "ingress-" + rule.Name
 }
 
+// rateLimitStatPrefix is the Envoy local_rate_limit stat_prefix (metric name), not a "rule".
+// Format: rl_{ruleName with - → _}.
 func rateLimitStatPrefix(rule resources.Rule) string {
 	return "rl_" + strings.ReplaceAll(rule.Name, "-", "_")
 }

@@ -24,7 +24,7 @@ defaults:
   tcp_idle_timeout: 3600s
   # UDP 会话空闲超时（按游戏心跳调整）
   udp_idle_timeout: 120s
-  # 单规则最大并发连接/会话
+  # 单条转发规则最大并发连接/会话
   max_connections: 1024
   max_pending_requests: 256
   # TCP 新建连接本地限速（每秒 token）
@@ -63,8 +63,9 @@ servers:
     health_check_port: 7777
     enabled: true
 
-# 用户入口（ingress）：production 端口固定映射到对应 server
+# 用户入口（转发规则）：production 端口固定映射到对应 server
 # 旁路 canary：11001 指向 server-01，验证通过后再启用 production
+# 命名：rule-{server}-{stage}-{proto}；阶段 kind = canary | production
 rules:
   - name: rule-server-01-canary-tcp
     kind: canary
