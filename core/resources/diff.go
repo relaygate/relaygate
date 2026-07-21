@@ -32,6 +32,81 @@ func (c ChangeSummary) Empty() bool {
 		len(c.ACLChanged) == 0
 }
 
+// ApplySurface classifies which execution surfaces a ChangeSummary needs.
+// Intent stays one resources.yaml; Envoy reload vs nft apply stay separate.
+type ApplySurface struct {
+	NeedsReload   bool // servers / rules / Envoy defaults → Panel「应用配置」(reload)
+	NeedsFirewall bool // ACL / nftables defaults / enabled listen ports →「应用防火墙」
+}
+
+// Classify returns whether this diff needs Envoy reload and/or nftables apply.
+// Both may be true (e.g. new listen port). Empty diffs yield both false.
+func (c ChangeSummary) Classify() ApplySurface {
+	return ApplySurface{
+		NeedsReload:   c.needsReload(),
+		NeedsFirewall: c.needsFirewall(),
+	}
+}
+
+func (c ChangeSummary) needsReload() bool {
+	if len(c.ServersAdded) > 0 || len(c.ServersRemoved) > 0 || len(c.ServersChanged) > 0 {
+		return true
+	}
+	if len(c.RulesAdded) > 0 || len(c.RulesRemoved) > 0 || len(c.RulesToggled) > 0 || len(c.PortChanges) > 0 {
+		return true
+	}
+	for _, d := range c.DefaultsChanged {
+		if defaultsEntryAffectsEnvoy(d) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c ChangeSummary) needsFirewall() bool {
+	if len(c.ACLChanged) > 0 {
+		return true
+	}
+	if len(c.PortChanges) > 0 {
+		return true
+	}
+	if len(c.RulesToggled) > 0 || len(c.RulesRemoved) > 0 {
+		return true
+	}
+	for _, r := range c.RulesAdded {
+		// Diff formats enabled rules as "... , enabled)" — disabled adds do not touch FORWARD_*.
+		if strings.Contains(r, ", enabled)") {
+			return true
+		}
+	}
+	for _, d := range c.DefaultsChanged {
+		if defaultsEntryAffectsNftables(d) {
+			return true
+		}
+	}
+	return false
+}
+
+func defaultsEntryAffectsNftables(entry string) bool {
+	return strings.Contains(entry, "nftables.")
+}
+
+func defaultsEntryAffectsEnvoy(entry string) bool {
+	entry = strings.TrimSpace(entry)
+	if entry == "" {
+		return false
+	}
+	// First-snapshot summarizeDefaults packs envoy+nft into one line.
+	if strings.Contains(entry, "tcp_rl=") || strings.Contains(entry, "max_conn=") {
+		return true
+	}
+	field, _, _ := strings.Cut(entry, " ")
+	if strings.HasPrefix(field, "nftables.") {
+		return false
+	}
+	return true
+}
+
 func (c ChangeSummary) String() string {
 	var b strings.Builder
 	if c.Note != "" {

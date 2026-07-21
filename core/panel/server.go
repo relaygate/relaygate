@@ -216,6 +216,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/acl", s.withAuth(s.apiACL))
 	mux.HandleFunc("/api/apply", s.withAuth(s.apiApply))
 	mux.HandleFunc("/api/apply/preview", s.withAuthReadonly(s.apiApplyPreview))
+	mux.HandleFunc("/api/firewall/apply", s.withAuth(s.apiFirewallApply))
 	mux.HandleFunc("/api/status/envoy", s.withAuthReadonly(s.apiEnvoyStatus))
 	mux.HandleFunc("/api/status/traffic", s.withAuthReadonly(s.apiTrafficStatus))
 
@@ -816,13 +817,47 @@ func (s *Server) apiApplyPreview(w http.ResponseWriter, r *http.Request) {
 	if prevStamp != "" && before != nil {
 		diff.Note = s.t(r, "apply.diff_note", prevStamp)
 	}
+	plan := diff.Classify()
 	b.WriteString(diff.String())
 	b.WriteString(render.Summarize(res))
 	last := s.lastApply
 	if last == "" {
 		last = s.t(r, "apply.none")
 	}
-	writeJSON(w, 200, map[string]any{"summary": b.String(), "last_apply": last})
+	writeJSON(w, 200, map[string]any{
+		"summary":        b.String(),
+		"last_apply":     last,
+		"needs_reload":   plan.NeedsReload,
+		"needs_firewall": plan.NeedsFirewall,
+	})
+}
+
+func (s *Server) apiFirewallApply(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var body struct {
+		Confirm string `json:"confirm"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	const phrase = "YES_FLUSH_NFTABLES"
+	if strings.TrimSpace(body.Confirm) != phrase {
+		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", phrase)})
+		return
+	}
+	out, err := ops.FirewallApplyCapture(s.cfg.Root)
+	if err != nil {
+		if strings.Contains(err.Error(), "需要 root") {
+			out = strings.TrimSpace(out) + "\n" + s.t(r, "ops.fw_root_hint")
+		}
+		s.lastApply = time.Now().Format(time.RFC3339) + " FIREWALL FAIL: " + err.Error() + "\n" + out
+		writeOpsResult(w, out, err)
+		return
+	}
+	s.lastApply = time.Now().Format(time.RFC3339) + " FIREWALL OK\n" + out
+	s.appendAudit("firewall.apply", "ok")
+	writeOpsResult(w, out, nil)
 }
 
 func (s *Server) apiEnvoyStatus(w http.ResponseWriter, r *http.Request) {

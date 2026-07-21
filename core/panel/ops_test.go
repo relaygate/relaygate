@@ -128,6 +128,57 @@ func TestChangesListAndRollbackConfirm(t *testing.T) {
 	}
 }
 
+func TestApplyPreviewClassify(t *testing.T) {
+	srv, token, csrf := setupPanel(t)
+	h := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/apply/preview", nil)
+	authed(req, token)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("preview status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var preview map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := preview["needs_reload"]; !ok {
+		t.Fatalf("missing needs_reload: %s", rec.Body.String())
+	}
+	if _, ok := preview["needs_firewall"]; !ok {
+		t.Fatalf("missing needs_firewall: %s", rec.Body.String())
+	}
+
+	// ACL-only write should flip needs_firewall after backup exists from prior apply path.
+	// Seed a "before" by writing a backup snapshot via resources path used by Diff.
+	aclBody, _ := json.Marshal(map[string]string{"list": "deny", "cidr": "203.0.113.10/32"})
+	req = httptest.NewRequest(http.MethodPost, "/api/acl", bytes.NewReader(aclBody))
+	authedCSRF(req, token, csrf)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 && rec.Code != 201 {
+		t.Fatalf("acl status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFirewallApplyRequiresConfirm(t *testing.T) {
+	srv, token, csrf := setupPanel(t)
+	h := srv.Handler()
+
+	body, _ := json.Marshal(map[string]string{"confirm": "nope"})
+	req := httptest.NewRequest(http.MethodPost, "/api/firewall/apply", bytes.NewReader(body))
+	authedCSRF(req, token, csrf)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("firewall apply without confirm status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "YES_FLUSH_NFTABLES") {
+		t.Fatalf("expected confirm hint: %s", rec.Body.String())
+	}
+}
+
 func TestAPILang(t *testing.T) {
 	srv, _, _ := setupPanel(t)
 	h := srv.Handler()

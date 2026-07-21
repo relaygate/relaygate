@@ -226,11 +226,17 @@ export async function getApplyPreview(): Promise<ApplyPreview> {
   return {
     summary: pickString(data, "summary", "Summary"),
     last_apply: pickString(data, "last_apply", "LastApply"),
+    needs_reload: data.needs_reload === true || data.NeedsReload === true,
+    needs_firewall: data.needs_firewall === true || data.NeedsFirewall === true,
   }
 }
 
 export async function applyConfig(): Promise<OpsResult> {
   return normalizeOpsResult(await api.post("/api/apply"))
+}
+
+export async function applyFirewall(confirm: string): Promise<OpsResult> {
+  return normalizeOpsResult(await api.post("/api/firewall/apply", { confirm }))
 }
 
 export async function getEnvoyStatus(): Promise<EnvoyStatus> {

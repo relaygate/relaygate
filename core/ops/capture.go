@@ -57,3 +57,8 @@ func RollbackCapture(root, stamp string) (string, error) {
 func FirewallCapture(root string, apply bool) (string, error) {
 	return CaptureStdout(func() error { return Firewall(root, apply) })
 }
+
+// FirewallApplyCapture runs FirewallApplyConfirmed and returns captured stdout.
+func FirewallApplyCapture(root string) (string, error) {
+	return CaptureStdout(func() error { return FirewallApplyConfirmed(root) })
+}

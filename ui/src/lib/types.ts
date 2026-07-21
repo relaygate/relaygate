@@ -75,6 +75,8 @@ export interface TrafficStatus {
 export interface ApplyPreview {
   summary: string
   last_apply: string
+  needs_reload: boolean
+  needs_firewall: boolean
 }
 
 export interface ChangeEntry {

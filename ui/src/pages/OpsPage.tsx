@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { Link } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
@@ -303,9 +304,9 @@ export function OpsPage() {
         </p>
         <p className="text-xs text-muted-foreground">
           {t("ops.fw_apply_label")}{" "}
-          <code className="font-mono">
-            sudo APPLY_FIREWALL=1 FIREWALL_CONFIRM=YES_FLUSH_NFTABLES relaygate firewall apply
-          </code>
+          <Link to="/apply" className="underline underline-offset-2">
+            {t("ops.fw_apply_link")}
+          </Link>
         </p>
         <Button variant="outline" onClick={runFirewall} disabled={busy === "firewall"}>
           {busy === "firewall" ? <Spinner data-icon="inline-start" /> : null}

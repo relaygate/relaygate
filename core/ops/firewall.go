@@ -52,6 +52,16 @@ func writeFirewallRuntime(root, sshPort string) (fwDir, runtimePath string, err 
 
 // Firewall renders and optionally applies nftables rules. apply=false is check-only.
 func Firewall(root string, apply bool) error {
+	return firewallExec(root, apply, false)
+}
+
+// FirewallApplyConfirmed applies nftables after the caller already verified
+// YES_FLUSH_NFTABLES (e.g. Panel API). Skips TTY / env confirm prompts.
+func FirewallApplyConfirmed(root string) error {
+	return firewallExec(root, true, true)
+}
+
+func firewallExec(root string, apply bool, skipConfirm bool) error {
 	if !IsRoot() {
 		return fmt.Errorf("需要 root")
 	}
@@ -95,8 +105,10 @@ func Firewall(root string, apply bool) error {
 		return nil
 	}
 
-	if err := confirmFirewall(env); err != nil {
-		return err
+	if !skipConfirm {
+		if err := confirmFirewall(env); err != nil {
+			return err
+		}
 	}
 
 	stamp := time.Now().Format("20060102-150405")

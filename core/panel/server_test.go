@@ -453,6 +453,15 @@ func TestStandbyRejectsWrites(t *testing.T) {
 		t.Fatalf("standby apply status=%d", rec.Code)
 	}
 
+	body, _ = json.Marshal(map[string]string{"confirm": "YES_FLUSH_NFTABLES"})
+	req = httptest.NewRequest(http.MethodPost, "/api/firewall/apply", bytes.NewReader(body))
+	authedCSRF(req, token, csrf)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("standby firewall apply status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
 	req = httptest.NewRequest(http.MethodGet, "/api/servers", nil)
 	authed(req, token)
 	rec = httptest.NewRecorder()
