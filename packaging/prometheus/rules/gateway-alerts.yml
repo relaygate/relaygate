@@ -1,0 +1,144 @@
+groups:
+  - name: gateway-availability
+    rules:
+      - alert: EnvoyDown
+        expr: up{job="envoy"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Envoy 数据面不可用 ({{ $labels.gateway }})"
+          description: "{{ $labels.gateway }} Envoy Prometheus 抓取失败超过 1 分钟。"
+
+      - alert: NodeExporterDown
+        expr: up{job="node"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "node_exporter 不可用 ({{ $labels.gateway }})"
+          description: "{{ $labels.gateway }} 主机指标抓取失败，无法监控 CPU/内存/磁盘。"
+
+  - name: gateway-upstream
+    rules:
+      - alert: EnvoyNoHealthyUpstream
+        expr: |
+          sum by (gateway, envoy_cluster_name) (
+            envoy_cluster_membership_healthy{envoy_cluster_name=~"upstream-server-.*"}
+          ) == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.gateway }} 集群 {{ $labels.envoy_cluster_name }} 无健康后端"
+          description: "固定目标集群连续 2 分钟无健康 endpoint。"
+
+      - alert: EnvoyCircuitBreakerOpen
+        expr: |
+          increase(envoy_cluster_upstream_cx_overflow{envoy_cluster_name=~"upstream-server-.*"}[5m]) > 0
+          or
+          increase(envoy_cluster_upstream_rq_pending_overflow{envoy_cluster_name=~"upstream-server-.*"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.gateway }} 集群 {{ $labels.envoy_cluster_name }} 触发熔断/溢出"
+          description: "近 5 分钟出现连接或 pending 溢出，请检查并发与后端容量。"
+
+  - name: gateway-traffic
+    rules:
+      - alert: EnvoyTcpLocalRateLimited
+        expr: |
+          sum by (gateway) (increase(envoy_local_rate_limit_rate_limited[5m])) > 50
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.gateway }} TCP 本地限速命中频繁"
+          description: "近 5 分钟本地限速拒绝超过 50 次，可能存在扫描或突发流量。Panel Overview 可看 per-rule Top。"
+
+      - alert: EnvoyTcpLocalRateLimitedPerRule
+        expr: |
+          sum by (gateway, envoy_local_rate_limit) (
+            increase(envoy_local_rate_limit_rate_limited[5m])
+          ) > 30
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.gateway }} 规则 {{ $labels.envoy_local_rate_limit }} 限速命中偏高"
+          description: "单规则近 5 分钟限速超过 30 次；可考虑 ACL deny 或 profile 调档。"
+
+      - alert: EnvoyUdpSessionErrors
+        expr: |
+          sum by (gateway, envoy_udp_prefix) (
+            increase(envoy_udp_downstream_sess_tx_errors[5m])
+          ) > 20
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.gateway }} UDP 会话发送错误偏高"
+          description: "UDP 转发错误增加，检查后端连通性与 MTU。"
+
+  - name: host-resources
+    rules:
+      - alert: HostHighCpu
+        expr: |
+          100 - (avg by (gateway) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.gateway }} CPU 使用率过高"
+          description: "CPU 持续 5 分钟超过 85%。"
+
+      - alert: HostHighMemory
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.gateway }} 内存紧张"
+          description: "可用内存低于 10%。"
+
+      - alert: HostDiskAlmostFull
+        expr: |
+          (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.gateway }} 根分区磁盘即将写满"
+          description: "根分区使用率超过 85%，检查日志轮转。"
+
+      - alert: HostNetworkErrors
+        expr: |
+          sum by (gateway) (
+            increase(node_network_receive_errs_total{device!~"lo|veth.*|docker.*"}[5m])
+          ) > 100
+          or
+          sum by (gateway) (
+            increase(node_network_transmit_errs_total{device!~"lo|veth.*|docker.*"}[5m])
+          ) > 100
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.gateway }} 网卡错误包增加"
+          description: "近 5 分钟网卡收发错误显著增加。"
+
+  - name: multi-gateway-ha
+    rules:
+      - alert: GatewayPartialOutage
+        expr: |
+          count by () (up{job="envoy"} == 1) < 2
+          and
+          count by () (up{job="envoy"}) >= 2
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "双活网关仅剩一台健康"
+          description: "集中 Prometheus 看到少于 2 个健康 Envoy；请检查故障节点与 L4 LB 健康检查。"

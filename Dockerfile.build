@@ -1,0 +1,14 @@
+# Build/extract Linux relaygate binary (install.sh / CI builder).
+# Production Panel runs as host systemd — not this image as a long-running service.
+FROM golang:1.22-bookworm AS build
+WORKDIR /src
+ENV GOPROXY=https://goproxy.cn,direct
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/relaygate ./core/cmd/relaygate
+
+# Minimal image so `docker create` can extract the binary.
+FROM debian:bookworm-slim
+COPY --from=build /out/relaygate /usr/local/bin/relaygate
+ENTRYPOINT ["/usr/local/bin/relaygate"]

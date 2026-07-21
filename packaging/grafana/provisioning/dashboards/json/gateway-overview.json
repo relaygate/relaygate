@@ -1,0 +1,228 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Envoy Up",
+      "id": 1,
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "up{job=\"envoy\", gateway=~\"$gateway\"}",
+          "legendFormat": "{{gateway}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ]
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat",
+      "title": "Healthy Upstreams",
+      "id": 2,
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "targets": [
+        {
+          "expr": "count(envoy_cluster_membership_healthy{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"} > 0) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat",
+      "title": "CPU %",
+      "id": 3,
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "targets": [
+        {
+          "expr": "100 - (avg by (gateway) (rate(node_cpu_seconds_total{gateway=~\"$gateway\", mode=\"idle\"}[5m])) * 100)",
+          "legendFormat": "{{gateway}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "max": 100 },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat",
+      "title": "Memory %",
+      "id": 4,
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "(1 - (node_memory_MemAvailable_bytes{gateway=~\"$gateway\"} / node_memory_MemTotal_bytes{gateway=~\"$gateway\"})) * 100",
+          "legendFormat": "{{gateway}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "max": 100 },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat",
+      "title": "Disk / %",
+      "id": 5,
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "targets": [
+        {
+          "expr": "(1 - (node_filesystem_avail_bytes{gateway=~\"$gateway\", mountpoint=\"/\"} / node_filesystem_size_bytes{gateway=~\"$gateway\", mountpoint=\"/\"})) * 100",
+          "legendFormat": "{{gateway}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "max": 100 },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "timeseries",
+      "title": "TCP Downstream Connections (by gateway / cluster)",
+      "id": 10,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        {
+          "expr": "sum by (gateway, envoy_cluster_name) (envoy_cluster_upstream_cx_active{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*-tcp\"})",
+          "legendFormat": "{{gateway}} {{envoy_cluster_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] } }
+    },
+    {
+      "type": "timeseries",
+      "title": "UDP Downstream Sessions",
+      "id": 11,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        {
+          "expr": "sum by (gateway, envoy_udp_prefix) (envoy_udp_downstream_sess_active{gateway=~\"$gateway\"})",
+          "legendFormat": "{{gateway}} {{envoy_udp_prefix}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"] } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Upstream Throughput (bytes/s)",
+      "id": 12,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "expr": "sum by (gateway, envoy_cluster_name) (rate(envoy_cluster_upstream_cx_rx_bytes_total{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}[1m]))",
+          "legendFormat": "rx {{gateway}} {{envoy_cluster_name}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (gateway, envoy_cluster_name) (rate(envoy_cluster_upstream_cx_tx_bytes_total{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}[1m]))",
+          "legendFormat": "tx {{gateway}} {{envoy_cluster_name}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Circuit Breaker / Overflow",
+      "id": 13,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        {
+          "expr": "sum by (gateway, envoy_cluster_name) (rate(envoy_cluster_upstream_cx_overflow{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}[1m]))",
+          "legendFormat": "cx_overflow {{gateway}} {{envoy_cluster_name}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (gateway, envoy_local_rate_limit) (rate(envoy_local_rate_limit_rate_limited{gateway=~\"$gateway\"}[1m]))",
+          "legendFormat": "tcp_rl {{gateway}} {{envoy_local_rate_limit}}",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Upstream Membership Healthy",
+      "id": 14,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "expr": "envoy_cluster_membership_healthy{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}",
+          "legendFormat": "{{gateway}} {{envoy_cluster_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Host Network Traffic",
+      "id": 15,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        {
+          "expr": "sum by (gateway, device) (rate(node_network_receive_bytes_total{gateway=~\"$gateway\", device!~\"lo|veth.*|docker.*|br-.*\"}[1m]))",
+          "legendFormat": "rx {{gateway}} {{device}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (gateway, device) (rate(node_network_transmit_bytes_total{gateway=~\"$gateway\", device!~\"lo|veth.*|docker.*|br-.*\"}[1m]))",
+          "legendFormat": "tx {{gateway}} {{device}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["relaygate", "envoy", "multi-gateway"],
+  "templating": {
+    "list": [
+      {
+        "name": "gateway",
+        "type": "query",
+        "label": "Gateway",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(up{job=\"envoy\"}, gateway)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "RelayGate Multi-Gateway Overview",
+  "uid": "relaygate-gateway-overview",
+  "version": 1
+}

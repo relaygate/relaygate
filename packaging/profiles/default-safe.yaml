@@ -1,0 +1,23 @@
+# 默认安全档：与 resources.example 对齐，偏保守
+name: default-safe
+description: 通用安全默认档；新环境或不确定游戏类型时使用
+
+defaults:
+  backend_tcp_port: 7777
+  backend_udp_port: 7778
+  tcp_idle_timeout: 3600s
+  udp_idle_timeout: 120s
+  max_connections: 1024
+  max_pending_requests: 256
+  tcp_local_rate_limit_per_sec: 200
+  tcp_local_rate_limit_burst: 400
+  health_check:
+    timeout: 2s
+    interval: 10s
+    unhealthy_threshold: 3
+    healthy_threshold: 2
+  nftables:
+    tcp_new_conn_per_ip: 30/second
+    udp_pps_per_ip: 500/second
+    tcp_burst: 60
+    udp_burst: 1000

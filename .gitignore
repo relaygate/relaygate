@@ -1,0 +1,37 @@
+# RelayGate — 开发/构建忽略规则
+# 预设配置入库（*.example、packaging/）；运行态不入库
+
+# 构建与发布产物
+/bin/
+/dist/
+*.exe
+
+# 源码树本地运行态（setup/render/apply；开发用 .runtime/，勿用顶层 data/）
+/.runtime/
+# 误用顶层 data/ 时产生的运行态（含 panel.pid）；安装树 data/ 不在本仓库布局内
+/data/
+
+# 本地环境文件（模板：根 .env.example、以及 packaging/**/.env.example）
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# 日志与工具缓存
+*.log
+.tools/
+
+# Terraform 本地状态
+**/.terraform/
+*.tfstate
+*.tfstate.*
+
+# Panel UI (Vite)
+/ui/node_modules/
+/ui/dist/

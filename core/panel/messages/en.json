@@ -1,0 +1,16 @@
+{
+  "error.standby": "Standby is read-only; use primary (set ENABLE_PANEL=0 on standby)",
+  "error.grafana_unavailable": "Grafana unavailable: %s",
+  "error.no_output": "(no output)",
+  "error.drain_action": "action must be status|fail|ok",
+  "error.confirm_typed": "Type %s to confirm",
+  "error.invalid_stamp": "Invalid stamp",
+  "error.summary_not_found": "Summary not found: %s",
+  "login.error_password": "Wrong password",
+  "login.error_rate_limit": "Too many attempts. Retry in %.0f s",
+  "login.error_session": "Could not create session",
+  "apply.none": "None",
+  "changes.no_summary": "(no change-summary.txt; stamp can still be rolled back)",
+  "ops.fw_root_hint": "Needs root. Run on the host:\nsudo relaygate firewall check\n",
+  "ops.profile_applied_body": "\nDefaults written. Apply config; run firewall apply if nftables profile changed.\n"
+}

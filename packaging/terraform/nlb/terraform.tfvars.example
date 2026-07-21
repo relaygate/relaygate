@@ -1,0 +1,35 @@
+aws_region = "ap-northeast-1"
+name_prefix = "relaygate"
+
+vpc_id = "vpc-xxxxxxxx"
+public_subnet_ids = [
+  "subnet-aaa",
+  "subnet-bbb",
+]
+
+gateways = [
+  {
+    name        = "gateway-01"
+    instance_id = "i-aaaaaaaa"
+    private_ip  = "10.0.1.11"
+  },
+  {
+    name        = "gateway-02"
+    instance_id = "i-bbbbbbbb"
+    private_ip  = "10.0.2.22"
+  },
+]
+
+# Envoy admin 需对 VPC/NLB 可达（不要对 0.0.0.0/0 开放）
+health_check_protocol = "HTTP"
+health_check_port     = 9901
+health_check_path     = "/ready"
+
+# 可选：自动给实例 SG 加转发端口与健康检查入站
+# gateway_security_group_id = "sg-xxxxxxxx"
+# client_cidrs = ["0.0.0.0/0"]
+
+tags = {
+  Project = "RelayGate"
+  Env     = "prod"
+}
