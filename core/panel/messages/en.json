@@ -13,5 +13,5 @@
   "apply.none": "None",
   "changes.no_summary": "(no change-summary.txt; stamp can still be rolled back)",
   "ops.fw_root_hint": "Needs root. Run on the host:\nsudo relaygate firewall check\n",
-  "ops.profile_applied_body": "\nDefaults written. Apply / reload; run firewall apply if nftables profile changed.\n"
+  "ops.profile_applied_body": "\nDefaults written. Apply config; run firewall apply if nftables profile changed.\n"
 }

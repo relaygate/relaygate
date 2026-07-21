@@ -8,7 +8,7 @@
 
 - [x] L4 TCP/UDP 固定目标转发（Envoy）与连接/PPS 限流（`rl_<forward>`）
 - [x] CLI 闭环：`setup` / `doctor` / `render` / `validate` / `apply` / `reload` / `rollback` / `smoke` / `canary`
-- [x] Panel（默认 `127.0.0.1:9000`）：Servers / 转发规则 / ACL / Apply / 运维（doctor·drain·smoke·canary·firewall check·profile）/ 变更（历史·rollback）/ Overview / Monitoring（Grafana 同源反代）
+- [x] Panel（默认 `127.0.0.1:9000`）：后端节点 / 转发规则 / ACL 集合 / 应用配置 / 运维（诊断·摘流·冒烟·金丝雀·防火墙检查·运维档位）/ 变更（历史·回滚）/ 总览 / 监控（Grafana 同源反代）
 - [x] IP 黑白名单 ACL（nftables 真相源；SSH 不受约束）
 - [x] 游戏类型 profile（`packaging/profiles/`）与 `defaults` 变更摘要（`changes`）
 - [x] `defaults.nftables.*` 同源限流 → Envoy + `forward-ports.nft`
@@ -122,13 +122,13 @@ Panel    sudo relaygate panel install|uninstall
 
 | 页 | 能力 |
 |----|------|
-| Overview | 聚合 RL + 转发规则限速 Top |
-| Servers / 转发规则 | CRUD、启停、自动分配端口；Servers「放量」启用 production |
-| ACL | 防火墙黑白名单 CRUD（改后需 `firewall apply`） |
-| Apply | 校验 → 备份摘要 → drain → 重启 Envoy |
-| 运维 | doctor / drain（强确认）/ smoke·canary / firewall check（apply 仅复制命令）/ profile 预览与 apply |
-| 变更 | `backups/*/change-summary` 历史；rollback 预览与强确认 |
-| Monitoring | Grafana 嵌入 |
+| 总览 | 聚合限速指标 + 转发规则限速 Top |
+| 后端节点 / 转发规则 | CRUD、启停、自动分配端口；后端节点「放量」启用正式转发 |
+| ACL 集合 | 访问控制名单 CRUD（改后需防火墙应用） |
+| 应用配置 | 校验 → 备份摘要 → 摘流 → 重启 Envoy |
+| 运维 | 诊断 / 摘流（强确认）/ 冒烟·金丝雀 / 防火墙检查（应用仅复制命令）/ 运维档位预览与写入 |
+| 变更 | `backups/*/change-summary` 历史；回滚预览与强确认 |
+| 监控 | Grafana 嵌入 |
 
 写操作在 `PANEL_ROLE=standby` 时拒写；成功写操作追加 `DataDir/panel-audit.log`（不含密码）。
 
@@ -249,8 +249,10 @@ sudo PURGE=1 bash install.sh --uninstall
 | 口语简称（上下文已明） | 「这条转发」= 转发规则 | 把入口 / `rl_*` / `FORWARD_*` 也叫规则 |
 | 入口 / 上游 | **入口**（`ingress-`）、**上游**（`upstream-`） | listener / cluster 口语替代中文产品词 |
 | ACL 页 | **ACL 集合** / 访问控制名单 | 「防火墙规则」（易与整份 nft ruleset 混淆） |
-| `firewall apply` | 应用主机防火墙配置 | 「应用规则」而不说明是 nft |
-| Overview 限速 Top | 转发规则 + 限速指标 | 把 `rl_*` 当成转发规则名单独展示 |
+| `firewall apply` | **防火墙应用**（应用主机防火墙配置） | 「应用规则」而不说明是 nft |
+| 总览限速 Top | 转发规则 + 限速指标 | 把 `rl_*` 当成转发规则名单独展示 |
+| Panel 侧栏（中文 UI） | 总览 / 后端节点 / 转发规则 / ACL 集合 / **应用配置** / 运维 / 变更 / 监控 | 直接丢 Apply、Servers、Drain、Smoke 等英文当标题 |
+| 运维动作 | **诊断** / **摘流** / **冒烟** / **金丝雀** / **防火墙检查** / **运维档位** / **放量** / **回滚** | Doctor、Drain、Smoke、Promote 等夹杂在中文句里 |
 
 基础设施命名避免 `game`/`player`（`meta.game_name` 等产品域字段除外）。代码标识（YAML 键 `rules`、Go 类型 `Rule`、路径 `/rules`）可保留以降低 diff；**对外标识符与文档一律用 `forward-`**，UI/文档优先「转发规则」。
 
