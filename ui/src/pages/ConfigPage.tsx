@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
-import { DownloadIcon, PencilIcon, SaveIcon } from "lucide-react"
+import {
+  DownloadIcon,
+  FileCodeIcon,
+  PackageIcon,
+  PencilIcon,
+  SaveIcon,
+} from "lucide-react"
 
 import { IntentSourceNote } from "@/components/layout/IntentSourceNote"
 import { Page, PageHeader, OutputPre, Section } from "@/components/layout/PageParts"
@@ -16,10 +22,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Textarea } from "@/components/ui/textarea"
 import { useStandby } from "@/context/SessionContext"
 import {
   ApiError,
+  exportConfigPack,
   exportConfigYAML,
   getConfigResources,
   putConfigResources,
@@ -30,6 +44,7 @@ import {
 export function ConfigPage() {
   const { t } = useTranslation()
   const standby = useStandby()
+  const fileRef = useRef<HTMLInputElement>(null)
 
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
@@ -149,6 +164,29 @@ export function ConfigPage() {
     }
   }
 
+  async function handleExportZip() {
+    try {
+      await exportConfigPack()
+      toast.success(t("config.toast_export_ok"))
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : t("config.toast_export_fail"))
+    }
+  }
+
+  function onImportFile(file: File | null) {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const text = typeof reader.result === "string" ? reader.result : ""
+      setContent(text)
+      setDirty(true)
+      setEditing(true)
+      setResult(null)
+      toast.message(t("config.import_ready"))
+    }
+    reader.readAsText(file)
+  }
+
   const errorText =
     result && !result.ok && result.errors?.length
       ? result.errors
@@ -179,12 +217,47 @@ export function ConfigPage() {
           <Button variant="ghost" size="sm" disabled={saving} onClick={cancelEdit}>
             {t("config.cancel")}
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={standby || saving}
+            onClick={() => fileRef.current?.click()}
+          >
+            <FileCodeIcon data-icon="inline-start" />
+            {t("config.import")}
+          </Button>
         </>
       )}
-      <Button variant="outline" size="sm" disabled={loading || editing} onClick={handleExportYAML}>
-        <DownloadIcon data-icon="inline-start" />
-        {t("config.export")}
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={<Button variant="outline" size="sm" disabled={loading} />}
+        >
+          <DownloadIcon data-icon="inline-start" />
+          {t("config.export")}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuGroup>
+            <DropdownMenuItem onClick={handleExportYAML}>
+              <DownloadIcon data-icon="inline-start" />
+              {t("config.export")} YAML
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleExportZip}>
+              <PackageIcon data-icon="inline-start" />
+              {t("config.export_pack")}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".yaml,.yml,text/yaml,text/plain"
+        className="hidden"
+        onChange={(e) => {
+          onImportFile(e.target.files?.[0] ?? null)
+          e.target.value = ""
+        }}
+      />
     </div>
   )
 
