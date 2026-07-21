@@ -304,8 +304,10 @@ func ensureSecrets(opt Options) error {
 	return nil
 }
 
+// randomPassword returns a URL-safe base64 password of 16 characters
+// (12 random bytes → ~96 bits of entropy).
 func randomPassword() (string, error) {
-	b := make([]byte, 36)
+	b := make([]byte, 12)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
