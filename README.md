@@ -8,7 +8,7 @@
 
 - [x] L4 TCP/UDP 固定目标转发（Envoy）与连接/PPS 限流（`rl_<forward>`）
 - [x] CLI 闭环：`setup` / `doctor` / `render` / `validate` / `apply` / `reload` / `rollback` / `smoke` / `canary`
-- [x] Panel（默认 `127.0.0.1:9000`）：Servers / 转发规则 / ACL / Apply / Overview（含 per-rule Top）/ Monitoring（中文，Grafana 同源反代）
+- [x] Panel（默认 `127.0.0.1:9000`）：Servers / 转发规则 / ACL / Apply / 运维（doctor·drain·smoke·canary·firewall check·profile）/ 变更（历史·rollback）/ Overview / Monitoring（Grafana 同源反代）
 - [x] IP 黑白名单 ACL（nftables 真相源；SSH 不受约束）
 - [x] 游戏类型 profile（`packaging/profiles/`）与 `defaults` 变更摘要（`changes`）
 - [x] `defaults.nftables.*` 同源限流 → Envoy + `forward-ports.nft`
@@ -20,8 +20,7 @@
 
 ### 规划中
 
-- [ ] Panel：drain / smoke / doctor 面板化
-- [ ] Panel：rollback UX、profile 管理 UI、fleet 向导
+- [ ] Panel：fleet 向导
 - [ ] Envoy 热加载（远期）
 - [ ] 完整 WAF / Agones 集成（不做或远期）
 
@@ -122,12 +121,14 @@ Panel    sudo relaygate panel install|uninstall
 | 页 | 能力 |
 |----|------|
 | Overview | 聚合 RL + 转发规则限速 Top |
-| Servers / 转发规则 | CRUD、启停、自动分配端口 |
+| Servers / 转发规则 | CRUD、启停、自动分配端口；Servers「放量」启用 production |
 | ACL | 防火墙黑白名单 CRUD（改后需 `firewall apply`） |
 | Apply | 校验 → 备份摘要 → drain → 重启 Envoy |
-| Monitoring | Grafana 嵌入（中文文案） |
+| 运维 | doctor / drain（强确认）/ smoke·canary / firewall check（apply 仅复制命令）/ profile 预览与 apply |
+| 变更 | `backups/*/change-summary` 历史；rollback 预览与强确认 |
+| Monitoring | Grafana 嵌入 |
 
-drain / smoke / doctor / rollback / profile / fleet 目前以 **CLI** 为准（见规划中）。
+写操作在 `PANEL_ROLE=standby` 时拒写；成功写操作追加 `DataDir/panel-audit.log`（不含密码）。
 
 ## 配置（resources / DataDir / nftables）
 
