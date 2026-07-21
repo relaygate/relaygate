@@ -287,11 +287,11 @@ export function OpsPage() {
           <div className="flex gap-2">
             <Button variant="outline" onClick={runSmoke} disabled={busy === "smoke"}>
               {busy === "smoke" ? <Spinner data-icon="inline-start" /> : null}
-              smoke
+              {t("ops.btn_smoke")}
             </Button>
             <Button variant="outline" onClick={runCanary} disabled={busy === "canary"}>
               {busy === "canary" ? <Spinner data-icon="inline-start" /> : null}
-              canary
+              {t("ops.btn_canary")}
             </Button>
           </div>
         </FieldGroup>

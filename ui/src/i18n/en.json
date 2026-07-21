@@ -1,7 +1,6 @@
 {
   "lang.en": "English",
   "lang.zh_CN": "简体中文",
-
   "nav.overview": "Overview",
   "nav.servers": "Servers",
   "nav.rules": "Forwards",
@@ -12,7 +11,6 @@
   "nav.changes": "Changes",
   "nav.monitoring": "Monitoring",
   "nav.logout": "Log out",
-
   "shell.language": "Language",
   "shell.theme": "Theme",
   "shell.theme_dark": "Dark",
@@ -24,14 +22,12 @@
   "common.edit": "Edit",
   "common.confirm": "Confirm",
   "common.working": "Working…",
-
   "login.title": "Sign in",
   "login.password": "Password",
   "login.submit": "Sign in",
   "login.error_password": "Wrong password",
   "login.error_rate_limit": "Too many attempts. Retry in %.0f s",
   "login.error_session": "Could not create session",
-
   "error.standby": "Standby is read-only; use primary (set ENABLE_PANEL=0 on standby)",
   "error.grafana_unavailable": "Grafana unavailable: %s",
   "error.no_output": "(no output)",
@@ -39,7 +35,6 @@
   "error.confirm_typed": "Type %s to confirm",
   "error.invalid_stamp": "Invalid stamp",
   "error.summary_not_found": "Summary not found: %s",
-
   "overview.title": "Overview",
   "overview.envoy": "Envoy",
   "overview.healthy_clusters": "Healthy upstreams",
@@ -53,7 +48,6 @@
   "overview.col_prefix": "Rate-limit metric",
   "overview.col_hits": "Hits (5m)",
   "overview.top_empty": "No hits in the last 5 minutes, or Prometheus unreachable.",
-
   "servers.title": "Servers",
   "servers.hint": "Changes take effect after Apply. After canary passes, use Promote to enable production forwards.",
   "servers.add_heading": "Add server",
@@ -66,7 +60,6 @@
   "servers.add": "Add server",
   "servers.canary": "Canary",
   "servers.production": "Production",
-
   "stage.canary": "Canary",
   "stage.production": "Production",
   "servers.save": "Save",
@@ -87,7 +80,6 @@
   "servers.toast_disabled": "Disabled %s (not applied yet)",
   "servers.toast_deleted": "Deleted %s (removed %d forwards, not applied yet)",
   "servers.toast_promoted": "Enabled %s production (%d forwards); Apply to take effect",
-
   "rules.title": "Forwards",
   "rules.hint": "Toggle then Apply. Id forward-*; each yields ingress-* → upstream-*.",
   "rules.col_name": "Name",
@@ -99,7 +91,6 @@
   "rules.empty": "No forwards.",
   "rules.toast_enabled": "Enabled %s (not applied yet)",
   "rules.toast_disabled": "Disabled %s (not applied yet)",
-
   "acl.title": "ACL sets",
   "acl.hint": "Access-control lists (ACL_DENY / ACL_ALLOW); run firewall apply after changes.",
   "acl.add_heading": "Add CIDR",
@@ -112,7 +103,6 @@
   "acl.non_strict": "(open)",
   "acl.toast_added": "Added %s (run firewall apply)",
   "acl.toast_removed": "Removed %s (run firewall apply)",
-
   "config.title": "Config",
   "config.hint": "resources.yaml is the single runtime source of truth. Preview, validate, and replace the whole file here; Apply afterward (no auto reload).",
   "config.edit_title": "Editing",
@@ -138,7 +128,6 @@
   "config.toast_conflict": "File changed elsewhere; reloaded — edit again",
   "config.toast_export_ok": "Download started",
   "config.toast_export_fail": "Export failed",
-
   "apply.title": "Apply",
   "apply.summary": "Change summary",
   "apply.submit": "Apply config",
@@ -168,7 +157,6 @@
   "apply.toast_config_fail": "Apply config failed",
   "apply.toast_fw_ok": "Firewall applied",
   "apply.toast_fw_fail": "Apply firewall failed",
-
   "ops.title": "Ops",
   "ops.doctor": "Doctor",
   "ops.run": "Run",
@@ -179,6 +167,8 @@
   "ops.cancel": "Cancel",
   "ops.drain_hint": "fail waits for DRAIN_WAIT (may take tens of seconds).",
   "ops.smoke_canary": "Smoke / Canary",
+  "ops.btn_smoke": "Smoke",
+  "ops.btn_canary": "Canary",
   "ops.host": "Host",
   "ops.firewall": "Firewall",
   "ops.fw_check_label": "check:",
@@ -195,8 +185,8 @@
   "ops.toast_drain_err": "Drain %s failed",
   "ops.toast_smoke_ok": "Smoke done",
   "ops.toast_smoke_err": "Smoke failed",
-  "ops.toast_canary_ok": "Canary done",
-  "ops.toast_canary_err": "Canary failed",
+  "ops.toast_canary_ok": "Canary probe done",
+  "ops.toast_canary_err": "Canary probe failed",
   "ops.toast_fw_ok": "Firewall check done",
   "ops.toast_fw_err": "Firewall check failed",
   "ops.toast_fw_root": "Firewall check needs root",
@@ -206,7 +196,6 @@
   "ops.toast_profile_ok": "Profile written",
   "ops.toast_profile_err": "Profile apply failed",
   "ops.profile_applied_body": "\nDefaults written. Apply config; run firewall apply if nftables profile changed.\n",
-
   "changes.title": "Changes",
   "changes.history": "History",
   "changes.stamp": "Stamp",
@@ -224,11 +213,9 @@
   "changes.rollback_ok": "Rollback done",
   "changes.rollback_err": "Rollback failed",
   "changes.no_summary": "(no change-summary.txt; stamp can still be rolled back)",
-
   "monitoring.title": "Monitoring",
   "monitoring.open_window": "Open in new window",
   "monitoring.disabled": "Grafana is not enabled. Set GRAFANA_URL and enable with-grafana, then restart Panel.",
-
   "common.ready": "READY",
   "common.down": "DOWN",
   "common.on": "on",

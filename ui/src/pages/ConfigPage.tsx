@@ -2,7 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
-import { DownloadIcon, FileCodeIcon, PackageIcon, PencilIcon, SaveIcon, ShieldCheckIcon } from "lucide-react"
+import {
+  DownloadIcon,
+  FileCodeIcon,
+  PackageIcon,
+  PencilIcon,
+  SaveIcon,
+  ShieldCheckIcon,
+} from "lucide-react"
 
 import { Page, PageHeader, OutputPre, Section } from "@/components/layout/PageParts"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -15,6 +22,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Textarea } from "@/components/ui/textarea"
 import { useStandby } from "@/context/SessionContext"
 import {
@@ -179,9 +193,90 @@ export function ConfigPage() {
           .join("\n")
       : ""
 
+  const headerActions = (
+    <div className="flex flex-wrap items-center gap-2">
+      {!editing ? (
+        <Button variant="outline" size="sm" disabled={standby || loading} onClick={enterEdit}>
+          <PencilIcon data-icon="inline-start" />
+          {t("common.edit")}
+        </Button>
+      ) : (
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={validating || loading}
+            onClick={handleValidate}
+          >
+            <ShieldCheckIcon data-icon="inline-start" />
+            {validating ? t("common.working") : t("config.validate")}
+          </Button>
+          <Button
+            size="sm"
+            disabled={standby || saving || loading || !dirty}
+            onClick={() => setConfirmOpen(true)}
+          >
+            <SaveIcon data-icon="inline-start" />
+            {t("config.save")}
+          </Button>
+          <Button variant="ghost" size="sm" disabled={saving} onClick={cancelEdit}>
+            {t("config.cancel")}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={standby}
+            onClick={() => fileRef.current?.click()}
+          >
+            <FileCodeIcon data-icon="inline-start" />
+            {t("config.import")}
+          </Button>
+        </>
+      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={<Button variant="outline" size="sm" disabled={loading} />}
+        >
+          <DownloadIcon data-icon="inline-start" />
+          {t("config.export")}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuGroup>
+            <DropdownMenuItem onClick={handleExportYAML}>
+              <DownloadIcon data-icon="inline-start" />
+              {t("config.export")} YAML
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleExportZip}>
+              <PackageIcon data-icon="inline-start" />
+              {t("config.export_pack")}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".yaml,.yml,text/yaml,text/plain"
+        className="hidden"
+        onChange={(e) => {
+          onImportFile(e.target.files?.[0] ?? null)
+          e.target.value = ""
+        }}
+      />
+    </div>
+  )
+
   return (
     <Page>
-      <PageHeader title={t("config.title")} hint={t("config.hint")} />
+      <PageHeader
+        title={t("config.title")}
+        hint={
+          mtime
+            ? `${t("config.hint")} · mtime ${mtime}`
+            : t("config.hint")
+        }
+        actions={headerActions}
+      />
 
       {editing ? (
         <Alert>
@@ -190,70 +285,6 @@ export function ConfigPage() {
           <AlertDescription>{t("config.edit_warning")}</AlertDescription>
         </Alert>
       ) : null}
-
-      <div className="flex flex-wrap items-center gap-2">
-        {!editing ? (
-          <Button variant="outline" size="sm" disabled={standby || loading} onClick={enterEdit}>
-            <PencilIcon data-icon="inline-start" />
-            {t("common.edit")}
-          </Button>
-        ) : (
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={validating || loading}
-              onClick={handleValidate}
-            >
-              <ShieldCheckIcon data-icon="inline-start" />
-              {validating ? t("common.working") : t("config.validate")}
-            </Button>
-            <Button
-              size="sm"
-              disabled={standby || saving || loading || !dirty}
-              onClick={() => setConfirmOpen(true)}
-            >
-              <SaveIcon data-icon="inline-start" />
-              {t("config.save")}
-            </Button>
-            <Button variant="ghost" size="sm" disabled={saving} onClick={cancelEdit}>
-              {t("config.cancel")}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={standby}
-              onClick={() => fileRef.current?.click()}
-            >
-              <FileCodeIcon data-icon="inline-start" />
-              {t("config.import")}
-            </Button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".yaml,.yml,text/yaml,text/plain"
-              className="hidden"
-              onChange={(e) => {
-                onImportFile(e.target.files?.[0] ?? null)
-                e.target.value = ""
-              }}
-            />
-          </>
-        )}
-        <Button variant="outline" size="sm" disabled={loading} onClick={handleExportYAML}>
-          <DownloadIcon data-icon="inline-start" />
-          {t("config.export")}
-        </Button>
-        <Button variant="outline" size="sm" disabled={loading} onClick={handleExportZip}>
-          <PackageIcon data-icon="inline-start" />
-          {t("config.export_pack")}
-        </Button>
-        {mtime ? (
-          <span className="ml-auto font-mono text-[11px] text-muted-foreground">
-            mtime {mtime}
-          </span>
-        ) : null}
-      </div>
 
       <Section title="resources.yaml">
         <Textarea

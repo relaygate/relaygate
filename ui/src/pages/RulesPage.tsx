@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table"
 import { useStandby } from "@/context/SessionContext"
 import { ApiError, getRules, patchRule } from "@/lib/api"
+import { stageLabel } from "@/lib/stage"
 import type { Rule } from "@/lib/types"
 import { tf } from "@/i18n"
 
@@ -90,7 +91,7 @@ export function RulesPage() {
               rules.map((rule) => (
                 <TableRow key={rule.name}>
                   <TableCell className="font-medium">{rule.name}</TableCell>
-                  <TableCell>{rule.kind}</TableCell>
+                  <TableCell>{stageLabel(rule.kind)}</TableCell>
                   <TableCell>{rule.protocol}</TableCell>
                   <TableCell className="font-mono text-xs">{rule.listen_port}</TableCell>
                   <TableCell>{rule.server}</TableCell>

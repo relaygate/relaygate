@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
+import { PlusIcon } from "lucide-react"
 
 import { Page, PageHeader, Section } from "@/components/layout/PageParts"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import {
@@ -13,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Spinner } from "@/components/ui/spinner"
 import { useStandby } from "@/context/SessionContext"
 import { addACL, ApiError, getACL, removeACL } from "@/lib/api"
 import { tf } from "@/i18n"
@@ -25,6 +35,8 @@ export function ACLPage() {
   const [list, setList] = useState<"deny" | "allow">("deny")
   const [cidr, setCidr] = useState("")
   const [loading, setLoading] = useState(true)
+  const [addOpen, setAddOpen] = useState(false)
+  const [adding, setAdding] = useState(false)
 
   const load = useCallback(async () => {
     const acl = await getACL()
@@ -39,14 +51,18 @@ export function ACLPage() {
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
     if (standby || !cidr.trim()) return
+    setAdding(true)
     try {
       const acl = await addACL(list, cidr.trim())
       setDeny(acl.deny)
       setAllow(acl.allow)
       setCidr("")
+      setAddOpen(false)
       toast.success(tf("acl.toast_added", cidr.trim()))
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : t("apply.toast_fail"))
+    } finally {
+      setAdding(false)
     }
   }
 
@@ -104,50 +120,91 @@ export function ACLPage() {
 
   return (
     <Page>
-      <PageHeader title={t("acl.title")} hint={t("acl.hint")} />
-
-      <form
-        onSubmit={handleAdd}
-        className="flex flex-col gap-3 rounded-md border border-border/60 bg-card/30 p-3.5"
-      >
-        <h2 className="text-sm font-semibold">{t("acl.add_heading")}</h2>
-        <FieldGroup className="grid gap-4 md:grid-cols-3">
-          <Field>
-            <FieldLabel>{t("acl.list")}</FieldLabel>
-            <Select
-              value={list}
-              onValueChange={(v) => setList(v as "deny" | "allow")}
-              disabled={standby}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="deny">deny</SelectItem>
-                <SelectItem value="allow">allow</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field className="md:col-span-2">
-            <FieldLabel htmlFor="acl-cidr">{t("acl.cidr")}</FieldLabel>
-            <Input
-              id="acl-cidr"
-              value={cidr}
-              onChange={(e) => setCidr(e.target.value)}
-              placeholder="203.0.113.0/24"
-              disabled={standby}
-            />
-          </Field>
-        </FieldGroup>
-        <Button type="submit" disabled={standby || !cidr.trim()} className="w-fit">
-          {t("acl.add")}
-        </Button>
-      </form>
+      <PageHeader
+        title={t("acl.title")}
+        hint={t("acl.hint")}
+        actions={
+          <Button
+            size="sm"
+            disabled={standby}
+            onClick={() => {
+              setCidr("")
+              setList("deny")
+              setAddOpen(true)
+            }}
+          >
+            <PlusIcon data-icon="inline-start" />
+            {t("acl.add")}
+          </Button>
+        }
+      />
 
       <div className="grid gap-6 lg:grid-cols-2">
         {renderList("deny", deny)}
         {renderList("allow", allow, allow.length > 0)}
       </div>
+
+      <Dialog
+        open={addOpen}
+        onOpenChange={(open) => {
+          if (!adding) {
+            setAddOpen(open)
+            if (!open) setCidr("")
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("acl.add_heading")}</DialogTitle>
+            <DialogDescription>{t("acl.hint")}</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleAdd} className="flex flex-col gap-4">
+            <FieldGroup className="grid gap-3">
+              <Field>
+                <FieldLabel>{t("acl.list")}</FieldLabel>
+                <Select
+                  value={list}
+                  onValueChange={(v) => setList(v as "deny" | "allow")}
+                  disabled={standby || adding}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="deny">deny</SelectItem>
+                    <SelectItem value="allow">allow</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="acl-cidr">{t("acl.cidr")}</FieldLabel>
+                <Input
+                  id="acl-cidr"
+                  value={cidr}
+                  onChange={(e) => setCidr(e.target.value)}
+                  placeholder="203.0.113.0/24"
+                  disabled={standby || adding}
+                  required
+                />
+              </Field>
+            </FieldGroup>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setAddOpen(false)}
+                disabled={adding}
+              >
+                {t("ops.cancel")}
+              </Button>
+              <Button type="submit" disabled={standby || adding || !cidr.trim()}>
+                {adding ? <Spinner data-icon="inline-start" /> : null}
+                {t("acl.add")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </Page>
   )
 }

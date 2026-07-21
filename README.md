@@ -8,7 +8,7 @@
 
 - [x] L4 TCP/UDP 固定目标转发（Envoy）与连接/PPS 限流（`rl_<forward>`）
 - [x] CLI 闭环：`setup` / `doctor` / `render` / `validate` / `apply` / `reload` / `rollback` / `smoke` / `canary`
-- [x] Panel（默认 `127.0.0.1:9000`）：后端节点 / 转发规则 / ACL 集合 / 配置 / 应用配置 / 运维（诊断·摘流·冒烟·金丝雀·防火墙检查·运维档位）/ 变更（历史·回滚）/ 总览 / 监控（Grafana 同源反代）
+- [x] Panel（默认 `127.0.0.1:9000`）：后端节点 / 转发规则 / ACL 集合 / 配置 / 应用配置 / 运维（诊断·摘流·冒烟·验证·防火墙检查·运维档位）/ 变更（历史·回滚）/ 总览 / 监控（Grafana 同源反代）
 - [x] IP 黑白名单 ACL（nftables 真相源；SSH 不受约束）
 - [x] 游戏类型 profile（`packaging/profiles/`）与 `defaults` 变更摘要（`changes`）
 - [x] `defaults.nftables.*` 同源限流 → Envoy + `forward-ports.nft`
@@ -127,7 +127,7 @@ Panel    sudo relaygate panel install|uninstall
 | ACL 集合 | 访问控制名单 CRUD（改后需「应用防火墙」） |
 | 配置 | 整文件预览 / 校验 / 导入导出 `resources.yaml`（保存后需应用） |
 | 应用 | 变更摘要分流标签；**应用配置**（Envoy reload）与 **应用防火墙**（nft，强确认）分按钮 |
-| 运维 | 诊断 / 摘流（强确认）/ 冒烟·金丝雀 / 防火墙检查（应用链到「应用」页）/ 运维档位预览与写入 |
+| 运维 | 诊断 / 摘流（强确认）/ 冒烟·验证 / 防火墙检查（应用链到「应用」页）/ 运维档位预览与写入 |
 | 变更 | `backups/*/change-summary` 历史；回滚预览与强确认 |
 | 监控 | Grafana 嵌入 |
 
@@ -209,7 +209,7 @@ relaygate rollback
 sudo PURGE=1 bash install.sh --uninstall
 ```
 
-游戏后端默认：TCP `7777` / UDP `7778`；玩家入口示例 `server-01` → `:10001`（canary `:11001`）。后端防火墙只放行网关回源 IP（双活放行全部网关）。
+游戏后端默认：TCP `7777` / UDP `7778`；玩家入口示例 `server-01` → `:10001`（验证端口 `:11001`）。后端防火墙只放行网关回源 IP（双活放行全部网关）。
 
 ## 命名规范
 
@@ -222,7 +222,7 @@ sudo PURGE=1 bash install.sh --uninstall
 | 网关实例 | `gateway` | 一台 RelayGate 主机（Envoy + nft） | `gateway-{nn}` → `gateway-01`；nft 表 `inet relaygate` |
 | 后端节点 | `server` | 游戏进程所在机器，回源目标 | `server-{nn}` → `server-01`（`servers[].name`） |
 | **转发规则** | `forward-` / YAML 键 `rules[]` | 某入口端口 → 某后端某协议（转发/代理） | `forward-{server}-{stage}-{proto}` → `forward-server-01-production-tcp` |
-| 阶段 | `production` / `canary`（`kind`） | 转发规则生命周期：旁路验证 vs 正式 | `canary` / `production` |
+| 阶段 | `production` / `canary`（`kind`） | 转发规则生命周期：旁路**验证** vs **正式** | 标识 `canary`/`production`；中文展示 **验证** / **正式**；英文展示 Canary / Production |
 | 入口 | `ingress-` | Envoy 用户入口 Listener（由转发规则 1:1 生成） | `ingress-{forwardName}` → `ingress-forward-server-01-canary-tcp` |
 | 上游 | `upstream-` | Envoy 回源 Cluster（按 server+协议，多条转发可共用） | `upstream-{server}-{proto}` → `upstream-server-01-tcp` |
 | 限速指标 | `rl_` + forward 名 | Envoy 本地限速 **stat_prefix**，不是转发规则名本身 | `rl_{forward名,-→_}` → `rl_forward_server_01_canary_tcp` |
@@ -253,7 +253,7 @@ sudo PURGE=1 bash install.sh --uninstall
 | `firewall apply` | **防火墙应用**（应用主机防火墙配置） | 「应用规则」而不说明是 nft |
 | 总览限速 Top | 转发规则 + 限速指标 | 把 `rl_*` 当成转发规则名单独展示 |
 | Panel 侧栏（中文 UI） | 总览 / 后端节点 / 转发规则 / ACL 集合 / **配置** / **应用配置** / 运维 / 变更 / 监控 | 直接丢 Apply、Servers、Drain、Smoke 等英文当标题 |
-| 运维动作 | **诊断** / **摘流** / **冒烟** / **金丝雀** / **防火墙检查** / **运维档位** / **放量** / **回滚** | Doctor、Drain、Smoke、Promote 等夹杂在中文句里 |
+| 运维动作 | **诊断** / **摘流** / **冒烟** / **验证** / **防火墙检查** / **运维档位** / **放量** / **回滚** | Doctor、Drain、Smoke、Promote 等夹杂在中文句里；勿把 `canary` 译成「金丝雀」 |
 
 基础设施命名避免 `game`/`player`（`meta.game_name` 等产品域字段除外）。代码标识（YAML 键 `rules`、Go 类型 `Rule`、路径 `/rules`）可保留以降低 diff；**对外标识符与文档一律用 `forward-`**，UI/文档优先「转发规则」。
 

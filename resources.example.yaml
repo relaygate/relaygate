@@ -63,9 +63,9 @@ servers:
     health_check_port: 7777
     enabled: true
 
-# 用户入口（转发规则）：production 端口固定映射到对应 server
-# 旁路 canary：11001 指向 server-01，验证通过后再启用 production
-# 命名：forward-{server}-{stage}-{proto}；阶段 kind = canary | production
+# 用户入口（转发规则）：正式（production）端口固定映射到对应 server
+# 旁路验证（canary）：11001 指向 server-01，验证通过后再启用正式转发
+# 命名：forward-{server}-{stage}-{proto}；阶段 kind = canary | production（展示名：验证 / 正式）
 rules:
   - name: forward-server-01-canary-tcp
     kind: canary

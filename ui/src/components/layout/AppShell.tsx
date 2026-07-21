@@ -14,6 +14,7 @@ import {
   ServerIcon,
   ShieldIcon,
   SunIcon,
+  UserRoundIcon,
   WrenchIcon,
 } from "lucide-react"
 
@@ -155,8 +156,8 @@ function UserMenu() {
         }
       >
         <Avatar className="size-6">
-          <AvatarFallback className="bg-primary/15 text-[10px] text-primary">
-            {roleLabel.slice(0, 2).toUpperCase()}
+          <AvatarFallback className="bg-primary/15 text-primary">
+            <UserRoundIcon className="size-3.5" aria-hidden />
           </AvatarFallback>
         </Avatar>
         <span className="hidden max-w-24 truncate text-xs font-medium text-foreground sm:inline">

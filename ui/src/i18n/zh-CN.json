@@ -1,7 +1,6 @@
 {
   "lang.en": "English",
   "lang.zh_CN": "简体中文",
-
   "nav.overview": "总览",
   "nav.servers": "后端节点",
   "nav.rules": "转发规则",
@@ -12,7 +11,6 @@
   "nav.changes": "变更",
   "nav.monitoring": "监控",
   "nav.logout": "退出",
-
   "shell.language": "语种",
   "shell.theme": "主题",
   "shell.theme_dark": "暗色",
@@ -24,14 +22,12 @@
   "common.edit": "编辑",
   "common.confirm": "确认",
   "common.working": "处理中…",
-
   "login.title": "登录",
   "login.password": "密码",
   "login.submit": "登录",
   "login.error_password": "密码错误",
   "login.error_rate_limit": "尝试过多，请 %.0f 秒后重试",
   "login.error_session": "无法创建会话",
-
   "error.standby": "备用节点只读，请到主节点操作（从节点建议 ENABLE_PANEL=0）",
   "error.grafana_unavailable": "Grafana 暂不可用：%s",
   "error.no_output": "（无输出）",
@@ -39,7 +35,6 @@
   "error.confirm_typed": "请输入 %s 确认",
   "error.invalid_stamp": "无效时间戳",
   "error.summary_not_found": "未找到摘要：%s",
-
   "overview.title": "总览",
   "overview.envoy": "Envoy",
   "overview.healthy_clusters": "健康上游",
@@ -53,7 +48,6 @@
   "overview.col_prefix": "限速指标",
   "overview.col_hits": "命中次数（5 分钟）",
   "overview.top_empty": "近 5 分钟无命中，或 Prometheus 不可达。",
-
   "servers.title": "后端节点",
   "servers.hint": "修改后需到「应用配置」生效。验证通过后可用「放量」启用正式转发规则。",
   "servers.add_heading": "添加后端节点",
@@ -66,7 +60,6 @@
   "servers.add": "添加后端节点",
   "servers.canary": "验证",
   "servers.production": "正式",
-
   "stage.canary": "验证",
   "stage.production": "正式",
   "servers.save": "保存",
@@ -87,7 +80,6 @@
   "servers.toast_disabled": "已禁用 %s（尚未应用）",
   "servers.toast_deleted": "已删除 %s（移除转发规则 %d 条，尚未应用）",
   "servers.toast_promoted": "已启用 %s 正式转发（%d 条），请到「应用配置」生效",
-
   "rules.title": "转发规则",
   "rules.hint": "开关后需应用配置。标识 forward-*；每条生成入口 ingress-* → 上游 upstream-*。",
   "rules.col_name": "名称",
@@ -99,7 +91,6 @@
   "rules.empty": "暂无转发规则。",
   "rules.toast_enabled": "已启用 %s（尚未应用）",
   "rules.toast_disabled": "已禁用 %s（尚未应用）",
-
   "acl.title": "ACL 集合",
   "acl.hint": "访问控制名单（ACL_DENY / ACL_ALLOW）；改完后请执行防火墙应用。",
   "acl.add_heading": "添加 CIDR",
@@ -112,7 +103,6 @@
   "acl.non_strict": "（非严格）",
   "acl.toast_added": "已添加 %s（请执行防火墙应用）",
   "acl.toast_removed": "已移除 %s（请执行防火墙应用）",
-
   "config.title": "配置",
   "config.hint": "resources.yaml 是运行态单一真相源。此处可预览、校验与整文件写回；保存后需到「应用配置」生效（不会自动重载）。",
   "config.edit_title": "编辑模式",
@@ -138,7 +128,6 @@
   "config.toast_conflict": "文件已在别处更新，已重新加载，请再编辑",
   "config.toast_export_ok": "导出已开始",
   "config.toast_export_fail": "导出失败",
-
   "apply.title": "应用",
   "apply.summary": "变更摘要",
   "apply.submit": "应用配置",
@@ -168,7 +157,6 @@
   "apply.toast_config_fail": "应用配置失败",
   "apply.toast_fw_ok": "防火墙已应用",
   "apply.toast_fw_fail": "应用防火墙失败",
-
   "ops.title": "运维",
   "ops.doctor": "诊断",
   "ops.run": "运行",
@@ -178,7 +166,9 @@
   "ops.drain_label_ok": "输入 DRAIN_OK 确认",
   "ops.cancel": "取消",
   "ops.drain_hint": "选择 fail 会等待 DRAIN_WAIT（可能数十秒）。",
-  "ops.smoke_canary": "冒烟 / 金丝雀",
+  "ops.smoke_canary": "冒烟 / 验证",
+  "ops.btn_smoke": "冒烟",
+  "ops.btn_canary": "验证",
   "ops.host": "主机",
   "ops.firewall": "防火墙",
   "ops.fw_check_label": "检查：",
@@ -195,8 +185,8 @@
   "ops.toast_drain_err": "摘流 %s 失败",
   "ops.toast_smoke_ok": "冒烟测试完成",
   "ops.toast_smoke_err": "冒烟测试失败",
-  "ops.toast_canary_ok": "金丝雀验证完成",
-  "ops.toast_canary_err": "金丝雀验证失败",
+  "ops.toast_canary_ok": "验证探测完成",
+  "ops.toast_canary_err": "验证探测失败",
   "ops.toast_fw_ok": "防火墙检查完成",
   "ops.toast_fw_err": "防火墙检查失败",
   "ops.toast_fw_root": "防火墙检查需要 root",
@@ -206,7 +196,6 @@
   "ops.toast_profile_ok": "运维档位已写入",
   "ops.toast_profile_err": "运维档位应用失败",
   "ops.profile_applied_body": "\n默认配置已写入。请先应用配置；若改了 nftables 档位，另需执行防火墙应用。\n",
-
   "changes.title": "变更",
   "changes.history": "历史",
   "changes.stamp": "时间戳",
@@ -224,11 +213,9 @@
   "changes.rollback_ok": "回滚完成",
   "changes.rollback_err": "回滚失败",
   "changes.no_summary": "（无变更摘要文件，仍可回滚该时间戳）",
-
   "monitoring.title": "监控",
   "monitoring.open_window": "新窗口打开",
   "monitoring.disabled": "未启用 Grafana。配置 GRAFANA_URL 并启用 with-grafana 后重启 Panel。",
-
   "common.ready": "就绪",
   "common.down": "宕机",
   "common.on": "开",

@@ -41,6 +41,7 @@ export function ChangesPage() {
   const [entries, setEntries] = useState<ChangeEntry[]>([])
   const [selectedStamp, setSelectedStamp] = useState<string | null>(null)
   const [detail, setDetail] = useState("")
+  const [detailOpen, setDetailOpen] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [rollbackStamp, setRollbackStamp] = useState<string | null>(null)
   const [rollbackSummary, setRollbackSummary] = useState("")
@@ -59,6 +60,7 @@ export function ChangesPage() {
 
   async function viewDetail(stamp: string) {
     setSelectedStamp(stamp)
+    setDetailOpen(true)
     setDetailLoading(true)
     try {
       const data = await getChangeDetail(stamp)
@@ -104,7 +106,7 @@ export function ChangesPage() {
 
   return (
     <Page className="gap-5">
-      <PageHeader title={t("changes.title")} />
+      <PageHeader title={t("changes.title")} hint={t("changes.rollback_hint")} />
 
       <Section title={t("changes.history")} className="p-0 gap-0 overflow-hidden">
         <div className="border-b border-border/60 px-3.5 py-2.5">
@@ -135,7 +137,10 @@ export function ChangesPage() {
               </TableRow>
             ) : (
               entries.map((entry) => (
-                <TableRow key={entry.stamp} data-state={selectedStamp === entry.stamp ? "selected" : undefined}>
+                <TableRow
+                  key={entry.stamp}
+                  data-state={selectedStamp === entry.stamp ? "selected" : undefined}
+                >
                   <TableCell className="font-mono text-xs">{entry.stamp}</TableCell>
                   <TableCell className="max-w-md truncate text-xs text-muted-foreground">
                     {entry.summary.split("\n")[0]}
@@ -162,18 +167,33 @@ export function ChangesPage() {
         </Table>
       </Section>
 
-      <Section title={t("changes.detail")}>
-        <DiffView
-          value={detailLoading ? "" : detail}
-          placeholder={
-            detailLoading
-              ? t("common.loading")
-              : selectedStamp
-                ? t("changes.no_summary")
-                : t("changes.detail_placeholder")
-          }
-        />
-      </Section>
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{t("changes.detail")}</DialogTitle>
+            <DialogDescription>
+              {selectedStamp ? (
+                <code className="font-mono text-foreground">{selectedStamp}</code>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DiffView
+            value={detailLoading ? "" : detail}
+            placeholder={
+              detailLoading
+                ? t("common.loading")
+                : selectedStamp
+                  ? t("changes.no_summary")
+                  : t("changes.detail_placeholder")
+            }
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDetailOpen(false)}>
+              {t("ops.cancel")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={!!rollbackStamp}
@@ -200,7 +220,6 @@ export function ChangesPage() {
             </Field>
           </FieldGroup>
           {rollbackResult ? <DiffView value={rollbackResult} error /> : null}
-          <p className="text-xs text-muted-foreground">{t("changes.rollback_hint")}</p>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRollbackStamp(null)} disabled={rollbackBusy}>
               {t("ops.cancel")}

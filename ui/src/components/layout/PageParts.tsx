@@ -10,19 +10,26 @@ export function Page({ children, className }: { children: ReactNode; className?:
 export function PageHeader({
   title,
   hint,
+  description,
   actions,
 }: {
   title: string
   hint?: string
+  description?: string
   actions?: ReactNode
 }) {
+  const subtitle = description ?? hint
   return (
-    <header className="flex flex-col gap-1 border-b border-border/60 pb-3 sm:flex-row sm:items-end sm:justify-between">
-      <div className="flex flex-col gap-1">
+    <header className="flex flex-col gap-2 border-b border-border/60 pb-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+      <div className="flex min-w-0 flex-col gap-1">
         <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
-        {hint ? <p className="max-w-2xl text-sm text-muted-foreground">{hint}</p> : null}
+        {subtitle ? (
+          <p className="max-w-2xl text-sm text-muted-foreground">{subtitle}</p>
+        ) : null}
       </div>
-      {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+      {actions ? (
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">{actions}</div>
+      ) : null}
     </header>
   )
 }
