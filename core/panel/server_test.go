@@ -3,7 +3,6 @@ package panel
 import (
 	"bytes"
 	"encoding/json"
-	"html/template"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,32 +15,16 @@ import (
 	"github.com/relaygate/relaygate/core/resources"
 )
 
-func writeMinimalFrontend(t *testing.T, webDir string, withFavicon bool) {
+func writeMinimalUI(t *testing.T, uiDir string, withFavicon bool) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Join(webDir, "templates"), 0o755); err != nil {
+	if err := os.MkdirAll(uiDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(webDir, "static"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(uiDir, "index.html"), []byte(`<!doctype html><html><body>RelayGate SPA</body></html>`), 0o644); err != nil {
 		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(webDir, "i18n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	minimalZH := []byte(`{"error.standby":"standby 只读，请到 primary 操作（从节点建议 ENABLE_PANEL=0）","error.grafana_unavailable":"Grafana 暂不可用: %s","nav.overview":"Overview"}`)
-	minimalEN := []byte(`{"error.standby":"Standby is read-only; use primary (set ENABLE_PANEL=0 on standby)","error.grafana_unavailable":"Grafana unavailable: %s","nav.overview":"Overview"}`)
-	if err := os.WriteFile(filepath.Join(webDir, "i18n", "zh-CN.json"), minimalZH, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(webDir, "i18n", "en.json"), minimalEN, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"login.html", "overview.html", "servers.html", "rules.html", "apply.html", "monitoring.html", "acl.html", "ops.html", "changes.html", "layout.html", "fragments.html"} {
-		if err := os.WriteFile(filepath.Join(webDir, "templates", name), []byte("ok"), 0o644); err != nil {
-			t.Fatal(err)
-		}
 	}
 	if withFavicon {
-		if err := os.WriteFile(filepath.Join(webDir, "static", "favicon.svg"), []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(uiDir, "favicon.svg"), []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -51,11 +34,11 @@ func setupPanel(t *testing.T) (*Server, string, string) {
 	t.Helper()
 	root := t.TempDir()
 	cfgDir := config.ResolveDataDir(root)
-	webDir := filepath.Join(root, "frontend")
+	uiDir := filepath.Join(root, "ui", "dist")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeMinimalFrontend(t, webDir, false)
+	writeMinimalUI(t, uiDir, false)
 	res := &resources.Resources{
 		Servers: []resources.Server{
 			{Name: "server-01", Address: "10.0.0.11", TCPPort: 7777, UDPPort: 7778, HealthCheckPort: 7777, Enabled: true},
@@ -74,7 +57,7 @@ func setupPanel(t *testing.T) (*Server, string, string) {
 	}
 	srv, err := New(Config{
 		Root:          root,
-		FrontendDir:   webDir,
+		UIDir:         uiDir,
 		AdminPassword: "test-pass",
 	})
 	if err != nil {
@@ -99,11 +82,23 @@ func setupPanelWithGrafana(t *testing.T) (*Server, string, string) {
 	t.Cleanup(ts.Close)
 
 	root := t.TempDir()
-	webDir := filepath.Join(root, "frontend")
-	writeMinimalFrontend(t, webDir, true)
+	cfgDir := config.ResolveDataDir(root)
+	uiDir := filepath.Join(root, "ui", "dist")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeMinimalUI(t, uiDir, true)
+	res := &resources.Resources{
+		Servers: []resources.Server{
+			{Name: "server-01", Address: "10.0.0.11", TCPPort: 7777, UDPPort: 7778, HealthCheckPort: 7777, Enabled: true},
+		},
+	}
+	if err := resources.Save(filepath.Join(cfgDir, "resources.yaml"), res); err != nil {
+		t.Fatal(err)
+	}
 	srv, err := New(Config{
 		Root:          root,
-		FrontendDir:   webDir,
+		UIDir:         uiDir,
 		AdminPassword: "test-pass",
 		GrafanaURL:    ts.URL,
 	})
@@ -128,8 +123,8 @@ func authedCSRF(req *http.Request, token, csrf string) {
 
 func TestNewReadsAdminPasswordFile(t *testing.T) {
 	root := t.TempDir()
-	webDir := filepath.Join(root, "frontend")
-	writeMinimalFrontend(t, webDir, false)
+	uiDir := filepath.Join(root, "ui", "dist")
+	writeMinimalUI(t, uiDir, false)
 	passwordFile := filepath.Join(root, "panel-password")
 	if err := os.WriteFile(passwordFile, []byte("file-secret\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -137,7 +132,7 @@ func TestNewReadsAdminPasswordFile(t *testing.T) {
 	t.Setenv("PANEL_ADMIN_PASSWORD", "")
 	t.Setenv("PANEL_ADMIN_PASSWORD_FILE", passwordFile)
 
-	srv, err := New(Config{Root: root, FrontendDir: webDir})
+	srv, err := New(Config{Root: root, UIDir: uiDir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +173,6 @@ func TestAPIServerCreateAndDelete(t *testing.T) {
 		t.Fatalf("servers=%d", len(res.Servers))
 	}
 
-	// duplicate
 	req = httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(body))
 	authedCSRF(req, token, csrf)
 	rec = httptest.NewRecorder()
@@ -219,6 +213,28 @@ func TestAPIServerCreateAndDelete(t *testing.T) {
 	}
 }
 
+func TestAPIServersIncludesLifecycle(t *testing.T) {
+	srv, token, _ := setupPanel(t)
+	h := srv.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/servers", nil)
+	authed(req, token)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := payload["servers"]; !ok {
+		t.Fatalf("missing servers: %s", rec.Body.String())
+	}
+	if _, ok := payload["lifecycle"]; !ok {
+		t.Fatalf("missing lifecycle: %s", rec.Body.String())
+	}
+}
+
 func TestParseGrafanaURL(t *testing.T) {
 	ok, err := parseGrafanaURL("http://127.0.0.1:3000")
 	if err != nil {
@@ -255,13 +271,6 @@ func TestGrafanaProxyRequiresAuth(t *testing.T) {
 		t.Fatalf("location=%q", loc)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/grafana", nil)
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/login" {
-		t.Fatalf("unauth /grafana status=%d loc=%s", rec.Code, rec.Header().Get("Location"))
-	}
-
 	req = httptest.NewRequest(http.MethodGet, "/grafana/d/foo", nil)
 	authed(req, token)
 	req.Host = "localhost:9000"
@@ -274,18 +283,7 @@ func TestGrafanaProxyRequiresAuth(t *testing.T) {
 		t.Fatalf("upstream path=%q", got)
 	}
 	if got := rec.Header().Get("X-Upstream-Host"); got != "localhost:9000" {
-		t.Fatalf("upstream host=%q (want preserved Panel host)", got)
-	}
-	if !strings.Contains(rec.Body.String(), "grafana:/grafana/d/foo") {
-		t.Fatalf("body=%s", rec.Body.String())
-	}
-
-	req = httptest.NewRequest(http.MethodGet, "/grafana", nil)
-	authed(req, token)
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/grafana/" {
-		t.Fatalf("auth /grafana redirect status=%d loc=%s", rec.Code, rec.Header().Get("Location"))
+		t.Fatalf("upstream host=%q", got)
 	}
 }
 
@@ -325,60 +323,63 @@ func TestGrafanaDisabledWithoutURL(t *testing.T) {
 	}
 }
 
-func TestParseRepoTemplates(t *testing.T) {
-	root, err := resources.FindRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	webDir := filepath.Join(root, "frontend")
-	tmpl, err := template.New("").Funcs(template.FuncMap{
-		"T":        func(key string, args ...any) string { return key },
-		"urlquery": func(s string) string { return s },
-	}).ParseGlob(filepath.Join(webDir, "templates", "*.html"))
-	if err != nil {
-		t.Fatalf("parse templates: %v", err)
-	}
-	for _, name := range []string{
-		"login.html", "overview.html", "servers.html", "rules.html", "apply.html", "monitoring.html",
-		"ops.html", "changes.html",
-		"servers-table", "rules-table", "apply-result", "page-start", "page-end", "sidebar",
-	} {
-		if tmpl.Lookup(name) == nil {
-			t.Fatalf("missing template %q", name)
-		}
-	}
-}
-
-func TestHXServerCreateAndRulePatch(t *testing.T) {
-	srv, token, csrf := setupPanelRealTemplates(t)
+func TestSPAFallback(t *testing.T) {
+	srv, _, _ := setupPanel(t)
 	h := srv.Handler()
-
-	form := strings.NewReader("name=server-11&address=10.0.0.21&tcp_port=7777&udp_port=7778&health_check_port=7777&enabled=on")
-	req := httptest.NewRequest(http.MethodPost, "/hx/servers", form)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	authedCSRF(req, token, csrf)
+	req := httptest.NewRequest(http.MethodGet, "/servers", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 200 {
-		t.Fatalf("create status=%d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("status=%d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "server-11") {
-		t.Fatalf("table missing server-11: %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "RelayGate SPA") {
+		t.Fatalf("expected index.html body: %s", rec.Body.String())
 	}
-	if !strings.Contains(rec.Header().Get("HX-Trigger"), "show-toast") {
-		t.Fatalf("missing HX-Trigger: %s", rec.Header().Get("HX-Trigger"))
+}
+
+func TestAPILoginLogoutSession(t *testing.T) {
+	srv, _, _ := setupPanel(t)
+	h := srv.Handler()
+
+	body, _ := json.Marshal(map[string]string{"password": "test-pass"})
+	req := httptest.NewRequest(http.MethodPost, "/api/login", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("login status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var loginResp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &loginResp)
+	if loginResp["ok"] != true {
+		t.Fatalf("login resp=%#v", loginResp)
+	}
+	var sessionToken, csrfToken string
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "panel_session" {
+			sessionToken = c.Value
+		}
+		if c.Name == "panel_csrf" {
+			csrfToken = c.Value
+		}
+	}
+	if sessionToken == "" || csrfToken == "" {
+		t.Fatal("missing cookies")
 	}
 
-	req = httptest.NewRequest(http.MethodPatch, "/hx/rules/forward-server-01-production-tcp", strings.NewReader("enabled=on"))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	authedCSRF(req, token, csrf)
+	req = httptest.NewRequest(http.MethodGet, "/api/session", nil)
+	authed(req, sessionToken)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 200 {
-		t.Fatalf("patch status=%d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("session status=%d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "id=\"rules-table\"") {
-		t.Fatalf("expected rules table fragment: %s", rec.Body.String())
+
+	req = httptest.NewRequest(http.MethodPost, "/api/logout", nil)
+	authedCSRF(req, sessionToken, csrfToken)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("logout status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -391,7 +392,7 @@ func TestCSRFRejectsMutatingWithoutToken(t *testing.T) {
 		"tcp_port": 7777, "udp_port": 7778, "health_check_port": 7777,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(body))
-	authed(req, token) // session only, no CSRF
+	authed(req, token)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
@@ -407,7 +408,6 @@ func TestCSRFRejectsMutatingWithoutToken(t *testing.T) {
 		t.Fatalf("bad csrf status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
-	// GET status remains usable without CSRF.
 	req = httptest.NewRequest(http.MethodGet, "/api/status/envoy", nil)
 	authed(req, token)
 	rec = httptest.NewRecorder()
@@ -416,7 +416,6 @@ func TestCSRFRejectsMutatingWithoutToken(t *testing.T) {
 		t.Fatalf("get status=%d", rec.Code)
 	}
 
-	// Valid CSRF still works.
 	req = httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(body))
 	authedCSRF(req, token, csrf)
 	rec = httptest.NewRecorder()
@@ -454,50 +453,12 @@ func TestStandbyRejectsWrites(t *testing.T) {
 		t.Fatalf("standby apply status=%d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/hx/apply", nil)
-	authedCSRF(req, token, csrf)
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("standby hx apply status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), "ENABLE_PANEL=0") {
-		t.Fatalf("expected ENABLE_PANEL hint: %s", rec.Body.String())
-	}
-
-	// Read-only GETs still work on standby.
 	req = httptest.NewRequest(http.MethodGet, "/api/servers", nil)
 	authed(req, token)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 200 {
 		t.Fatalf("standby get status=%d", rec.Code)
-	}
-}
-
-func TestLoginSetsCSRFCookie(t *testing.T) {
-	srv, _, _ := setupPanel(t)
-	h := srv.Handler()
-
-	form := strings.NewReader("password=test-pass")
-	req := httptest.NewRequest(http.MethodPost, "/login", form)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("login status=%d", rec.Code)
-	}
-	var gotSession, gotCSRF bool
-	for _, c := range rec.Result().Cookies() {
-		if c.Name == "panel_session" && c.Value != "" {
-			gotSession = true
-		}
-		if c.Name == "panel_csrf" && c.Value != "" {
-			gotCSRF = true
-		}
-	}
-	if !gotSession || !gotCSRF {
-		t.Fatalf("expected session+csrf cookies, got %#v", rec.Result().Cookies())
 	}
 }
 
@@ -527,9 +488,9 @@ func TestValidatePanelBind(t *testing.T) {
 
 func TestNewRejectsNonLoopbackBind(t *testing.T) {
 	root := t.TempDir()
-	webDir := filepath.Join(root, "frontend")
-	writeMinimalFrontend(t, webDir, false)
-	_, err := New(Config{Root: root, FrontendDir: webDir, AdminPassword: "x", Bind: "0.0.0.0:9000"})
+	uiDir := filepath.Join(root, "ui", "dist")
+	writeMinimalUI(t, uiDir, false)
+	_, err := New(Config{Root: root, UIDir: uiDir, AdminPassword: "x", Bind: "0.0.0.0:9000"})
 	if err == nil {
 		t.Fatal("expected error for 0.0.0.0 bind")
 	}

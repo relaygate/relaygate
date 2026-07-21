@@ -1,9 +1,10 @@
 package panel
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,54 +14,11 @@ import (
 	"github.com/relaygate/relaygate/core/resources"
 )
 
-func setupPanelRealTemplates(t *testing.T) (*Server, string, string) {
-	t.Helper()
-	root := t.TempDir()
-	cfgDir := config.ResolveDataDir(root)
-	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	res := &resources.Resources{
-		Servers: []resources.Server{
-			{Name: "server-01", Address: "10.0.0.11", TCPPort: 7777, UDPPort: 7778, HealthCheckPort: 7777, Enabled: true},
-		},
-		Rules: []resources.Rule{
-			{Name: "forward-server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
-			{Name: "forward-server-01-production-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
-			{Name: "forward-server-01-production-udp", Kind: "production", Server: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
-		},
-	}
-	if err := resources.Save(filepath.Join(cfgDir, "resources.yaml"), res); err != nil {
-		t.Fatal(err)
-	}
-	// Point FrontendDir at repo frontend (templates must parse).
-	repoRoot, err := resources.FindRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	front := filepath.Join(repoRoot, "frontend")
-	srv, err := New(Config{
-		Root:          root,
-		FrontendDir:   front,
-		AdminPassword: "test-pass",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	token, csrf, err := srv.createSession()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return srv, token, csrf
-}
-
 func TestPromoteEnablesProduction(t *testing.T) {
-	srv, token, csrf := setupPanelRealTemplates(t)
+	srv, token, csrf := setupPanel(t)
 	h := srv.Handler()
 
-	form := url.Values{}
-	req := httptest.NewRequest(http.MethodPost, "/hx/servers/server-01/promote", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, "/api/servers/server-01/promote", nil)
 	authedCSRF(req, token, csrf)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -88,12 +46,11 @@ func TestPromoteEnablesProduction(t *testing.T) {
 }
 
 func TestDrainRequiresConfirm(t *testing.T) {
-	srv, token, csrf := setupPanelRealTemplates(t)
+	srv, token, csrf := setupPanel(t)
 	h := srv.Handler()
 
-	form := url.Values{"action": {"fail"}, "confirm": {"nope"}}
-	req := httptest.NewRequest(http.MethodPost, "/hx/ops/drain", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	body, _ := json.Marshal(map[string]string{"action": "fail", "confirm": "nope"})
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/drain", bytes.NewReader(body))
 	authedCSRF(req, token, csrf)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -106,12 +63,11 @@ func TestDrainRequiresConfirm(t *testing.T) {
 }
 
 func TestStandbyAllowsDoctorBlocksDrainFail(t *testing.T) {
-	srv, token, csrf := setupPanelRealTemplates(t)
+	srv, token, csrf := setupPanel(t)
 	t.Setenv("PANEL_ROLE", "standby")
 	h := srv.Handler()
 
-	// doctor (readonly) allowed
-	req := httptest.NewRequest(http.MethodPost, "/hx/ops/doctor", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/doctor", nil)
 	authedCSRF(req, token, csrf)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -119,9 +75,8 @@ func TestStandbyAllowsDoctorBlocksDrainFail(t *testing.T) {
 		t.Fatalf("doctor should be allowed on standby: %s", rec.Body.String())
 	}
 
-	form := url.Values{"action": {"fail"}, "confirm": {"DRAIN_FAIL"}}
-	req = httptest.NewRequest(http.MethodPost, "/hx/ops/drain", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	body, _ := json.Marshal(map[string]string{"action": "fail", "confirm": "DRAIN_FAIL"})
+	req = httptest.NewRequest(http.MethodPost, "/api/ops/drain", bytes.NewReader(body))
 	authedCSRF(req, token, csrf)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -131,7 +86,7 @@ func TestStandbyAllowsDoctorBlocksDrainFail(t *testing.T) {
 }
 
 func TestChangesListAndRollbackConfirm(t *testing.T) {
-	srv, token, csrf := setupPanelRealTemplates(t)
+	srv, token, csrf := setupPanel(t)
 	root := srv.cfg.Root
 	data := config.ResolveDataDir(root)
 	stamp := "20260101-120000"
@@ -144,28 +99,27 @@ func TestChangesListAndRollbackConfirm(t *testing.T) {
 	}
 
 	h := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/changes", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/changes?limit=50", nil)
 	authed(req, token)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 200 {
-		t.Fatalf("changes page status=%d", rec.Code)
+		t.Fatalf("changes status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), stamp) {
-		t.Fatalf("missing stamp in page")
+		t.Fatalf("missing stamp in response: %s", rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/hx/changes/"+stamp, nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/changes/"+stamp, nil)
 	authed(req, token)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != 200 || (!strings.Contains(rec.Body.String(), "servers: +1") && !strings.Contains(rec.Body.String(), "servers: &#43;1")) {
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "servers: +1") {
 		t.Fatalf("summary status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
-	form := url.Values{"stamp": {stamp}, "confirm": {"no"}}
-	req = httptest.NewRequest(http.MethodPost, "/hx/rollback", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	body, _ := json.Marshal(map[string]string{"stamp": stamp, "confirm": "no"})
+	req = httptest.NewRequest(http.MethodPost, "/api/rollback", bytes.NewReader(body))
 	authedCSRF(req, token, csrf)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -174,22 +128,23 @@ func TestChangesListAndRollbackConfirm(t *testing.T) {
 	}
 }
 
-func TestOpsAndChangesNavPages(t *testing.T) {
-	srv, token, _ := setupPanelRealTemplates(t)
+func TestAPILang(t *testing.T) {
+	srv, _, _ := setupPanel(t)
 	h := srv.Handler()
-	for _, path := range []string{"/ops", "/changes"} {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		authed(req, token)
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-		if rec.Code != 200 {
-			t.Fatalf("%s status=%d", path, rec.Code)
+	body, _ := json.Marshal(map[string]string{"lang": "en"})
+	req := httptest.NewRequest(http.MethodPost, "/api/lang", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var gotLang string
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == langCookie {
+			gotLang = c.Value
 		}
-		if !strings.Contains(rec.Body.String(), "运维") && path == "/ops" {
-			t.Fatalf("ops page missing title")
-		}
-		if !strings.Contains(rec.Body.String(), "变更") && path == "/changes" {
-			t.Fatalf("changes page missing title")
-		}
+	}
+	if gotLang != langEnglish {
+		t.Fatalf("lang cookie=%q", gotLang)
 	}
 }

@@ -263,7 +263,7 @@ Acquire_Release() {
   # tarball 内一层目录 relaygate-VERSION-linux-ARCH/
   PACKAGE_ROOT="$(find "${TMP_DIR}/extract" -mindepth 1 -maxdepth 1 -type d | head -1)"
   [[ -x "${PACKAGE_ROOT}/bin/relaygate" ]] || die "包内缺少 bin/relaygate"
-  [[ -d "${PACKAGE_ROOT}/frontend" && -d "${PACKAGE_ROOT}/packaging" ]] || die "包结构不完整"
+  [[ -d "${PACKAGE_ROOT}/ui/dist" && -d "${PACKAGE_ROOT}/packaging" ]] || die "包结构不完整"
   ok "release 就绪: ${VERSION} (${ARCH})"
 }
 
@@ -339,10 +339,11 @@ Place_Product() {
     cp -a "${PACKAGE_ROOT}/bin/relaygate" "$INSTALL_DIR/bin/relaygate"
   else
     # 无 rsync：逐项覆盖产品目录（安装前缀含 packaging/ + data/ 运行态骨架）
-    mkdir -p "$INSTALL_DIR/bin" "$INSTALL_DIR/frontend"
+    mkdir -p "$INSTALL_DIR/bin" "$INSTALL_DIR/ui"
     cp -a "${PACKAGE_ROOT}/bin/relaygate" "$INSTALL_DIR/bin/relaygate"
-    rm -rf "$INSTALL_DIR/frontend" "$INSTALL_DIR/packaging"
-    cp -a "${PACKAGE_ROOT}/frontend" "$INSTALL_DIR/"
+    rm -rf "$INSTALL_DIR/ui" "$INSTALL_DIR/packaging"
+    mkdir -p "$INSTALL_DIR/ui"
+    cp -a "${PACKAGE_ROOT}/ui/dist" "$INSTALL_DIR/ui/"
     cp -a "${PACKAGE_ROOT}/packaging" "$INSTALL_DIR/"
     for f in .env.example resources.example.yaml gateway-01.env.example gateway-02.env.example \
       gateways.env.example install.sh RELEASE go.mod; do
@@ -362,7 +363,7 @@ Place_Product() {
   chmod 755 "$INSTALL_DIR/bin/relaygate"
   [[ -f "$INSTALL_DIR/install.sh" ]] || cp -a "$0" "$INSTALL_DIR/install.sh"
   [[ -x "$INSTALL_DIR/bin/relaygate" ]] || die "安装后缺少可执行 bin/relaygate"
-  [[ -d "$INSTALL_DIR/frontend" && -d "$INSTALL_DIR/packaging" ]] || die "安装后产品树不完整"
+  [[ -d "$INSTALL_DIR/ui/dist" && -d "$INSTALL_DIR/packaging" ]] || die "安装后产品树不完整"
   ok "产品已就位"
 }
 

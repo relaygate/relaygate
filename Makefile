@@ -1,9 +1,11 @@
 # RelayGate — single Go module (product under ./core)
-.PHONY: build test validate vet fmt panel clean dist dist-clean
+.PHONY: build ui test validate vet fmt panel clean dist dist-clean
 
 GO ?= go
+NPM ?= npm
 BIN ?= bin/relaygate
 CMD ?= ./core/cmd/relaygate
+UI_DIR ?= ui
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || cat RELEASE 2>/dev/null || echo dev)
 GOOS ?= linux
 GOARCH ?= $(shell go env GOARCH)
@@ -11,7 +13,10 @@ DIST_ROOT ?= dist
 DIST_NAME ?= relaygate-$(VERSION)-$(GOOS)-$(GOARCH)
 DIST_DIR ?= $(DIST_ROOT)/$(DIST_NAME)
 
-build:
+ui:
+	cd $(UI_DIR) && $(NPM) ci && $(NPM) run build
+
+build: ui
 	mkdir -p bin
 	CGO_ENABLED=0 $(GO) build -ldflags "-X main.version=$(VERSION)" -o $(BIN) $(CMD)
 
@@ -41,7 +46,8 @@ dist: build
 		"$(DIST_DIR)/data/prometheus" "$(DIST_DIR)/data/backups" "$(DIST_DIR)/data/inventory"
 	cp -a "$(BIN)" "$(DIST_DIR)/bin/relaygate"
 	chmod 755 "$(DIST_DIR)/bin/relaygate"
-	cp -a frontend "$(DIST_DIR)/"
+	mkdir -p "$(DIST_DIR)/ui"
+	cp -a ui/dist "$(DIST_DIR)/ui/"
 	cp -a packaging "$(DIST_DIR)/"
 	# 根级初始化模板（非运行态）
 	cp -a .env.example resources.example.yaml \

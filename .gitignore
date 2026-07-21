@@ -8,8 +8,6 @@
 
 # 源码树本地运行态（setup/render/apply；勿用顶层 data/ 作为源码布局）
 /.runtime/
-# 若误在源码根创建 data/，也不入库
-/data/
 
 # 本地环境文件（模板：根 .env.example、以及 packaging/**/.env.example）
 .env
@@ -31,3 +29,7 @@
 **/.terraform/
 *.tfstate
 *.tfstate.*
+
+# Panel UI (Vite)
+/ui/node_modules/
+/ui/dist/

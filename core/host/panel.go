@@ -154,7 +154,7 @@ func fixPanelPermissions(opt PanelInstallOptions, dataDir string) error {
 	}{
 		{opt.InstallDir, 0o755, "root", "root"},
 		{filepath.Join(opt.InstallDir, "bin"), 0o755, "root", "root"},
-		{filepath.Join(opt.InstallDir, "frontend"), 0o755, "root", "root"},
+		{filepath.Join(opt.InstallDir, "ui"), 0o755, "root", "root"},
 		{dataDir, 0o770, "root", "relaygate"},
 		{filepath.Join(dataDir, "envoy"), 0o770, "root", "relaygate"},
 		{filepath.Join(dataDir, "firewall"), 0o770, "root", "relaygate"},

@@ -1,7 +1,7 @@
 // Package config is the single entry for RelayGate paths, defaults, and env loading.
 //
 // Layout conventions:
-//   - ProductRoot: install prefix (/opt/relaygate) or git checkout (packaging/, frontend/, …)
+//   - ProductRoot: install prefix (/opt/relaygate) or git checkout (packaging/, ui/, …)
 //   - DataDir: runtime state only — never part of the source tree layout
 //   - PackagingDir: versioned install assets under packaging/
 package config

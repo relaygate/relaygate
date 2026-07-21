@@ -72,7 +72,7 @@ sudo RELAYGATE_TAR=/path/relaygate-v0.1.0-linux-amd64.tar.gz bash /tmp/relaygate
 
 ```bash
 cp .env.example .env && chmod 600 .env
-make build
+make build                  # 先构建 ui/dist，再编译 Go
 ./bin/relaygate setup --noninteractive
 ./bin/relaygate validate && ./bin/relaygate apply && ./bin/relaygate smoke
 make dist VERSION=dev   # 与 CI 同结构的 release 包
@@ -118,6 +118,8 @@ Panel    sudo relaygate panel install|uninstall
 
 默认绑定 loopback：`http://127.0.0.1:9000`（Grafana 同源反代）。
 
+前端为 React SPA（`ui/`，构建产物 `ui/dist`），由 Panel 静态托管并对非 `/api/*` 路由 fallback `index.html`。
+
 | 页 | 能力 |
 |----|------|
 | Overview | 聚合 RL + 转发规则限速 Top |
@@ -129,6 +131,18 @@ Panel    sudo relaygate panel install|uninstall
 | Monitoring | Grafana 嵌入 |
 
 写操作在 `PANEL_ROLE=standby` 时拒写；成功写操作追加 `DataDir/panel-audit.log`（不含密码）。
+
+### UI 开发
+
+```bash
+# 需要 Node 18+（推荐 20）
+cd ui && npm ci && npm run dev   # http://127.0.0.1:5173，代理 /api → Panel :9000
+# 另开终端
+./bin/relaygate panel           # 或 make panel（含 ui build）
+
+# 生产构建（make build 会自动跑）
+make ui                         # → ui/dist
+```
 
 ## 配置（resources / DataDir / nftables）
 
@@ -246,9 +260,9 @@ sudo PURGE=1 bash install.sh --uninstall
 *.example / .env.example   # seed 源
 packaging/                 # compose、systemd、grafana、firewall、profiles、terraform…
 core/                      # cmd、cli、config、ops、panel、render、resources、doctor…
-frontend/                  # Panel UI
+ui/                        # Panel SPA（Vite + React + shadcn）；产物 ui/dist
 install.sh                 # bootstrap：下载 release tar → setup/apply
-Makefile                   # build / test / dist
+Makefile                   # build（含 ui）/ test / dist
 ```
 
 发布：`make dist` 或 tag `v*` → `relaygate-$VERSION-linux-{amd64,arm64}.tar.gz` + `.sha256`。  

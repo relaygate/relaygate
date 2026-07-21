@@ -3,7 +3,6 @@ package panel
 import (
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -28,18 +27,17 @@ func TestResolveLang(t *testing.T) {
 }
 
 func TestBundleT(t *testing.T) {
-	front := filepath.Join("..", "..", "frontend")
-	b, err := loadBundle(front)
+	b, err := loadEmbeddedBundle()
 	if err != nil {
 		t.Fatal(err)
 	}
-	zh := b.T(langChinese, "nav.ops")
-	en := b.T(langEnglish, "nav.ops")
+	zh := b.T(langChinese, "error.standby")
+	en := b.T(langEnglish, "error.standby")
 	if zh == "" || en == "" || zh == en {
 		t.Fatalf("expected different translations: zh=%q en=%q", zh, en)
 	}
-	got := b.T(langEnglish, "servers.toast_deleted", "s1", 2)
-	if !strings.Contains(got, "s1") || !strings.Contains(got, "2") {
+	got := b.T(langEnglish, "error.confirm_typed", "ROLLBACK")
+	if !strings.Contains(got, "ROLLBACK") {
 		t.Fatalf("format failed: %q", got)
 	}
 }

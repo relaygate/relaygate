@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
+
+	"embed"
 )
 
 const (
@@ -16,23 +16,24 @@ const (
 	langChinese = "zh-CN"
 )
 
-// Bundle holds per-language message catalogs loaded from frontend/i18n/*.json.
+//go:embed messages/*.json
+var messagesFS embed.FS
+
+// Bundle holds per-language message catalogs for API error strings.
 type Bundle struct {
 	cats map[string]map[string]string
 }
 
-func loadBundle(frontendDir string) (*Bundle, error) {
-	dir := filepath.Join(frontendDir, "i18n")
+func loadEmbeddedBundle() (*Bundle, error) {
 	b := &Bundle{cats: map[string]map[string]string{}}
 	for _, lang := range []string{langEnglish, langChinese} {
-		path := filepath.Join(dir, lang+".json")
-		raw, err := os.ReadFile(path)
+		raw, err := messagesFS.ReadFile("messages/" + lang + ".json")
 		if err != nil {
-			return nil, fmt.Errorf("load i18n %s: %w", path, err)
+			return nil, fmt.Errorf("load i18n %s: %w", lang, err)
 		}
 		cat := map[string]string{}
 		if err := json.Unmarshal(raw, &cat); err != nil {
-			return nil, fmt.Errorf("parse i18n %s: %w", path, err)
+			return nil, fmt.Errorf("parse i18n %s: %w", lang, err)
 		}
 		b.cats[lang] = cat
 	}
@@ -106,15 +107,8 @@ func formatMsg(msg string, args ...any) string {
 	if len(args) == 0 {
 		return msg
 	}
-	// Use a non-constant format indirection so go vet does not treat i18n keys as printf formats.
 	format := msg + ""
 	return fmt.Sprintf(format, args...)
-}
-
-func (b *Bundle) TFunc(lang string) func(string, ...any) string {
-	return func(key string, args ...any) string {
-		return b.T(lang, key, args...)
-	}
 }
 
 func (s *Server) t(r *http.Request, key string, args ...any) string {
