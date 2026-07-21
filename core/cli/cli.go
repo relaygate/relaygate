@@ -550,7 +550,7 @@ func runPanelServe() int {
 	cfg := panel.Config{
 		Root:          config.Getenv("PANEL_ROOT", ""),
 		Bind:          config.Getenv("PANEL_BIND", config.DefaultPanelBind),
-		AdminPassword: os.Getenv("PANEL_ADMIN_PASSWORD"),
+		AdminPassword: strings.TrimSpace(os.Getenv("PANEL_ADMIN_PASSWORD")),
 		EnvoyAdminURL: config.Getenv("ENVOY_ADMIN_URL", "http://127.0.0.1:9901"),
 		PrometheusURL: config.Getenv("PROMETHEUS_URL", "http://127.0.0.1:9090"),
 		GrafanaURL:    grafanaURLFromEnv(),
