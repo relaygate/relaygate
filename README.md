@@ -260,7 +260,7 @@ Makefile                   # build / test / dist
 - UDP 无可靠主动健康检查
 - 后端看到的是网关源 IP
 - Envoy 非抗 DDoS；大流量需云高防
-- Panel 尚未覆盖全部 CLI 运维动作（见规划中）
+- Panel 未覆盖 fleet 向导（见规划中）；其余本机运维动作见「运维 / 变更」页
 
 ## 贡献 / License
 
