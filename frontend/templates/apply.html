@@ -1,6 +1,6 @@
 {{template "page-start" .}}
   <header class="mb-6">
-    <h1 class="text-2xl font-bold tracking-tight">Apply</h1>
+    <h1 class="text-2xl font-bold tracking-tight">{{T "apply.title"}}</h1>
   </header>
 
   {{if .Message}}
@@ -8,7 +8,7 @@
   {{end}}
 
   <section class="rg-card p-5">
-    <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-rg-muted">变更摘要</h2>
+    <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-rg-muted">{{T "apply.summary"}}</h2>
     <pre class="mb-4 overflow-auto rounded-lg border border-rg-line bg-rg-input p-4 font-mono text-xs leading-relaxed text-rg-muted whitespace-pre-wrap">{{.Summary}}</pre>
     <button
       id="do-apply"
@@ -18,7 +18,7 @@
       hx-target="#apply-result"
       hx-swap="outerHTML"
       hx-disabled-elt="this"
-    >一键应用</button>
+    >{{T "apply.submit"}}</button>
   </section>
 
   {{template "apply-result" .}}

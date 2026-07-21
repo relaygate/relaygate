@@ -1,11 +1,11 @@
 {{template "page-start" .}}
   <header class="mb-6">
-    <h1 class="text-2xl font-bold tracking-tight">Servers</h1>
-    <p class="mt-1 text-sm text-rg-muted">修改后需到 Apply 生效。</p>
+    <h1 class="text-2xl font-bold tracking-tight">{{T "servers.title"}}</h1>
+    <p class="mt-1 text-sm text-rg-muted">{{T "servers.hint"}}</p>
   </header>
 
   <section class="rg-card mb-6 p-5">
-    <h2 class="mb-4 text-base font-semibold">添加 Server</h2>
+    <h2 class="mb-4 text-base font-semibold">{{T "servers.add_heading"}}</h2>
     <form
       class="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7"
       hx-post="/hx/servers"
@@ -14,30 +14,30 @@
       hx-on::after-request="if(event.detail.successful) this.reset()"
     >
       <label class="space-y-1 text-xs text-rg-muted">
-        <span>Name</span>
+        <span>{{T "servers.name"}}</span>
         <input class="rg-input" name="name" type="text" placeholder="server-11" required autocomplete="off"/>
       </label>
       <label class="space-y-1 text-xs text-rg-muted">
-        <span>Address</span>
+        <span>{{T "servers.address"}}</span>
         <input class="rg-input" name="address" type="text" placeholder="10.0.0.21" required autocomplete="off"/>
       </label>
       <label class="space-y-1 text-xs text-rg-muted">
-        <span>TCP</span>
+        <span>{{T "servers.tcp"}}</span>
         <input class="rg-input" name="tcp_port" type="number" value="7777"/>
       </label>
       <label class="space-y-1 text-xs text-rg-muted">
-        <span>UDP</span>
+        <span>{{T "servers.udp"}}</span>
         <input class="rg-input" name="udp_port" type="number" value="7778"/>
       </label>
       <label class="space-y-1 text-xs text-rg-muted">
-        <span>Health</span>
+        <span>{{T "servers.health"}}</span>
         <input class="rg-input" name="health_check_port" type="number" value="7777"/>
       </label>
       <label class="flex items-center gap-2 pb-2 text-sm text-rg-muted">
         <input class="h-4 w-4 accent-rg-accent" name="enabled" type="checkbox" value="on" checked/>
-        Enabled
+        {{T "servers.enabled"}}
       </label>
-      <button class="rg-btn" type="submit">添加 Server</button>
+      <button class="rg-btn" type="submit">{{T "servers.add"}}</button>
     </form>
   </section>
 

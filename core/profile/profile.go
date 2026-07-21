@@ -84,6 +84,29 @@ func Load(root, name string) (*Profile, error) {
 	return nil, fmt.Errorf("profile 不存在: %s", name)
 }
 
+// Preview diffs profile defaults against current resources without writing.
+func Preview(root, name string) (*resources.ChangeSummary, error) {
+	p, err := Load(root, name)
+	if err != nil {
+		return nil, err
+	}
+	resPath := config.ResolvePaths(root).Resources
+	res, err := resources.Load(resPath)
+	if err != nil {
+		return nil, err
+	}
+	before := *res
+	after := *res
+	after.Defaults = p.Defaults
+	after.Defaults.ApplyNftablesDefaults()
+	if err := after.Validate(); err != nil {
+		return nil, fmt.Errorf("preview 校验失败: %w", err)
+	}
+	sum := resources.Diff(&before, &after)
+	sum.Note = fmt.Sprintf("profile preview %s → defaults", p.Name)
+	return &sum, nil
+}
+
 // Apply merges profile defaults into resources.yaml (replace defaults section fields from profile).
 func Apply(root, name string) (*resources.ChangeSummary, error) {
 	p, err := Load(root, name)

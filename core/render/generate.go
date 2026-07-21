@@ -18,13 +18,13 @@ func UpstreamClusterName(server, protocol string) string {
 }
 
 // IngressListenerName is the Envoy ingress listener for one forwarding rule (1:1).
-// Format: ingress-{ruleName} so it stays aligned with resources.yaml rules[].name.
+// Format: ingress-{forwardName} so it stays aligned with resources.yaml rules[].name (forward-*).
 func IngressListenerName(rule resources.Rule) string {
 	return "ingress-" + rule.Name
 }
 
-// rateLimitStatPrefix is the Envoy local_rate_limit stat_prefix (metric name), not a "rule".
-// Format: rl_{ruleName with - → _}.
+// rateLimitStatPrefix is the Envoy local_rate_limit stat_prefix (metric name), not a forward name.
+// Format: rl_{forwardName with - → _} → e.g. rl_forward_server_01_canary_tcp.
 func rateLimitStatPrefix(rule resources.Rule) string {
 	return "rl_" + strings.ReplaceAll(rule.Name, "-", "_")
 }

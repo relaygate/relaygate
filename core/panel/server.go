@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/relaygate/relaygate/core/render"
 	"github.com/relaygate/relaygate/core/ops"
+	"github.com/relaygate/relaygate/core/render"
 	"github.com/relaygate/relaygate/core/resources"
 	"github.com/relaygate/relaygate/core/status"
 )
@@ -32,7 +32,6 @@ const (
 	csrfCookie    = "panel_csrf"
 	csrfHeader    = "X-CSRF-Token"
 	csrfFormField = "csrf_token"
-	standbyRefuse = "standby 只读，请到 primary 操作"
 )
 
 type Config struct {
@@ -59,12 +58,15 @@ type loginAttempt struct {
 type Server struct {
 	cfg          Config
 	tmpl         *template.Template
+	i18n         *Bundle
 	status       *status.Client
 	mu           sync.Mutex
 	sessions     map[string]sessionInfo
 	loginFails   map[string]loginAttempt
 	lastApply    string
 	grafanaProxy http.Handler
+	renderMu     sync.Mutex
+	renderLang   string
 }
 
 func New(cfg Config) (*Server, error) {
@@ -103,21 +105,35 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("PANEL_ADMIN_PASSWORD or PANEL_ADMIN_PASSWORD_FILE is required")
 	}
 
-	tmpl, err := template.ParseGlob(filepath.Join(cfg.FrontendDir, "templates", "*.html"))
+	bundle, err := loadBundle(cfg.FrontendDir)
 	if err != nil {
-		return nil, fmt.Errorf("parse templates: %w", err)
+		return nil, err
 	}
 	srv := &Server{
 		cfg:        cfg,
-		tmpl:       tmpl,
+		i18n:       bundle,
 		status:     status.New(cfg.EnvoyAdminURL, cfg.PrometheusURL),
 		sessions:   map[string]sessionInfo{},
 		loginFails: map[string]loginAttempt{},
+		renderLang: langDefault,
 	}
+	tmpl, err := template.New("").Funcs(template.FuncMap{
+		"urlquery": url.QueryEscape,
+		"T": func(key string, args ...any) string {
+			return srv.i18n.T(srv.renderLang, key, args...)
+		},
+	}).ParseGlob(filepath.Join(cfg.FrontendDir, "templates", "*.html"))
+	if err != nil {
+		return nil, fmt.Errorf("parse templates: %w", err)
+	}
+	srv.tmpl = tmpl
 	if cfg.GrafanaURL != "" {
 		proxy, err := newGrafanaProxy(cfg.GrafanaURL)
 		if err != nil {
 			return nil, err
+		}
+		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+			http.Error(w, srv.t(r, "error.grafana_unavailable", err.Error()), http.StatusBadGateway)
 		}
 		srv.grafanaProxy = proxy
 	}
@@ -126,7 +142,7 @@ func New(cfg Config) (*Server, error) {
 
 // newGrafanaProxy builds a fixed-target reverse proxy for Grafana.
 // Path is not stripped (serve_from_sub_path); WebSocket upgrades are handled by httputil.ReverseProxy.
-func newGrafanaProxy(rawURL string) (http.Handler, error) {
+func newGrafanaProxy(rawURL string) (*httputil.ReverseProxy, error) {
 	target, err := parseGrafanaURL(rawURL)
 	if err != nil {
 		return nil, err
@@ -147,9 +163,6 @@ func newGrafanaProxy(rawURL string) (http.Handler, error) {
 		if req.Header.Get("X-Forwarded-Proto") == "" {
 			req.Header.Set("X-Forwarded-Proto", "http")
 		}
-	}
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		http.Error(w, "Grafana 暂不可用: "+err.Error(), http.StatusBadGateway)
 	}
 	return proxy, nil
 }
@@ -223,11 +236,14 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("/login", s.handleLogin)
 	mux.HandleFunc("/logout", s.handleLogout)
+	mux.HandleFunc("/lang", s.handleLang)
 	mux.HandleFunc("/", s.handleOverview)
 	mux.HandleFunc("/servers", s.handleServersPage)
 	mux.HandleFunc("/rules", s.handleRulesPage)
 	mux.HandleFunc("/acl", s.handleACLPage)
 	mux.HandleFunc("/apply", s.handleApplyPage)
+	mux.HandleFunc("/ops", s.handleOpsPage)
+	mux.HandleFunc("/changes", s.handleChangesPage)
 	mux.HandleFunc("/monitoring", s.handleMonitoringPage)
 	if s.grafanaProxy != nil {
 		mux.HandleFunc("/grafana", func(w http.ResponseWriter, r *http.Request) {
@@ -261,6 +277,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/hx/acl", s.withAuth(s.hxACLAdd))
 	mux.HandleFunc("/hx/acl/remove", s.withAuth(s.hxACLRemove))
 	mux.HandleFunc("/hx/apply", s.withAuth(s.hxApply))
+	mux.HandleFunc("/hx/ops/doctor", s.withAuthReadonly(s.hxDoctor))
+	mux.HandleFunc("/hx/ops/drain", s.withAuthReadonly(s.hxDrain))
+	mux.HandleFunc("/hx/ops/smoke", s.withAuthReadonly(s.hxSmoke))
+	mux.HandleFunc("/hx/ops/canary", s.withAuthReadonly(s.hxCanary))
+	mux.HandleFunc("/hx/ops/firewall-check", s.withAuthReadonly(s.hxFirewallCheck))
+	mux.HandleFunc("/hx/ops/profile-preview", s.withAuthReadonly(s.hxProfilePreview))
+	mux.HandleFunc("/hx/ops/profile-apply", s.withAuth(s.hxProfileApply))
+	mux.HandleFunc("/hx/changes/", s.withAuthReadonly(s.hxChangeSummary))
+	mux.HandleFunc("/hx/rollback/preview", s.withAuthReadonly(s.hxRollbackPreview))
+	mux.HandleFunc("/hx/rollback", s.withAuth(s.hxRollback))
 	return mux
 }
 
@@ -279,6 +305,15 @@ func (s *Server) load() (*resources.Resources, error) {
 }
 
 func (s *Server) withAuth(next http.HandlerFunc) http.HandlerFunc {
+	return s.withAuthOpts(next, true)
+}
+
+// withAuthReadonly allows POST on standby (doctor / smoke / status 等只读运维)。
+func (s *Server) withAuthReadonly(next http.HandlerFunc) http.HandlerFunc {
+	return s.withAuthOpts(next, false)
+}
+
+func (s *Server) withAuthOpts(next http.HandlerFunc, refuseStandbyWrite bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.authed(r) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -289,7 +324,7 @@ func (s *Server) withAuth(next http.HandlerFunc) http.HandlerFunc {
 				http.Error(w, "csrf token missing or invalid", http.StatusForbidden)
 				return
 			}
-			if isStandbyRole() {
+			if refuseStandbyWrite && isStandbyRole() {
 				s.refuseStandbyWrite(w, r)
 				return
 			}
@@ -320,11 +355,12 @@ func isStandbyRole() bool {
 }
 
 func (s *Server) refuseStandbyWrite(w http.ResponseWriter, r *http.Request) {
+	msg := s.t(r, "error.standby")
 	if strings.HasPrefix(r.URL.Path, "/api/") {
-		writeJSON(w, http.StatusForbidden, map[string]any{"error": standbyRefuse})
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": msg})
 		return
 	}
-	hxError(w, http.StatusForbidden, standbyRefuse)
+	hxError(w, http.StatusForbidden, msg)
 }
 
 func (s *Server) authed(r *http.Request) bool {
@@ -383,8 +419,40 @@ func (s *Server) withPageData(r *http.Request, data map[string]any) map[string]a
 	if data == nil {
 		data = map[string]any{}
 	}
+	lang := resolveLang(r)
 	data["CSRFToken"] = s.sessionCSRF(r)
+	data["Lang"] = lang
+	if _, ok := data["LangSwitchNext"]; !ok {
+		next := "/"
+		if r != nil && r.URL != nil {
+			if uri := r.URL.RequestURI(); uri != "" && uri != "/lang" {
+				next = safeNextPath(uri)
+			}
+		}
+		data["LangSwitchNext"] = next
+	}
 	return data
+}
+
+func (s *Server) executeTemplate(w http.ResponseWriter, r *http.Request, name string, data map[string]any) error {
+	data = s.withPageData(r, data)
+	s.renderMu.Lock()
+	defer s.renderMu.Unlock()
+	prev := s.renderLang
+	s.renderLang = resolveLang(r)
+	err := s.tmpl.ExecuteTemplate(w, name, data)
+	s.renderLang = prev
+	return err
+}
+
+func (s *Server) handleLang(w http.ResponseWriter, r *http.Request) {
+	lang := normalizeLang(r.URL.Query().Get("set"))
+	if lang == "" {
+		http.Redirect(w, r, safeNextPath(r.URL.Query().Get("next")), http.StatusFound)
+		return
+	}
+	setLangCookie(w, lang)
+	http.Redirect(w, r, safeNextPath(r.URL.Query().Get("next")), http.StatusFound)
 }
 
 func (s *Server) requirePageAuth(w http.ResponseWriter, r *http.Request) bool {
@@ -485,7 +553,10 @@ func (s *Server) clearSessionCookies(w http.ResponseWriter) {
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		_ = s.tmpl.ExecuteTemplate(w, "login.html", map[string]any{"Error": ""})
+		_ = s.executeTemplate(w, r, "login.html", map[string]any{
+			"Error":          "",
+			"LangSwitchNext": "/login",
+		})
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -494,20 +565,24 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	ip := clientIP(r)
 	if ok, wait := s.loginAllowed(ip); !ok {
-		_ = s.tmpl.ExecuteTemplate(w, "login.html", map[string]any{
-			"Error": fmt.Sprintf("尝试过多，请 %.0f 秒后重试", wait.Seconds()),
+		_ = s.executeTemplate(w, r, "login.html", map[string]any{
+			"Error":          s.t(r, "login.error_rate_limit", wait.Seconds()),
+			"LangSwitchNext": "/login",
 		})
 		return
 	}
 	pass := r.FormValue("password")
 	if !passwordMatch(pass, s.cfg.AdminPassword) {
 		s.recordLoginFailure(ip)
-		_ = s.tmpl.ExecuteTemplate(w, "login.html", map[string]any{"Error": "密码错误"})
+		_ = s.executeTemplate(w, r, "login.html", map[string]any{
+			"Error":          s.t(r, "login.error_password"),
+			"LangSwitchNext": "/login",
+		})
 		return
 	}
 	token, csrf, err := s.createSession()
 	if err != nil {
-		http.Error(w, "无法创建会话", http.StatusInternalServerError)
+		http.Error(w, s.t(r, "login.error_session"), http.StatusInternalServerError)
 		return
 	}
 	s.clearLoginFailures(ip)
@@ -536,14 +611,14 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	res, _ := s.load()
 	env := s.status.Envoy()
 	traf := s.status.Traffic()
-	_ = s.tmpl.ExecuteTemplate(w, "overview.html", s.withPageData(r, map[string]any{
-		"Title":     "Overview",
+	_ = s.executeTemplate(w, r, "overview.html", map[string]any{
+		"Title":     s.t(r, "overview.title"),
 		"Nav":       "overview",
 		"Resources": res,
 		"Envoy":     env,
 		"Traffic":   traf,
 		"LastApply": s.lastApply,
-	}))
+	})
 }
 
 func (s *Server) handleServersPage(w http.ResponseWriter, r *http.Request) {
@@ -555,12 +630,12 @@ func (s *Server) handleServersPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	_ = s.tmpl.ExecuteTemplate(w, "servers.html", s.withPageData(r, map[string]any{
-		"Title":     "Servers",
+	_ = s.executeTemplate(w, r, "servers.html", map[string]any{
+		"Title":     s.t(r, "servers.title"),
 		"Nav":       "servers",
 		"Servers":   res.Servers,
 		"Lifecycle": lifecycleByName(res),
-	}))
+	})
 }
 
 func (s *Server) handleRulesPage(w http.ResponseWriter, r *http.Request) {
@@ -572,11 +647,11 @@ func (s *Server) handleRulesPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	_ = s.tmpl.ExecuteTemplate(w, "rules.html", s.withPageData(r, map[string]any{
-		"Title": "转发规则",
+	_ = s.executeTemplate(w, r, "rules.html", map[string]any{
+		"Title": s.t(r, "rules.title"),
 		"Nav":   "rules",
 		"Rules": res.Rules,
-	}))
+	})
 }
 
 func (s *Server) handleACLPage(w http.ResponseWriter, r *http.Request) {
@@ -589,24 +664,24 @@ func (s *Server) handleACLPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = res.ACL.NormalizeACL()
-	_ = s.tmpl.ExecuteTemplate(w, "acl.html", s.withPageData(r, map[string]any{
-		"Title": "ACL",
+	_ = s.executeTemplate(w, r, "acl.html", map[string]any{
+		"Title": s.t(r, "acl.title"),
 		"Nav":   "acl",
 		"Deny":  res.ACL.Deny,
 		"Allow": res.ACL.Allow,
-	}))
+	})
 }
 
 func (s *Server) handleMonitoringPage(w http.ResponseWriter, r *http.Request) {
 	if !s.requirePageAuth(w, r) {
 		return
 	}
-	_ = s.tmpl.ExecuteTemplate(w, "monitoring.html", s.withPageData(r, map[string]any{
-		"Title":          "Monitoring",
+	_ = s.executeTemplate(w, r, "monitoring.html", map[string]any{
+		"Title":          s.t(r, "monitoring.title"),
 		"Nav":            "monitoring",
 		"FullBleed":      true,
 		"GrafanaEnabled": s.GrafanaEnabled(),
-	}))
+	})
 }
 
 func (s *Server) handleApplyPage(w http.ResponseWriter, r *http.Request) {
@@ -621,7 +696,7 @@ func (s *Server) handleApplyPage(w http.ResponseWriter, r *http.Request) {
 		before, prevStamp, _ := resources.LoadPreviousBackupResources(s.cfg.Root)
 		diff := resources.Diff(before, res)
 		if prevStamp != "" && before != nil {
-			diff.Note = "相对备份 " + prevStamp
+			diff.Note = s.t(r, "apply.diff_note", prevStamp)
 		}
 		b.WriteString(diff.String())
 		b.WriteString(render.Summarize(res))
@@ -631,17 +706,17 @@ func (s *Server) handleApplyPage(w http.ResponseWriter, r *http.Request) {
 	}
 	applyBody := s.lastApply
 	if applyBody == "" {
-		applyBody = "尚无应用记录"
+		applyBody = s.t(r, "apply.none")
 	}
-	_ = s.tmpl.ExecuteTemplate(w, "apply.html", s.withPageData(r, map[string]any{
-		"Title":      "Apply",
+	_ = s.executeTemplate(w, r, "apply.html", map[string]any{
+		"Title":      s.t(r, "apply.title"),
 		"Nav":        "apply",
 		"Summary":    summary,
 		"Message":    msg,
 		"LastApply":  s.lastApply,
 		"ApplyBody":  applyBody,
 		"ApplyError": false,
-	}))
+	})
 }
 
 func (s *Server) apiServers(w http.ResponseWriter, r *http.Request) {
@@ -713,6 +788,7 @@ func (s *Server) apiServerCreate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
+	s.appendAudit("server.create", body.Name)
 	writeJSON(w, 201, map[string]any{"ok": true, "rules": created})
 }
 
@@ -904,6 +980,7 @@ func (s *Server) apiApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.lastApply = time.Now().Format(time.RFC3339) + " OK\n" + msg
+	s.appendAudit("apply", "ok")
 	writeJSON(w, 200, map[string]any{"ok": true, "output": msg, "summary": render.Summarize(res)})
 }
 
@@ -957,16 +1034,28 @@ func (s *Server) hxServers(w http.ResponseWriter, r *http.Request) {
 	for _, rule := range created {
 		names = append(names, rule.Name)
 	}
-	msg := "已添加 " + strings.TrimSpace(r.FormValue("name"))
+	serverName := strings.TrimSpace(r.FormValue("name"))
+	var msg string
 	if len(names) > 0 {
-		msg += "，生成转发规则: " + strings.Join(names, ", ")
+		msg = s.t(r, "servers.toast_added_rules", serverName, strings.Join(names, ", "))
+	} else {
+		msg = s.t(r, "servers.toast_added", serverName)
 	}
-	msg += "（尚未 Apply）"
-	s.renderServersTable(w, res, msg, "ok")
+	s.renderServersTable(w, r, res, msg, "ok")
 }
 
 func (s *Server) hxServerByName(w http.ResponseWriter, r *http.Request) {
-	name := filepath.Base(r.URL.Path)
+	rel := strings.Trim(strings.TrimPrefix(r.URL.Path, "/hx/servers/"), "/")
+	parts := strings.Split(rel, "/")
+	if len(parts) == 2 && parts[1] == "promote" {
+		s.hxPromoteServer(w, r)
+		return
+	}
+	name := parts[0]
+	if name == "" || strings.Contains(name, "/") {
+		http.NotFound(w, r)
+		return
+	}
 	switch r.Method {
 	case http.MethodPut:
 		if err := r.ParseForm(); err != nil {
@@ -989,7 +1078,7 @@ func (s *Server) hxServerByName(w http.ResponseWriter, r *http.Request) {
 			hxError(w, 500, err.Error())
 			return
 		}
-		s.renderServersTable(w, res, "已保存 "+name+"（尚未 Apply）", "ok")
+		s.renderServersTable(w, r, res, s.t(r, "servers.toast_saved", name), "ok")
 	case http.MethodDelete:
 		res, err := s.load()
 		if err != nil {
@@ -1009,7 +1098,7 @@ func (s *Server) hxServerByName(w http.ResponseWriter, r *http.Request) {
 			hxError(w, 500, err.Error())
 			return
 		}
-		s.renderServersTable(w, res, fmt.Sprintf("已删除 %s（移除转发规则 %d 条，尚未 Apply）", name, removed), "ok")
+		s.renderServersTable(w, r, res, s.t(r, "servers.toast_deleted", name, removed), "ok")
 	default:
 		http.Error(w, "method not allowed", 405)
 	}
@@ -1047,12 +1136,12 @@ func (s *Server) hxRulePatch(w http.ResponseWriter, r *http.Request) {
 		hxError(w, 500, err.Error())
 		return
 	}
-	state := "已禁用 "
+	key := "rules.toast_disabled"
 	if enabled {
-		state = "已启用 "
+		key = "rules.toast_enabled"
 	}
-	triggerToast(w, state+name+"（尚未 Apply）", "ok")
-	_ = s.tmpl.ExecuteTemplate(w, "rules-table", map[string]any{"Rules": res.Rules})
+	triggerToast(w, s.t(r, key, name), "ok")
+	_ = s.executeTemplate(w, r, "rules-table", map[string]any{"Rules": res.Rules})
 }
 
 func (s *Server) hxACLAdd(w http.ResponseWriter, r *http.Request) {
@@ -1082,7 +1171,7 @@ func (s *Server) hxACLAdd(w http.ResponseWriter, r *http.Request) {
 		hxError(w, 500, err.Error())
 		return
 	}
-	s.renderACLTable(w, res, "已添加 "+canonical+"（请 firewall apply）", "ok")
+	s.renderACLTable(w, r, res, s.t(r, "acl.toast_added", canonical), "ok")
 }
 
 func (s *Server) hxACLRemove(w http.ResponseWriter, r *http.Request) {
@@ -1108,13 +1197,13 @@ func (s *Server) hxACLRemove(w http.ResponseWriter, r *http.Request) {
 		hxError(w, 500, err.Error())
 		return
 	}
-	s.renderACLTable(w, res, "已移除 "+canonical+"（请 firewall apply）", "ok")
+	s.renderACLTable(w, r, res, s.t(r, "acl.toast_removed", canonical), "ok")
 }
 
-func (s *Server) renderACLTable(w http.ResponseWriter, res *resources.Resources, message, kind string) {
+func (s *Server) renderACLTable(w http.ResponseWriter, r *http.Request, res *resources.Resources, message, kind string) {
 	_ = res.ACL.NormalizeACL()
 	triggerToast(w, message, kind)
-	_ = s.tmpl.ExecuteTemplate(w, "acl-table", map[string]any{
+	_ = s.executeTemplate(w, r, "acl-table", map[string]any{
 		"Deny":  res.ACL.Deny,
 		"Allow": res.ACL.Allow,
 	})
@@ -1127,28 +1216,29 @@ func (s *Server) hxApply(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := s.load()
 	if err != nil {
-		s.renderApplyResult(w, err.Error(), true, "加载配置失败", "error")
+		s.renderApplyResult(w, r, err.Error(), true, s.t(r, "apply.toast_load_fail"), "error")
 		return
 	}
 	if err := res.Validate(); err != nil {
-		s.renderApplyResult(w, err.Error(), true, "校验失败", "error")
+		s.renderApplyResult(w, r, err.Error(), true, s.t(r, "apply.toast_validate_fail"), "error")
 		return
 	}
 	msg, err := ops.ReloadCapture(s.cfg.Root)
 	if err != nil {
 		body := time.Now().Format(time.RFC3339) + " FAIL: " + err.Error() + "\n" + msg
 		s.lastApply = body
-		s.renderApplyResult(w, body, true, "Apply 失败", "error")
+		s.renderApplyResult(w, r, body, true, s.t(r, "apply.toast_fail"), "error")
 		return
 	}
 	body := time.Now().Format(time.RFC3339) + " OK\n" + msg
 	s.lastApply = body
-	s.renderApplyResult(w, body, false, "Apply 成功", "ok")
+	s.appendAudit("apply", "ok")
+	s.renderApplyResult(w, r, body, false, s.t(r, "apply.toast_ok"), "ok")
 }
 
-func (s *Server) renderServersTable(w http.ResponseWriter, res *resources.Resources, message, kind string) {
+func (s *Server) renderServersTable(w http.ResponseWriter, r *http.Request, res *resources.Resources, message, kind string) {
 	triggerToast(w, message, kind)
-	_ = s.tmpl.ExecuteTemplate(w, "servers-table", map[string]any{
+	_ = s.executeTemplate(w, r, "servers-table", map[string]any{
 		"Servers":   res.Servers,
 		"Lifecycle": lifecycleByName(res),
 	})
@@ -1162,9 +1252,9 @@ func lifecycleByName(res *resources.Resources) map[string]resources.ServerLifecy
 	return out
 }
 
-func (s *Server) renderApplyResult(w http.ResponseWriter, body string, isErr bool, toastMsg, toastKind string) {
+func (s *Server) renderApplyResult(w http.ResponseWriter, r *http.Request, body string, isErr bool, toastMsg, toastKind string) {
 	triggerToast(w, toastMsg, toastKind)
-	_ = s.tmpl.ExecuteTemplate(w, "apply-result", map[string]any{
+	_ = s.executeTemplate(w, r, "apply-result", map[string]any{
 		"ApplyBody":  body,
 		"ApplyError": isErr,
 	})

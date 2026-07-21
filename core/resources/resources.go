@@ -276,18 +276,18 @@ func (r *Resources) DeleteServer(name string) (removedRules int, err error) {
 	return removedRules, nil
 }
 
-// RuleName is the canonical forwarding-rule identifier: rule-{server}-{stage}-{proto}.
-// Example: rule-server-01-production-tcp, rule-server-01-canary-udp.
-// This is the product "规则"; Envoy listeners/clusters and rl_* stats are derived from it.
-func RuleName(server, kind, protocol string) string {
-	return fmt.Sprintf("rule-%s-%s-%s",
+// ForwardName is the canonical forwarding-rule identifier: forward-{server}-{stage}-{proto}.
+// Example: forward-server-01-production-tcp, forward-server-01-canary-udp.
+// Product term「转发规则」; Envoy ingress/upstream and rl_* stats are derived from it.
+func ForwardName(server, kind, protocol string) string {
+	return fmt.Sprintf("forward-%s-%s-%s",
 		server, strings.ToLower(strings.TrimSpace(kind)), strings.ToLower(strings.TrimSpace(protocol)))
 }
 
 func productionRuleTemplates(serverName string, listenPort int) []Rule {
 	return []Rule{
 		{
-			Name:       RuleName(serverName, "production", "TCP"),
+			Name:       ForwardName(serverName, "production", "TCP"),
 			Kind:       "production",
 			Server:     serverName,
 			Protocol:   "TCP",
@@ -295,7 +295,7 @@ func productionRuleTemplates(serverName string, listenPort int) []Rule {
 			Enabled:    false,
 		},
 		{
-			Name:       RuleName(serverName, "production", "UDP"),
+			Name:       ForwardName(serverName, "production", "UDP"),
 			Kind:       "production",
 			Server:     serverName,
 			Protocol:   "UDP",

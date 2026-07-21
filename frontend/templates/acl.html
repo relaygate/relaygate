@@ -1,7 +1,7 @@
 {{template "page-start" .}}
   <header class="mb-6">
-    <h1 class="text-2xl font-bold tracking-tight">ACL</h1>
-    <p class="mt-1 text-sm text-rg-muted">防火墙黑白名单集合；改完后请执行 <code>firewall apply</code>。</p>
+    <h1 class="text-2xl font-bold tracking-tight">{{T "acl.title"}}</h1>
+    <p class="mt-1 text-sm text-rg-muted">{{T "acl.hint"}}</p>
   </header>
 
   <section class="mb-6">
@@ -10,19 +10,19 @@
       hx-target="#acl-table"
       hx-swap="outerHTML"
       hx-on::after-request="if(event.detail.successful) this.reset()">
-      <h2 class="text-base font-semibold">添加 CIDR</h2>
+      <h2 class="text-base font-semibold">{{T "acl.add_heading"}}</h2>
       <label class="block space-y-1 text-xs text-rg-muted">
-        <span>名单</span>
+        <span>{{T "acl.list"}}</span>
         <select class="rg-input" name="list" required>
           <option value="deny">deny</option>
           <option value="allow">allow</option>
         </select>
       </label>
       <label class="block space-y-1 text-xs text-rg-muted">
-        <span>CIDR / IP</span>
+        <span>{{T "acl.cidr"}}</span>
         <input class="rg-input" name="cidr" type="text" placeholder="1.2.3.4/32" required autocomplete="off"/>
       </label>
-      <button class="rg-btn" type="submit">添加</button>
+      <button class="rg-btn" type="submit">{{T "acl.add"}}</button>
     </form>
   </section>
 

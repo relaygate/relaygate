@@ -22,7 +22,7 @@ type EnvoyStatus struct {
 	Stats           map[string]string `json:"stats,omitempty"`
 }
 
-// RuleRateLimit is per-rule TCP local rate-limit hits (from Envoy rl_<rule> stat_prefix).
+// RuleRateLimit is per-forward TCP local rate-limit hits (from Envoy rl_<forward> stat_prefix).
 type RuleRateLimit struct {
 	Rule   string  `json:"rule"`
 	Prefix string  `json:"prefix"`

@@ -13,6 +13,16 @@
 <script src="/static/app.js"></script>
 {{end}}
 
+{{define "lang-switch"}}
+<div class="flex items-center gap-2 text-[11px]">
+  <a href="/lang?set=zh-CN&amp;next={{urlquery .LangSwitchNext}}"
+     class="{{if eq .Lang "zh-CN"}}text-rg-text font-semibold{{else}}text-rg-muted hover:text-rg-text{{end}}">中文</a>
+  <span class="text-rg-line">|</span>
+  <a href="/lang?set=en&amp;next={{urlquery .LangSwitchNext}}"
+     class="{{if eq .Lang "en"}}text-rg-text font-semibold{{else}}text-rg-muted hover:text-rg-text{{end}}">EN</a>
+</div>
+{{end}}
+
 {{define "toast"}}
 <div
   id="toast"
@@ -42,22 +52,25 @@
     </div>
   </div>
   <nav class="flex flex-1 flex-col gap-1 p-3">
-    <a href="/" class="rg-nav-link {{if eq .Nav "overview"}}rg-nav-link-active{{end}}">Overview</a>
-    <a href="/servers" class="rg-nav-link {{if eq .Nav "servers"}}rg-nav-link-active{{end}}">Servers</a>
-    <a href="/rules" class="rg-nav-link {{if eq .Nav "rules"}}rg-nav-link-active{{end}}">转发规则</a>
-    <a href="/acl" class="rg-nav-link {{if eq .Nav "acl"}}rg-nav-link-active{{end}}">ACL</a>
-    <a href="/apply" class="rg-nav-link {{if eq .Nav "apply"}}rg-nav-link-active{{end}}">Apply</a>
-    <a href="/monitoring" class="rg-nav-link {{if eq .Nav "monitoring"}}rg-nav-link-active{{end}}">Monitoring</a>
+    <a href="/" class="rg-nav-link {{if eq .Nav "overview"}}rg-nav-link-active{{end}}">{{T "nav.overview"}}</a>
+    <a href="/servers" class="rg-nav-link {{if eq .Nav "servers"}}rg-nav-link-active{{end}}">{{T "nav.servers"}}</a>
+    <a href="/rules" class="rg-nav-link {{if eq .Nav "rules"}}rg-nav-link-active{{end}}">{{T "nav.rules"}}</a>
+    <a href="/acl" class="rg-nav-link {{if eq .Nav "acl"}}rg-nav-link-active{{end}}">{{T "nav.acl"}}</a>
+    <a href="/apply" class="rg-nav-link {{if eq .Nav "apply"}}rg-nav-link-active{{end}}">{{T "nav.apply"}}</a>
+    <a href="/ops" class="rg-nav-link {{if eq .Nav "ops"}}rg-nav-link-active{{end}}">{{T "nav.ops"}}</a>
+    <a href="/changes" class="rg-nav-link {{if eq .Nav "changes"}}rg-nav-link-active{{end}}">{{T "nav.changes"}}</a>
+    <a href="/monitoring" class="rg-nav-link {{if eq .Nav "monitoring"}}rg-nav-link-active{{end}}">{{T "nav.monitoring"}}</a>
   </nav>
-  <div class="border-t border-rg-line p-3">
-    <a href="/logout" class="rg-nav-link text-rg-danger hover:text-rg-danger">Logout</a>
+  <div class="space-y-2 border-t border-rg-line p-3">
+    {{template "lang-switch" .}}
+    <a href="/logout" class="rg-nav-link text-rg-danger hover:text-rg-danger">{{T "nav.logout"}}</a>
   </div>
 </aside>
 {{end}}
 
 {{define "page-start"}}
 <!doctype html>
-<html lang="zh-CN">
+<html lang="{{.Lang}}">
 <head>
 {{template "head" .}}
 </head>

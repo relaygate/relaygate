@@ -1,0 +1,59 @@
+{{template "page-start" .}}
+  <header class="mb-6">
+    <h1 class="text-2xl font-bold tracking-tight">{{T "changes.title"}}</h1>
+  </header>
+
+  {{if .Message}}
+  <div class="mb-4 rounded-lg border border-rg-danger/40 bg-rg-danger/10 px-3 py-2 text-sm text-rg-danger">{{.Message}}</div>
+  {{end}}
+
+  <section class="rg-card mb-6 p-5">
+    <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-rg-muted">{{T "changes.history"}}</h2>
+    {{if .Entries}}
+    <div class="rg-table-wrap">
+      <table class="rg-table">
+        <thead>
+          <tr>
+            <th>{{T "changes.stamp"}}</th>
+            <th>{{T "changes.summary"}}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Entries}}
+          <tr>
+            <td class="font-mono text-xs whitespace-nowrap">{{.Stamp}}</td>
+            <td class="max-w-md truncate font-mono text-xs text-rg-muted" title="{{.Summary}}">{{.Summary}}</td>
+            <td>
+              <div class="flex flex-wrap gap-2">
+                <button type="button" class="rg-btn"
+                  hx-get="/hx/changes/{{.Stamp}}"
+                  hx-target="#change-detail"
+                  hx-swap="innerHTML">{{T "changes.view"}}</button>
+                <button type="button" class="rg-btn-ghost"
+                  hx-post="/hx/rollback/preview"
+                  hx-vals='{"stamp":"{{.Stamp}}"}'
+                  hx-target="#rollback-panel"
+                  hx-swap="innerHTML">{{T "changes.rollback_ellipsis"}}</button>
+              </div>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="text-sm text-rg-muted">{{T "changes.empty"}}</p>
+    {{end}}
+  </section>
+
+  <section class="rg-card mb-6 p-5">
+    <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-rg-muted">{{T "changes.detail"}}</h2>
+    <div id="change-detail" class="overflow-auto rounded-lg border border-rg-line bg-rg-input p-4 font-mono text-xs leading-relaxed text-rg-muted whitespace-pre-wrap min-h-[4rem]">{{T "changes.detail_placeholder"}}</div>
+  </section>
+
+  <section class="rg-card p-5">
+    <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-rg-muted">{{T "changes.rollback"}}</h2>
+    <div id="rollback-panel" class="text-sm text-rg-muted">{{T "changes.rollback_hint"}}</div>
+  </section>
+{{template "page-end" .}}

@@ -6,13 +6,13 @@
 
 ### 已具备
 
-- [x] L4 TCP/UDP 固定目标转发（Envoy）与连接/PPS 限流（`rl_<rule>`）
+- [x] L4 TCP/UDP 固定目标转发（Envoy）与连接/PPS 限流（`rl_<forward>`）
 - [x] CLI 闭环：`setup` / `doctor` / `render` / `validate` / `apply` / `reload` / `rollback` / `smoke` / `canary`
 - [x] Panel（默认 `127.0.0.1:9000`）：Servers / 转发规则 / ACL / Apply / Overview（含 per-rule Top）/ Monitoring（中文，Grafana 同源反代）
 - [x] IP 黑白名单 ACL（nftables 真相源；SSH 不受约束）
 - [x] 游戏类型 profile（`packaging/profiles/`）与 `defaults` 变更摘要（`changes`）
 - [x] `defaults.nftables.*` 同源限流 → Envoy + `forward-ports.nft`
-- [x] 转发规则命名 `rule-{server}-{stage}-{proto}`；渲染包 `core/render`
+- [x] 转发规则命名 `forward-{server}-{stage}-{proto}`；渲染包 `core/render`
 - [x] DataDir / `.runtime` 运行态约定；release tar 打包（`make dist` / `install.sh`）
 - [x] `DRAIN_WAIT` 默认 30s，与 NLB 模板 HC（3×10s）对齐；`doctor` 过短告警
 - [x] `relaygate upgrade [--drain]`：二进制/packaging 升级分流（委托 `install.sh --upgrade`）
@@ -135,7 +135,7 @@ drain / smoke / doctor / rollback / profile / fleet 目前以 **CLI** 为准（�
 
 | 字段 | 生成物 |
 |------|--------|
-| `tcp_local_rate_limit_*` 等 | Envoy TCP 本地限速（指标前缀 `rl_<转发规则名>`） |
+| `tcp_local_rate_limit_*` 等 | Envoy TCP 本地限速（限速指标 `rl_<转发规则名>`） |
 | `defaults.nftables.*` | `DataDir/firewall/forward-ports.nft` 的 `FORWARD_*_RATE/BURST` |
 | 启用中的转发规则端口 | 入口 Listener + `FORWARD_TCP/UDP_PORTS` |
 | `acl.deny` / `acl.allow` | 防火墙集合 `ACL_DENY` / `ACL_ALLOW`（`gateway.nft` 在限速前 drop） |
@@ -197,46 +197,47 @@ sudo PURGE=1 bash install.sh --uninstall
 
 ## 命名规范
 
-产品里**只有** `resources.yaml` 的 `rules[]` 叫「转发规则」。Listener / Cluster / 限速指标 / nft 集合都是其**派生物或并列资产**，不要统称「规则」。
+产品里**只有** `resources.yaml` 的 `rules[]`（标识符前缀 `forward-`）叫「转发规则」。入口 / 上游 / 限速指标 / nft 集合都是其**派生物或并列资产**，不要统称「规则」，也**不用** `rule-` 前缀。
 
-### 术语表
+### 术语表（中英对照）
 
-| 中文 | English / 配置键 | 一句话定义 | 命名格式与示例 |
-|------|------------------|------------|----------------|
-| 网关实例 | gateway | 一台 RelayGate 主机（Envoy + nft） | `gateway-{nn}` → `gateway-01`；nft 表 `inet relaygate` |
-| 后端节点 | server / backend | 游戏进程所在机器，回源目标 | `server-{nn}` → `server-01`（`servers[].name`） |
-| **转发规则** | forwarding rule / `rules[]` | **产品「规则」**：某入口端口 → 某后端某协议 | `rule-{server}-{stage}-{proto}` → `rule-server-01-production-tcp` |
-| 阶段 | stage / `kind` | 转发规则生命周期：旁路验证 vs 正式 | `canary` / `production` |
-| 入口 Listener | ingress listener | Envoy 用户入口监听器（由转发规则 1:1 生成） | `ingress-{rule}` → `ingress-rule-server-01-canary-tcp` |
-| 上游 Cluster | upstream cluster | Envoy 回源集群（按 server+协议，多规则可共用） | `upstream-{server}-{proto}` → `upstream-server-01-tcp` |
-| 限速指标前缀 | rate-limit `stat_prefix` | Envoy 本地限速**指标名**，不是规则 | `rl_{rule名,-→_}` → `rl_rule_server_01_canary_tcp` |
-| 防火墙端口集 | forward port set | nft 放行的 TCP/UDP 入口端口集合 | `FORWARD_TCP_PORTS` / `FORWARD_UDP_PORTS`（`forward-ports.nft`） |
-| 防火墙限速 | forward rate | 主机侧每 IP 新建连接 / PPS 限速常量 | `FORWARD_TCP_NEW_CONN_RATE` 等 |
-| ACL 集合 | ACL set | 主机防火墙黑白名单集合（SSH 不受此约束） | `ACL_DENY` / `ACL_ALLOW`；严格模式 `ACL_ALLOW_STRICT` |
+| 中文 | 英文标识前缀 / 键 | 一句话定义 | 命名格式与示例 |
+|------|-------------------|------------|----------------|
+| 网关实例 | `gateway` | 一台 RelayGate 主机（Envoy + nft） | `gateway-{nn}` → `gateway-01`；nft 表 `inet relaygate` |
+| 后端节点 | `server` | 游戏进程所在机器，回源目标 | `server-{nn}` → `server-01`（`servers[].name`） |
+| **转发规则** | `forward-` / YAML 键 `rules[]` | 某入口端口 → 某后端某协议（转发/代理） | `forward-{server}-{stage}-{proto}` → `forward-server-01-production-tcp` |
+| 阶段 | `production` / `canary`（`kind`） | 转发规则生命周期：旁路验证 vs 正式 | `canary` / `production` |
+| 入口 | `ingress-` | Envoy 用户入口 Listener（由转发规则 1:1 生成） | `ingress-{forwardName}` → `ingress-forward-server-01-canary-tcp` |
+| 上游 | `upstream-` | Envoy 回源 Cluster（按 server+协议，多条转发可共用） | `upstream-{server}-{proto}` → `upstream-server-01-tcp` |
+| 限速指标 | `rl_` + forward 名 | Envoy 本地限速 **stat_prefix**，不是转发规则名本身 | `rl_{forward名,-→_}` → `rl_forward_server_01_canary_tcp` |
+| 防火墙端口集 | `FORWARD_*` | nft 放行的 TCP/UDP 入口端口集合 | `FORWARD_TCP_PORTS` / `FORWARD_UDP_PORTS`（`forward-ports.nft`） |
+| 防火墙限速 | `FORWARD_*_RATE/BURST` | 主机侧每 IP 新建连接 / PPS 限速常量 | `FORWARD_TCP_NEW_CONN_RATE` 等 |
+| ACL 集合 | `ACL_*` | 访问控制名单/集合（SSH 不受此约束） | `ACL_DENY` / `ACL_ALLOW`；严格模式 `ACL_ALLOW_STRICT` |
 
 ### 派生对照（同一条转发规则）
 
-以 `rule-server-01-canary-tcp`（listen `11001`）为例：
+以 `forward-server-01-canary-tcp`（listen `11001`）为例：
 
 | 层级 | 标识 |
 |------|------|
-| 转发规则（真相源） | `rule-server-01-canary-tcp` |
-| 入口 Listener | `ingress-rule-server-01-canary-tcp` |
-| 上游 Cluster | `upstream-server-01-tcp`（与 production 等同 server+协议共用） |
-| 限速指标前缀 | `rl_rule_server_01_canary_tcp` |
+| 转发规则（真相源） | `forward-server-01-canary-tcp` |
+| 入口 | `ingress-forward-server-01-canary-tcp` |
+| 上游 | `upstream-server-01-tcp`（与 production 等同 server+协议共用） |
+| 限速指标 | `rl_forward_server_01_canary_tcp` |
 | 防火墙端口集成员 | `11001` ∈ `FORWARD_TCP_PORTS` |
 
 ### 中文用词约定
 
 | 场景 | 推荐说法 | 避免 |
 |------|----------|------|
-| Panel / 文档标题 | **转发规则** | 单独「规则」（易与 nft/Envoy 混淆） |
-| 口语简称（上下文已明） | 「这条规则」= 转发规则 | 把 Listener / `rl_*` / `FORWARD_*` 也叫规则 |
-| ACL 页 | ACL / 防火墙名单 | 「防火墙规则」（易与整份 nft ruleset 混淆） |
+| Panel / 文档标题 | **转发规则**（对应 `forward-`） | `rule-` 前缀；单独「规则」（易与 nft/Envoy 混淆） |
+| 口语简称（上下文已明） | 「这条转发」= 转发规则 | 把入口 / `rl_*` / `FORWARD_*` 也叫规则 |
+| 入口 / 上游 | **入口**（`ingress-`）、**上游**（`upstream-`） | listener / cluster 口语替代中文产品词 |
+| ACL 页 | **ACL 集合** / 访问控制名单 | 「防火墙规则」（易与整份 nft ruleset 混淆） |
 | `firewall apply` | 应用主机防火墙配置 | 「应用规则」而不说明是 nft |
-| Overview 限速 Top | 转发规则 + 指标前缀 | 把 `rl_*` 当成规则名展示主列时可并列二者 |
+| Overview 限速 Top | 转发规则 + 限速指标 | 把 `rl_*` 当成转发规则名单独展示 |
 
-基础设施命名避免 `game`/`player`（`meta.game_name` 等产品域字段除外）。代码标识（YAML 键 `rules`、Go `Rule`、路径 `/rules`）保持英文不动；UI/文档优先「转发规则」。
+基础设施命名避免 `game`/`player`（`meta.game_name` 等产品域字段除外）。代码标识（YAML 键 `rules`、Go 类型 `Rule`、路径 `/rules`）可保留以降低 diff；**对外标识符与文档一律用 `forward-`**，UI/文档优先「转发规则」。
 
 ## 仓库布局
 

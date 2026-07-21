@@ -16,6 +16,37 @@ import (
 	"github.com/relaygate/relaygate/core/resources"
 )
 
+func writeMinimalFrontend(t *testing.T, webDir string, withFavicon bool) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(webDir, "templates"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(webDir, "static"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(webDir, "i18n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	minimalZH := []byte(`{"error.standby":"standby 只读，请到 primary 操作（从节点建议 ENABLE_PANEL=0）","error.grafana_unavailable":"Grafana 暂不可用: %s","nav.overview":"Overview"}`)
+	minimalEN := []byte(`{"error.standby":"Standby is read-only; use primary (set ENABLE_PANEL=0 on standby)","error.grafana_unavailable":"Grafana unavailable: %s","nav.overview":"Overview"}`)
+	if err := os.WriteFile(filepath.Join(webDir, "i18n", "zh-CN.json"), minimalZH, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "i18n", "en.json"), minimalEN, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"login.html", "overview.html", "servers.html", "rules.html", "apply.html", "monitoring.html", "acl.html", "ops.html", "changes.html", "layout.html", "fragments.html"} {
+		if err := os.WriteFile(filepath.Join(webDir, "templates", name), []byte("ok"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if withFavicon {
+		if err := os.WriteFile(filepath.Join(webDir, "static", "favicon.svg"), []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func setupPanel(t *testing.T) (*Server, string, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -24,36 +55,23 @@ func setupPanel(t *testing.T) (*Server, string, string) {
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(webDir, "templates"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(webDir, "static"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeMinimalFrontend(t, webDir, false)
 	res := &resources.Resources{
 		Servers: []resources.Server{
 			{Name: "server-01", Address: "10.0.0.11", TCPPort: 7777, UDPPort: 7778, HealthCheckPort: 7777, Enabled: true},
 			{Name: "server-02", Address: "10.0.0.12", TCPPort: 7777, UDPPort: 7778, HealthCheckPort: 7777, Enabled: true},
 		},
 		Rules: []resources.Rule{
-			{Name: "server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
-			{Name: "rule-server-01-production-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
-			{Name: "rule-server-01-production-udp", Kind: "production", Server: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
-			{Name: "rule-server-02-production-tcp", Kind: "production", Server: "server-02", Protocol: "TCP", ListenPort: 10002, Enabled: false},
-			{Name: "server-02-production-udp", Kind: "production", Server: "server-02", Protocol: "UDP", ListenPort: 10002, Enabled: false},
+			{Name: "forward-server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
+			{Name: "forward-server-01-production-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
+			{Name: "forward-server-01-production-udp", Kind: "production", Server: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
+			{Name: "forward-server-02-production-tcp", Kind: "production", Server: "server-02", Protocol: "TCP", ListenPort: 10002, Enabled: false},
+			{Name: "forward-server-02-production-udp", Kind: "production", Server: "server-02", Protocol: "UDP", ListenPort: 10002, Enabled: false},
 		},
 	}
 	if err := resources.Save(filepath.Join(cfgDir, "resources.yaml"), res); err != nil {
 		t.Fatal(err)
 	}
-	// Minimal templates so New() can parse.
-	for _, name := range []string{"login.html", "overview.html", "servers.html", "rules.html", "apply.html", "monitoring.html"} {
-		path := filepath.Join(webDir, "templates", name)
-		if err := os.WriteFile(path, []byte("ok"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	// layout nav referenced by pages is optional for API tests.
 	srv, err := New(Config{
 		Root:          root,
 		FrontendDir:   webDir,
@@ -82,20 +100,7 @@ func setupPanelWithGrafana(t *testing.T) (*Server, string, string) {
 
 	root := t.TempDir()
 	webDir := filepath.Join(root, "frontend")
-	if err := os.MkdirAll(filepath.Join(webDir, "templates"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(webDir, "static"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"login.html", "overview.html", "servers.html", "rules.html", "apply.html", "monitoring.html"} {
-		if err := os.WriteFile(filepath.Join(webDir, "templates", name), []byte("ok"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(webDir, "static", "favicon.svg"), []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeMinimalFrontend(t, webDir, true)
 	srv, err := New(Config{
 		Root:          root,
 		FrontendDir:   webDir,
@@ -124,13 +129,7 @@ func authedCSRF(req *http.Request, token, csrf string) {
 func TestNewReadsAdminPasswordFile(t *testing.T) {
 	root := t.TempDir()
 	webDir := filepath.Join(root, "frontend")
-	templatesDir := filepath.Join(webDir, "templates")
-	if err := os.MkdirAll(templatesDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(templatesDir, "login.html"), []byte("ok"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeMinimalFrontend(t, webDir, false)
 	passwordFile := filepath.Join(root, "panel-password")
 	if err := os.WriteFile(passwordFile, []byte("file-secret\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -332,12 +331,16 @@ func TestParseRepoTemplates(t *testing.T) {
 		t.Fatal(err)
 	}
 	webDir := filepath.Join(root, "frontend")
-	tmpl, err := template.ParseGlob(filepath.Join(webDir, "templates", "*.html"))
+	tmpl, err := template.New("").Funcs(template.FuncMap{
+		"T":        func(key string, args ...any) string { return key },
+		"urlquery": func(s string) string { return s },
+	}).ParseGlob(filepath.Join(webDir, "templates", "*.html"))
 	if err != nil {
 		t.Fatalf("parse templates: %v", err)
 	}
 	for _, name := range []string{
 		"login.html", "overview.html", "servers.html", "rules.html", "apply.html", "monitoring.html",
+		"ops.html", "changes.html",
 		"servers-table", "rules-table", "apply-result", "page-start", "page-end", "sidebar",
 	} {
 		if tmpl.Lookup(name) == nil {
@@ -347,17 +350,7 @@ func TestParseRepoTemplates(t *testing.T) {
 }
 
 func TestHXServerCreateAndRulePatch(t *testing.T) {
-	srv, token, csrf := setupPanel(t)
-	// Use real templates so fragment execution works.
-	root, err := resources.FindRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpl, err := template.ParseGlob(filepath.Join(root, "frontend", "templates", "*.html"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv.tmpl = tmpl
+	srv, token, csrf := setupPanelRealTemplates(t)
 	h := srv.Handler()
 
 	form := strings.NewReader("name=server-11&address=10.0.0.21&tcp_port=7777&udp_port=7778&health_check_port=7777&enabled=on")
@@ -376,7 +369,7 @@ func TestHXServerCreateAndRulePatch(t *testing.T) {
 		t.Fatalf("missing HX-Trigger: %s", rec.Header().Get("HX-Trigger"))
 	}
 
-	req = httptest.NewRequest(http.MethodPatch, "/hx/rules/rule-server-02-production-tcp", strings.NewReader("enabled=on"))
+	req = httptest.NewRequest(http.MethodPatch, "/hx/rules/forward-server-01-production-tcp", strings.NewReader("enabled=on"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	authedCSRF(req, token, csrf)
 	rec = httptest.NewRecorder()
@@ -535,8 +528,7 @@ func TestValidatePanelBind(t *testing.T) {
 func TestNewRejectsNonLoopbackBind(t *testing.T) {
 	root := t.TempDir()
 	webDir := filepath.Join(root, "frontend")
-	_ = os.MkdirAll(filepath.Join(webDir, "templates"), 0o755)
-	_ = os.WriteFile(filepath.Join(webDir, "templates", "login.html"), []byte("ok"), 0o644)
+	writeMinimalFrontend(t, webDir, false)
 	_, err := New(Config{Root: root, FrontendDir: webDir, AdminPassword: "x", Bind: "0.0.0.0:9000"})
 	if err == nil {
 		t.Fatal("expected error for 0.0.0.0 bind")

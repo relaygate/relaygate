@@ -12,22 +12,22 @@ func sampleResources() *Resources {
 			{Name: "server-02", Address: "10.0.0.12", TCPPort: 7777, UDPPort: 7778, HealthCheckPort: 7777, Enabled: true},
 		},
 		Rules: []Rule{
-			{Name: "server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
-			{Name: "server-01-canary-udp", Kind: "canary", Server: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
-			{Name: "rule-server-01-production-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
-			{Name: "rule-server-01-production-udp", Kind: "production", Server: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
-			{Name: "rule-server-02-production-tcp", Kind: "production", Server: "server-02", Protocol: "TCP", ListenPort: 10002, Enabled: false},
-			{Name: "server-02-production-udp", Kind: "production", Server: "server-02", Protocol: "UDP", ListenPort: 10002, Enabled: false},
+			{Name: "forward-server-01-canary-tcp", Kind: "canary", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
+			{Name: "forward-server-01-canary-udp", Kind: "canary", Server: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
+			{Name: "forward-server-01-production-tcp", Kind: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
+			{Name: "forward-server-01-production-udp", Kind: "production", Server: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
+			{Name: "forward-server-02-production-tcp", Kind: "production", Server: "server-02", Protocol: "TCP", ListenPort: 10002, Enabled: false},
+			{Name: "forward-server-02-production-udp", Kind: "production", Server: "server-02", Protocol: "UDP", ListenPort: 10002, Enabled: false},
 		},
 	}
 }
 
-func TestRuleName(t *testing.T) {
-	got := RuleName("server-01", "production", "TCP")
-	if got != "rule-server-01-production-tcp" {
+func TestForwardName(t *testing.T) {
+	got := ForwardName("server-01", "production", "TCP")
+	if got != "forward-server-01-production-tcp" {
 		t.Fatalf("got %q", got)
 	}
-	if RuleName("server-02", "canary", "udp") != "rule-server-02-canary-udp" {
+	if ForwardName("server-02", "canary", "udp") != "forward-server-02-canary-udp" {
 		t.Fatal("canary/udp")
 	}
 }
@@ -44,7 +44,7 @@ func TestAddServerCreatesProductionRules(t *testing.T) {
 	if len(created) != 2 {
 		t.Fatalf("expected 2 rules, got %d", len(created))
 	}
-	if created[0].Name != "rule-server-11-production-tcp" || created[1].Name != "rule-server-11-production-udp" {
+	if created[0].Name != "forward-server-11-production-tcp" || created[1].Name != "forward-server-11-production-udp" {
 		t.Fatalf("unexpected rule names: %+v", created)
 	}
 	for _, rule := range created {
@@ -95,7 +95,7 @@ func TestAddServerAllocatesNextPortWhenPreferredTaken(t *testing.T) {
 	r := sampleResources()
 	// Prefer 10003 for server-03, but occupy it with an unrelated rule first.
 	r.Rules = append(r.Rules, Rule{
-		Name: "rule-extra", Kind: "production", Server: "server-02",
+		Name: "forward-extra", Kind: "production", Server: "server-02",
 		Protocol: "TCP", ListenPort: 10003, Enabled: false,
 	})
 	created, err := r.AddServer(Server{
@@ -184,7 +184,7 @@ func TestValidateRejectsCanaryProductionPortOverlap(t *testing.T) {
 	r := sampleResources()
 	// Point a disabled production rule at the canary port → planning conflict
 	for i := range r.Rules {
-		if r.Rules[i].Name == "rule-server-01-production-tcp" {
+		if r.Rules[i].Name == "forward-server-01-production-tcp" {
 			r.Rules[i].ListenPort = 11001
 		}
 	}
@@ -228,7 +228,7 @@ func TestDiffDetectsToggleAndPortChange(t *testing.T) {
 	before := sampleResources()
 	after := sampleResources()
 	for i := range after.Rules {
-		if after.Rules[i].Name == "rule-server-01-production-tcp" {
+		if after.Rules[i].Name == "forward-server-01-production-tcp" {
 			after.Rules[i].Enabled = true
 			after.Rules[i].ListenPort = 10099
 		}

@@ -1,29 +1,32 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="{{.Lang}}">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Login · RelayGate</title>
+  <title>{{T "login.title"}} · RelayGate</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml"/>
   <link rel="stylesheet" href="/static/app.css"/>
 </head>
 <body class="grid min-h-screen place-items-center p-4">
   <form method="post" action="/login" class="rg-card w-full max-w-sm space-y-4 p-6 shadow-xl">
-    <div class="flex items-center gap-3">
-      <img src="/static/favicon.svg" alt="" class="h-10 w-10 rounded-xl"/>
-      <div>
-        <h1 class="text-xl font-bold tracking-wide">RelayGate</h1>
-        <p class="text-xs text-rg-muted">Panel</p>
+    <div class="flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <img src="/static/favicon.svg" alt="" class="h-10 w-10 rounded-xl"/>
+        <div>
+          <h1 class="text-xl font-bold tracking-wide">RelayGate</h1>
+          <p class="text-xs text-rg-muted">Panel</p>
+        </div>
       </div>
+      {{template "lang-switch" .}}
     </div>
     {{if .Error}}
     <div class="rounded-lg border border-rg-danger/40 bg-rg-danger/10 px-3 py-2 text-sm text-rg-danger">{{.Error}}</div>
     {{end}}
     <label class="block space-y-1.5 text-sm text-rg-muted">
-      <span>Password</span>
+      <span>{{T "login.password"}}</span>
       <input class="rg-input" type="password" name="password" required autofocus autocomplete="current-password"/>
     </label>
-    <button class="rg-btn w-full" type="submit">登录</button>
+    <button class="rg-btn w-full" type="submit">{{T "login.submit"}}</button>
   </form>
 </body>
 </html>

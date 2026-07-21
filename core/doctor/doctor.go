@@ -16,6 +16,11 @@ import (
 	"github.com/relaygate/relaygate/core/resources"
 )
 
+// RunCapture runs doctor checks and returns captured stdout.
+func RunCapture(opt Options) (string, error) {
+	return ops.CaptureStdout(func() error { return Run(opt) })
+}
+
 // Options for preflight checks.
 type Options struct {
 	Root        string
