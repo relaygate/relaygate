@@ -29,6 +29,12 @@ const (
 	InstallDataDirName = "data"
 	// DevDataDirName is the runtime directory under a source checkout (gitignored).
 	DevDataDirName = ".runtime"
+
+	// DefaultDrainWaitSec matches packaging/terraform/nlb health_check:
+	// unhealthy_threshold (3) × interval (10s) = 30s. Keep in sync with that template.
+	DefaultDrainWaitSec = 30
+	// RecommendedDrainWaitSec is the minimum advised DRAIN_WAIT under NLB / dual-active.
+	RecommendedDrainWaitSec = DefaultDrainWaitSec
 )
 
 // Getenv returns the trimmed env value or fallback when unset/blank.
@@ -220,7 +226,7 @@ func LoadEnv(root string) (Env, error) {
 	dataDir := ResolveDataDir(root)
 	_ = os.Setenv("RELAYGATE_DATA_DIR", dataDir)
 
-	drainWait := 5
+	drainWait := DefaultDrainWaitSec
 	if v := Getenv("DRAIN_WAIT", ""); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			drainWait = n

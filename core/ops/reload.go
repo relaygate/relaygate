@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"time"
+
+	"github.com/relaygate/relaygate/core/config"
 )
 
 // Reload renders config, drains, restarts Envoy, waits for ready.
@@ -61,6 +63,8 @@ func ReloadTo(root string, stdout, stderr io.Writer) error {
 		return ValidateEnvoyContainer(root, env, true)
 	})
 
+	WarnIfDrainWaitShort(env.DrainWait, stdout)
+
 	if err := stage("drain", func() error {
 		if err := DrainFailQuickQuiet(root, env, env.DrainWait, stdout); err != nil {
 			logf(stdout, "WARN: drain 失败，继续 reload（Envoy 可能尚未运行）: %v", err)
@@ -114,12 +118,14 @@ func ReloadCapture(root string) (string, error) {
 
 // DrainFailQuickQuiet is DrainFailQuick with progress to a writer.
 func DrainFailQuickQuiet(root string, env Env, waitSec int, w io.Writer) error {
-	logf(w, "draining %s (/healthcheck/fail → LB 摘流, wait=%ds)", env.EnvoyContainer(), waitSec)
-	if err := HTTPPost(env.AdminURL("/healthcheck/fail")); err != nil {
-		return fmt.Errorf("healthcheck/fail: %w", err)
-	}
 	if waitSec < 0 {
 		waitSec = env.DrainWait
+	}
+	logf(w, "draining %s (/healthcheck/fail → LB 摘流, wait=%ds, 建议≥%ds)",
+		env.EnvoyContainer(), waitSec, config.RecommendedDrainWaitSec)
+	WarnIfDrainWaitShort(waitSec, w)
+	if err := HTTPPost(env.AdminURL("/healthcheck/fail")); err != nil {
+		return fmt.Errorf("healthcheck/fail: %w", err)
 	}
 	time.Sleep(time.Duration(waitSec) * time.Second)
 	return nil

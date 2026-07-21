@@ -89,6 +89,7 @@ func Firewall(root string, apply bool) error {
 	fmt.Printf("将保留 SSH/TCP %s；应用前请保持当前会话并准备云控制台。\n", sshPort)
 
 	if !apply {
+		fmt.Println("变更分流：ACL / nftables-only → sudo relaygate firewall apply（无需 reload Envoy）")
 		fmt.Println("默认未应用。确认无误后执行: sudo relaygate firewall apply")
 		fmt.Println("（非交互: sudo APPLY_FIREWALL=1 FIREWALL_CONFIRM=YES_FLUSH_NFTABLES relaygate firewall apply）")
 		return nil

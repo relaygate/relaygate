@@ -83,7 +83,9 @@ func Baseline(root string, outPath string) error {
 	return nil
 }
 
-// Fleet deploys gateways from inventory one-by-one: drain → sync → reload → smoke.
+// Fleet upgrades gateways from inventory one-by-one via release tar / install.sh --upgrade.
+// Flow per host: drain fail → install.sh --upgrade → smoke → drain ok.
+// No git fetch/checkout fallback (production installs are tar-based).
 func Fleet(root string, gatewaysCSV string) error {
 	inventory := getenv("INVENTORY", config.ResolvePaths(root).Inventory)
 	if _, err := os.Stat(inventory); err != nil {
@@ -99,22 +101,25 @@ func Fleet(root string, gatewaysCSV string) error {
 	if gatewaysCSV == "" {
 		gatewaysCSV = "gateway-01,gateway-02"
 	}
+	version, localTar, err := ResolveReleaseSpec(root)
+	if err != nil {
+		return fmt.Errorf("fleet 需要 release 规格: %w", err)
+	}
 	sshOpts := strings.Fields(getenv("SSH_OPTS", "-o StrictHostKeyChecking=accept-new -o BatchMode=yes"))
 	imageTag := os.Getenv("IMAGE_TAG")
-	deployRef := strings.TrimSpace(os.Getenv("DEPLOY_REF"))
-	if deployRef == "" {
-		if b, err := os.ReadFile(filepath.Join(root, "RELEASE")); err == nil {
-			deployRef = strings.TrimSpace(string(b))
-		}
-	}
-	switch deployRef {
-	case "", "master", "main", "latest":
-		return fmt.Errorf("DEPLOY_REF 必须是不可变 tag 或 commit SHA（当前 %q）；请 export DEPLOY_REF=<tag|sha> 或写入 RELEASE", deployRef)
-	}
 	pauseSec := 10
 	if v := os.Getenv("BATCH_PAUSE_SEC"); v != "" {
 		fmt.Sscanf(v, "%d", &pauseSec)
 	}
+
+	fmt.Println("==> fleet：分批 release-tar / install.sh --upgrade（不用 git）")
+	if localTar != "" {
+		fmt.Printf("    RELAYGATE_TAR=%s\n", localTar)
+	}
+	if version != "" {
+		fmt.Printf("    RELAYGATE_VERSION=%s\n", version)
+	}
+	fmt.Printf("    GATEWAYS=%s BATCH_PAUSE_SEC=%d\n", gatewaysCSV, pauseSec)
 
 	for _, gw := range strings.Split(gatewaysCSV, ",") {
 		gw = strings.TrimSpace(gw)
@@ -136,43 +141,86 @@ func Fleet(root string, gatewaysCSV string) error {
 			rdir = config.DefaultInstallDir
 		}
 		if host == "" {
-			return fmt.Errorf("inventory 未定义 HOST_%s", key)
+			return fmt.Errorf("inventory 未定义 HOST_%s（网关 %s）", key, gw)
 		}
-		fmt.Printf("\n========== 分批部署: %s (%s@%s:%s) ==========\n", gw, user, host, port)
+		fmt.Printf("\n========== 分批升级: %s (%s@%s:%s) ==========\n", gw, user, host, port)
 		sshBase := append([]string{}, sshOpts...)
 		sshBase = append(sshBase, "-p", port, user+"@"+host)
 
 		remote := func(script string) error {
-			args := append(sshBase, script)
-			return RunCmd(root, "ssh", args...)
+			args := append([]string{}, sshBase...)
+			args = append(args, script)
+			if err := RunCmd(root, "ssh", args...); err != nil {
+				return fmt.Errorf("%s SSH 失败（%s@%s:%s）: %w", gw, user, host, port, err)
+			}
+			return nil
 		}
 
-		fmt.Println("==> 1/5 drain")
-		if err := remote(fmt.Sprintf("cd '%s' && ./bin/relaygate drain fail", rdir)); err != nil {
+		fmt.Println("==> 1/4 drain fail")
+		if err := remote(fmt.Sprintf("cd %s && ./bin/relaygate drain fail", shellQuote(rdir))); err != nil {
 			return err
 		}
-		fmt.Println("==> 2/5 sync git / artifact")
-		if err := remote(fmt.Sprintf("cd '%s' && git fetch --all && git checkout %q && git pull --ff-only", rdir, deployRef)); err != nil {
-			return err
+
+		remoteTar := ""
+		if localTar != "" {
+			remoteTar = "/tmp/relaygate-fleet-" + filepath.Base(localTar)
+			fmt.Printf("==> 2/4 scp release tar → %s\n", remoteTar)
+			scpArgs := append([]string{}, sshOpts...)
+			scpArgs = append(scpArgs, "-P", port, localTar, fmt.Sprintf("%s@%s:%s", user, host, remoteTar))
+			if err := RunCmd(root, "scp", scpArgs...); err != nil {
+				return fmt.Errorf("%s scp tar 失败（%s@%s）: %w", gw, user, host, err)
+			}
+		} else {
+			fmt.Println("==> 2/4 远端将按 RELAYGATE_VERSION 下载 release tar")
 		}
+
 		if imageTag != "" {
-			sed := fmt.Sprintf(`cd '%s' && sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=%s/' .env || echo IMAGE_TAG=%s >> .env`, rdir, imageTag, imageTag)
+			sed := fmt.Sprintf(`cd %s && sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=%s/' .env || echo IMAGE_TAG=%s >> .env`,
+				shellQuote(rdir), imageTag, imageTag)
 			_ = remote(sed)
 		}
-		fmt.Println("==> 3/5 render + reload envoy")
-		if err := remote(fmt.Sprintf("cd '%s' && ./bin/relaygate render --observability && ./bin/relaygate reload", rdir)); err != nil {
+
+		upgradeCmd := fleetRemoteUpgradeCmd(rdir, version, remoteTar)
+		fmt.Println("==> 3/4 install.sh --upgrade")
+		if err := remote(upgradeCmd); err != nil {
+			return fmt.Errorf("%s 升级失败（无 git 回退）: %w", gw, err)
+		}
+
+		fmt.Println("==> 4/4 smoke + drain ok")
+		if err := remote(fmt.Sprintf("cd %s && ./bin/relaygate smoke 127.0.0.1 && ./bin/relaygate drain ok", shellQuote(rdir))); err != nil {
 			return err
 		}
-		fmt.Println("==> 4/5 undrain + smoke")
-		if err := remote(fmt.Sprintf("cd '%s' && ./bin/relaygate drain ok && ./bin/relaygate smoke 127.0.0.1", rdir)); err != nil {
-			return err
-		}
-		fmt.Printf("==> 5/5 %s 完成，继续下一台前短暂等待\n", gw)
+		fmt.Printf("==> %s 完成，BATCH_PAUSE_SEC=%d 后继续下一台\n", gw, pauseSec)
 		time.Sleep(time.Duration(pauseSec) * time.Second)
 	}
-	fmt.Printf("\n全部分批部署完成: %s\n", gatewaysCSV)
+	fmt.Printf("\n全部分批升级完成: %s\n", gatewaysCSV)
 	fmt.Println("回滚单台: ssh … 'cd /opt/relaygate && ./bin/relaygate rollback'")
 	return nil
+}
+
+// fleetRemoteUpgradeCmd builds the remote shell snippet for install.sh --upgrade.
+func fleetRemoteUpgradeCmd(remoteDir, version, remoteTar string) string {
+	var b strings.Builder
+	b.WriteString("set -euo pipefail; ")
+	b.WriteString("cd ")
+	b.WriteString(shellQuote(remoteDir))
+	b.WriteString("; ")
+	b.WriteString("export NONINTERACTIVE=1 RELAYGATE_INSTALL_DIR=")
+	b.WriteString(shellQuote(remoteDir))
+	if version != "" {
+		b.WriteString("; export RELAYGATE_VERSION=")
+		b.WriteString(shellQuote(version))
+	}
+	if remoteTar != "" {
+		b.WriteString("; export RELAYGATE_TAR=")
+		b.WriteString(shellQuote(remoteTar))
+	}
+	b.WriteString("; ")
+	b.WriteString("if [[ ! -f ./install.sh ]]; then ")
+	b.WriteString("echo 'ERROR: 远端缺少 install.sh；生产请用 release tar 安装树，fleet 不回退到源码同步' >&2; exit 1; ")
+	b.WriteString("fi; ")
+	b.WriteString("bash ./install.sh --upgrade -y")
+	return b.String()
 }
 
 func parseInventory(path string) (map[string]string, error) {

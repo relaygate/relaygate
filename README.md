@@ -1,59 +1,58 @@
 # RelayGate
 
-基于 **Envoy** 的游戏网关：单机起步，可演进为双活 + 云 L4 LB。一份运行态 `resources.yaml` 驱动转发与限流；日常运维统一用二进制 `relaygate`。
+基于 **Envoy** 的游戏 L4 网关：单机起步，可演进为双活 + 云 L4 LB。一份运行态 `resources.yaml` 驱动转发与限流；日常运维统一用二进制 `relaygate`。
 
-## 功能
+## 功能特性
 
-- **数据面**：Envoy 固定目标 TCP/UDP 转发，连接/PPS 限流
-- **运维入口**：`relaygate`（setup、doctor、渲染、部署、drain、冒烟、防火墙、ACL、profile、Panel）
-- **管理面**：Panel 默认 `127.0.0.1:9000`（Grafana 同源反代）；监控仅 loopback
-- **智能化**：增服自动分配端口；`reload` 自动 drain → 校验 → 重启 → ready
-- **加深能力**：IP 黑白名单（nftables）、defaults 变更摘要、游戏类型 profile、per-rule 限速观测、NLB/drain 协同检查
+### 已具备
 
-## 安装
+- [x] L4 TCP/UDP 固定目标转发（Envoy）与连接/PPS 限流（`rl_<rule>`）
+- [x] CLI 闭环：`setup` / `doctor` / `render` / `validate` / `apply` / `reload` / `rollback` / `smoke` / `canary`
+- [x] Panel（默认 `127.0.0.1:9000`）：Servers / Rules / ACL / Apply / Overview（含 per-rule Top）/ Monitoring（中文，Grafana 同源反代）
+- [x] IP 黑白名单 ACL（nftables 真相源；SSH 不受约束）
+- [x] 游戏类型 profile（`packaging/profiles/`）与 `defaults` 变更摘要（`changes`）
+- [x] `defaults.nftables.*` 同源限流 → Envoy + `forward-ports.nft`
+- [x] 规则命名 `rule-{server}-{stage}-{proto}`；渲染包 `core/render`
+- [x] DataDir / `.runtime` 运行态约定；release tar 打包（`make dist` / `install.sh`）
+- [x] `DRAIN_WAIT` 默认 30s，与 NLB 模板 HC（3×10s）对齐；`doctor` 过短告警
+- [x] `relaygate upgrade [--drain]`：二进制/packaging 升级分流（委托 `install.sh --upgrade`）
+- [x] `fleet` 分批：drain → release tar / `install.sh --upgrade` → smoke（不用 git）
 
-`install.sh` **仅 bootstrap**：核心检测 → 下载预编译 release tar → 解压到 `/opt/relaygate` → 调用产品 CLI。  
-数据面 Compose、Panel、防火墙由 `relaygate` 完成。**默认不再**在安装机 `docker build` 或整棵 git clone。
+### 规划中
+
+- [ ] Panel：drain / smoke / doctor 面板化
+- [ ] Panel：rollback UX、profile 管理 UI、fleet 向导
+- [ ] Envoy 热加载（远期）
+- [ ] 完整 WAF / Agones 集成（不做或远期）
+
+## 架构 / 工作原理
+
+```text
+玩家 → 云 L4 LB（可选）→ gateway:ingress 端口
+                         → Envoy（TCP/UDP + 本地限速）
+                         → server:7777/7778
+```
+
+- **意图源**：`DataDir/resources.yaml`（servers / rules / defaults / acl）
+- **生成物**：Envoy 配置、`firewall/forward-ports.nft`（由 `render` / `apply` / `reload`）
+- **摘流**：Envoy admin `/healthcheck/fail|ok` + `/ready`，供 NLB 健康检查
+
+## 快速开始 / 安装
+
+`install.sh` **仅 bootstrap**：检测 → 下载 release tar → 解压到 `/opt/relaygate` → 调用 CLI。  
+数据面 Compose、Panel、防火墙由 `relaygate` 完成。默认不在安装机 `docker build` 或整棵 git clone。
 
 支持 Ubuntu / Debian / RHEL / Rocky / Alma / CentOS Stream / Fedora / Amazon Linux（systemd，`amd64`/`arm64`）。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh -o /tmp/relaygate-install.sh
-less /tmp/relaygate-install.sh
 sudo RELAYGATE_VERSION=v0.1.0 bash /tmp/relaygate-install.sh
 ```
 
-安装器内部等价于：
-
-```text
-root / OS / arch / systemd / Docker
-→ 下载 relaygate-$VERSION-linux-$ARCH.tar.gz（+ sha256）
-→ 解压到 /opt/relaygate（保留已有 .env 与 DataDir）
-→ relaygate setup → apply → panel install → smoke
-→ firewall check（默认不改主机）
-```
-
-生产务必固定 **Release tag**（禁止 `master`/`main`/`latest`）：
-
-```bash
-sudo RELAYGATE_VERSION=v0.1.0 bash /tmp/relaygate-install.sh
-```
-
-本地已有包：
+生产务必固定 **Release tag**（禁止 `master`/`main`/`latest`）。本地包：
 
 ```bash
 sudo RELAYGATE_TAR=/path/relaygate-v0.1.0-linux-amd64.tar.gz bash /tmp/relaygate-install.sh
-```
-
-非交互示例：
-
-```bash
-sudo env NONINTERACTIVE=1 \
-  RELAYGATE_VERSION=v0.1.0 \
-  GATEWAY_NAME=gateway-01 \
-  GATEWAY_PUBLIC_IP=<公网IP> \
-  APPLY_FIREWALL=0 \
-  bash /tmp/relaygate-install.sh
 ```
 
 | 变量 | 说明 |
@@ -61,141 +60,101 @@ sudo env NONINTERACTIVE=1 \
 | `RELAYGATE_VERSION` | GitHub Release tag（推荐） |
 | `RELAYGATE_TAR` | 本地 tar.gz，跳过下载 |
 | `RELAYGATE_INSTALL_DIR` | 默认 `/opt/relaygate` |
-| `RELAYGATE_DATA_DIR` | 运行态目录；安装默认 `$INSTALL_DIR/data` |
+| `RELAYGATE_DATA_DIR` | 运行态；安装默认 `$INSTALL_DIR/data` |
 | `FROM_SOURCE=1` | 开发兜底：源码构建（非默认） |
 | `GATEWAY_NAME` / `GATEWAY_PUBLIC_IP` | 网关身份 |
-| `GATEWAY_SSH_PORT` | 默认 `30455`（与 `.env.example` / firewall 模板一致） |
+| `GATEWAY_SSH_PORT` | 默认 `30455` |
 | `ENABLE_PANEL` / `ENABLE_GRAFANA` | 默认 1 |
 | `APPLY_FIREWALL` | 默认 0（只校验） |
 
 ### 开发机（源码）
 
-源码树**没有**顶层 `data/`。运行态默认写到 gitignore 的 `.runtime/`（或显式 `RELAYGATE_DATA_DIR`）。
+源码树**没有**顶层 `data/`。运行态默认写到 gitignore 的 `.runtime/`。
 
 ```bash
 cp .env.example .env && chmod 600 .env
 make build
-./bin/relaygate setup --noninteractive   # 写入 .env 中 RELAYGATE_DATA_DIR=<repo>/.runtime
+./bin/relaygate setup --noninteractive
 ./bin/relaygate validate && ./bin/relaygate apply && ./bin/relaygate smoke
-
-# 本地打与 CI 相同结构的 release 包
-make dist VERSION=dev
+make dist VERSION=dev   # 与 CI 同结构的 release 包
 ```
 
-## 日常运维
+## 日常运维（CLI）
 
 ```text
 首启     relaygate setup [--noninteractive] [--sysctl]
-         relaygate doctor [--strict-ports]   # 含 admin / drain 端点 / 双活 env
+         relaygate doctor [--strict-ports]
 
 配置     relaygate render [--check-only] [--observability]
-         relaygate validate                  # 端口冲突、rule→server、nftables/ACL 同源校验
-         relaygate server status             # 每服 canary / production 是否生效
-         relaygate server enable|disable <server-01>
-         relaygate acl list|add|remove …     # IP 黑白名单（写 resources → firewall apply）
-         relaygate profile list|show|apply   # 游戏类型 defaults 模板
-         relaygate changes [--limit N]       # 列出 backups/*/change-summary.txt
+         relaygate validate
+         relaygate server status|enable|disable <server>
+         relaygate acl list|add|remove …
+         relaygate profile list|show|apply
+         relaygate changes [--limit N]
 
-数据面   relaygate apply                 # 首次/全量（含变更摘要备份，含 defaults/acl）
-         relaygate reload                # 改配置后：backup→drain→restart→ready（分阶段计时）
+数据面   relaygate apply                 # 首次/全量
+         relaygate reload                # resources/Envoy：backup→drain→restart→ready
          relaygate rollback [STAMP]
-         relaygate drain fail|ok|status  # NLB 摘流 / 恢复（DRAIN_WAIT + 控制台提示）
+         relaygate drain fail|ok|status
+         relaygate upgrade [--drain]     # 二进制/packaging
 
-检查     relaygate smoke [HOST]
-         relaygate canary [HOST]         # 读 resources 启用 canary 端口
-         relaygate baseline
-         relaygate doctor                # admin/drain/双活 + NLB/高防清单
+检查     relaygate smoke | canary | baseline | doctor
 
-防火墙   relaygate firewall [check|apply]  # 端口集 + defaults.nftables + ACL set
-Panel    sudo relaygate panel install | uninstall
-多机     GATEWAYS=gateway-01,gateway-02 relaygate fleet
+防火墙   relaygate firewall [check|apply]   # ACL/nftables-only
+Panel    sudo relaygate panel install|uninstall
+多机     GATEWAYS=… RELAYGATE_VERSION=… relaygate fleet
 ```
 
-### IP 黑白名单（ACL）
+**变更分流**
 
-`resources.yaml` 顶层 `acl`（nftables 为真相源；SSH 不受约束）：
+| 变更类型 | 命令 |
+|----------|------|
+| ACL / nftables-only | `firewall apply`（通常无需 reload Envoy） |
+| resources / Envoy | `reload` |
+| 二进制 / packaging | `upgrade [--drain]` 或 `install.sh --upgrade` |
 
-```yaml
-acl:
-  deny: ["1.2.3.4/32"]   # 立即丢弃
-  allow: []              # 非空 = 严格模式，仅名单可进转发口
-```
+推荐增服流程：Panel 添加 Server → `canary` → `server enable` → `reload` → `smoke` → `firewall apply`。
 
-```bash
-relaygate acl add deny 1.2.3.4/32
-relaygate acl list
-relaygate validate
-sudo FIREWALL_CONFIRM=YES_FLUSH_NFTABLES ./bin/relaygate firewall apply
-# Panel → ACL 页亦可 CRUD；改名单通常无需 reload Envoy
-```
+## Panel
 
-### 游戏类型 profile
+默认绑定 loopback：`http://127.0.0.1:9000`（Grafana 同源反代）。
 
-预设在 `packaging/profiles/`（`default-safe`、`fps-udp-heavy`、`moba-tcp-stable`）：
+| 页 | 能力 |
+|----|------|
+| Overview | 聚合 RL + per-rule Top |
+| Servers / Rules | CRUD、启停、自动分配端口 |
+| ACL | 黑白名单 CRUD（改后需 `firewall apply`） |
+| Apply | 校验 → 备份摘要 → drain → 重启 Envoy |
+| Monitoring | Grafana 嵌入（中文文案） |
 
-```bash
-relaygate profile list
-relaygate profile show fps-udp-heavy
-relaygate profile apply fps-udp-heavy   # 覆盖 resources defaults
-relaygate validate && relaygate reload
-sudo ./bin/relaygate firewall apply     # 若改了 nftables 档位
-```
+drain / smoke / doctor / rollback / profile / fleet 目前以 **CLI** 为准（见规划中）。
 
-### 变更摘要与限速观测
-
-- `reload`/`apply` 备份含 `change-summary.txt`，对比 **servers/rules/defaults/acl**
-- `relaygate changes --limit 10` 浏览历史摘要
-- Panel Overview：聚合 RL + **per-rule Top**（Envoy `rl_<rule>`）；Grafana 按 `envoy_local_rate_limit` 分解
-
-### 推荐流程（增服 → canary → production）
-
-```bash
-# 1) Panel 添加 Server（自动分配 production 端口，规则默认关闭）
-#    或编辑 DataDir/resources.yaml
-
-relaygate server status          # 查看 canary/production 是否生效
-relaygate validate               # 端口冲突 / 引用检查
-relaygate canary 127.0.0.1       # 探针走启用中的 canary 端口
-
-# 2) canary 通过后放量到 production
-relaygate server enable server-01
-relaygate reload                 # 输出变更摘要 + 各阶段耗时；备份含 change-summary.txt
-relaygate smoke
-
-# 3) 宿主防火墙与 Envoy 端口集对齐
-sudo FIREWALL_CONFIRM=YES_FLUSH_NFTABLES ./bin/relaygate firewall apply
-```
-
-### L4 维护窗口剧本（drain ↔ NLB 摘流）
-
-云 L4（如 NLB）通常探测 Envoy `/ready`。维护时：
-
-```bash
-relaygate doctor                 # 确认 /healthcheck/* 与 admin 可达；核对 DRAIN_WAIT
-relaygate drain fail             # POST /healthcheck/fail → 等 DRAIN_WAIT（未设 env 默认 15s）
-# …此时 NLB 应摘流；再改配置 / reload / 升级…
-relaygate reload                 # 内置：drain → restart → poll /ready → healthcheck/ok
-# 或手动恢复：
-relaygate drain ok               # POST /healthcheck/ok
-relaygate smoke                  # 冒烟
-```
-
-`DRAIN_WAIT` 写在 `.env`（见 `.env.example`）。`reload` 使用该值；单独 `drain fail` 在未设置时默认多等一会儿（15s），给 LB 失败窗口留余量。
-
-### 同源限流（Envoy + nftables）
+## 配置（resources / DataDir / nftables）
 
 `DataDir/resources.yaml` 的 `defaults` 是单一意图源：
 
 | 字段 | 生成物 |
 |------|--------|
-| `tcp_local_rate_limit_*` | Envoy TCP listener 本地限速（`stat_prefix: rl_<rule>`） |
-| `defaults.nftables.*` | `DataDir/firewall/forward-ports.nft` 中的 `FORWARD_*_RATE/BURST` |
+| `tcp_local_rate_limit_*` 等 | Envoy TCP 本地限速（`stat_prefix: rl_<rule>`） |
+| `defaults.nftables.*` | `DataDir/firewall/forward-ports.nft` 的 `FORWARD_*_RATE/BURST` |
 | 启用中的 rules 端口 | Envoy listeners + `FORWARD_TCP/UDP_PORTS` |
 | `acl.deny` / `acl.allow` | `ACL_DENY` / `ACL_ALLOW`（`gateway.nft` 在限速前 drop） |
 
-`packaging/firewall/gateway.nft` 引用这些 define，不再硬编码限速数字。改档位：编辑 `resources.yaml` 或 `profile apply` → `validate` / `firewall check` → `firewall apply`。
+```yaml
+acl:
+  deny: ["1.2.3.4/32"]
+  allow: []              # 非空 = 严格模式
+```
 
-### 双活（可选）
+| 场景 | 默认 DataDir |
+|------|----------------|
+| 源码开发 | `<repo>/.runtime/` |
+| 安装前缀 | `$INSTALL_DIR/data`（默认 `/opt/relaygate/data`） |
+| 覆盖 | `RELAYGATE_DATA_DIR` |
+
+`setup` / 首次 `apply` 在目标缺失时从 `*.example` seed；`--reset-defaults` 才覆盖已有 `resources.yaml`。
+
+## 双活与维护窗口
 
 ```text
 玩家 → 云 L4 LB
@@ -204,103 +163,64 @@ relaygate smoke                  # 冒烟
 ```
 
 ```bash
-./bin/relaygate apply && ./bin/relaygate smoke
-# 仅 primary：sudo ./bin/relaygate panel install
+relaygate doctor                 # 核对 /ready、DRAIN_WAIT、双活角色
+relaygate drain fail             # POST /healthcheck/fail → 等 DRAIN_WAIT（默认 30s）
+# 控制台确认 NLB target unhealthy 后：
+relaygate reload                 # 或 upgrade --drain
+relaygate drain ok               # 若未走内置 undrain
+relaygate smoke
 ```
 
-双活滚动：对即将变更的节点先 `drain fail`，确认 NLB 摘流后再 `reload`，另一台继续接流量；恢复后 `drain ok` / smoke。云 NLB 模板见 [`packaging/terraform/nlb/`](packaging/terraform/nlb/)。分批：`GATEWAYS=gateway-01,gateway-02 ./bin/relaygate fleet`。
+`DRAIN_WAIT` 写在 `.env`（见 `.env.example`）。默认 **30s**，与 NLB 模板 HC `unhealthy_threshold(3) × interval(10s)` 对齐；过短时 CLI WARN，双活/NLB 迹象下 `doctor` 硬失败。模板见 [`packaging/terraform/nlb/`](packaging/terraform/nlb/)。
 
-### 升级 / 回滚 / 卸载
+### fleet 分批升级（release tar，不用 git）
 
 ```bash
-sudo bash /tmp/relaygate-install.sh --upgrade
+export GATEWAYS=gateway-01,gateway-02
+export BATCH_PAUSE_SEC=10
+export RELAYGATE_VERSION=v0.1.0          # 或 RELAYGATE_TAR=/path/to.tar.gz / DEPLOY_REF
+./bin/relaygate fleet
+```
+
+每台：`drain fail` → `install.sh --upgrade` → `smoke` → `drain ok`。SSH/升级失败清晰报错并停止，**无** git checkout 回退。
+
+### 本机升级 / 回滚 / 卸载
+
+```bash
+sudo RELAYGATE_VERSION=v0.1.0 ./bin/relaygate upgrade --drain
+# 或：sudo RELAYGATE_VERSION=v0.1.0 bash install.sh --upgrade
 relaygate rollback
-sudo PURGE=1 bash /tmp/relaygate-install.sh --uninstall
+sudo PURGE=1 bash install.sh --uninstall
 ```
 
-## 游戏后端放行
+游戏后端默认：TCP `7777` / UDP `7778`；玩家入口示例 `server-01` → `:10001`（canary `:11001`）。后端防火墙只放行网关回源 IP（双活放行全部网关）。
 
-| 项 | 默认 |
-|----|------|
-| Server 游戏 TCP / UDP | `7777` / `7778` |
-| 健康检查 | TCP `7777` |
-| 玩家入口（server-01） | `<GATEWAY_PUBLIC_IP>:10001`；canary `11001` |
+## 命名规范（简表）
 
-```text
-玩家 → gateway:10001 → Envoy → server:7777(TCP) / :7778(UDP)
-```
+| 角色 | 示例 |
+|------|------|
+| 网关 | `gateway-01`；nftables 表 `inet relaygate` |
+| 后端 | `servers[].name` → `server-01` |
+| 规则 | `rule-server-01-production-tcp` |
+| Listener / Cluster | `ingress-rule-…` / `upstream-server-01-tcp` |
+| 限速 stat | `rl_rule_server_01_canary_tcp` |
+| 防火墙端口集 | `DataDir/firewall/forward-ports.nft` |
 
-要点：游戏监听 `0.0.0.0` 或内网 IP；Server 防火墙只放行网关回源 IP；双活时放行全部网关 IP。
+基础设施命名避免 `game`/`player`（`meta.game_name` 等产品域字段除外）。
 
 ## 仓库布局
 
-单 Go module + 预编译 release。`core/` 是应用代码；`packaging/` 是版本化安装资产；**运行态不在源码树内**。
-
 ```text
-*.example / .env.example   # seed 源（setup 复制到 DataDir）
-packaging/                 # 版本化安装资产：compose、systemd、grafana、
-                           # prometheus tpl、firewall、profiles、sysctl、terraform、observability
-core/
-  cmd/relaygate/           # 薄 main
-  config/                  # 路径 / 默认值 / LoadEnv（唯一入口）
-  cli/ panel/ setup/ doctor/ render/ status/ resources/ profile/
-  ops/                     # 数据面运维（apply/reload/seed/firewall/changes…）
-  host/                    # 宿主安装（Panel systemd），与 panel HTTP 分离
+*.example / .env.example   # seed 源
+packaging/                 # compose、systemd、grafana、firewall、profiles、terraform…
+core/                      # cmd、cli、config、ops、panel、render、resources、doctor…
 frontend/                  # Panel UI
 install.sh                 # bootstrap：下载 release tar → setup/apply
 Makefile                   # build / test / dist
 ```
 
-### DataDir（运行态）约定
-
-| 场景 | 默认 DataDir | 说明 |
-|------|----------------|------|
-| 源码开发 | `<repo>/.runtime/` | gitignore；**不是**源码目录 |
-| 安装前缀 | `$INSTALL_DIR/data`（默认 `/opt/relaygate/data`） | 仅出现在安装树，不在 git 布局里展示为源码 |
-| 任意覆盖 | `RELAYGATE_DATA_DIR` | 绝对路径，或相对产品根；`setup` 写入 `.env` |
-
-`clone` 后仓库根下**没有** `data/`。`relaygate setup` 后才出现 `.runtime/`（开发）或安装目录下的 `data/`（生产）。Compose 通过 `.env` 的 `RELAYGATE_DATA_DIR` 挂载运行态文件。
-
-### 预设配置 vs 运行配置
-
-| 环节 | 预设（入库 / release） | 运行（gitignore / 宿主机） |
-|------|------------------------|----------------------------|
-| 开发 | `*.example`、`packaging/`、`frontend/`、`core/` | 本地 `.env`、`.runtime/`（setup seed） |
-| 安装 | release tar 内模板 + 空 `data/` 骨架 | `/opt/relaygate/data/`、`.env`、`/etc/relaygate/secrets/` |
-| 容器 | compose 挂载 `packaging/` 模板 + `${RELAYGATE_DATA_DIR}` 生成物 | named volume（Grafana/Prometheus TSDB） |
-| 升级 | 新 tar 覆盖 `bin/`、`frontend/`、`packaging/` | **保留** `.env` 与 DataDir；seed 只补缺失文件 |
-| 备份 | — | `DataDir/backups/`（apply/installer 自动） |
-
-`relaygate setup` / 首次 `apply` 在目标缺失时从 `*.example` seed 到 DataDir；`--reset-defaults` 才覆盖已有 `resources.yaml` / inventory。Grafana provisioning 始终挂载 `packaging/grafana/`，不进 DataDir。Panel 强制 `PANEL_BIND` 为 loopback。
-
-可选可观测性栈：
-
-```bash
-cd packaging/observability
-cp .env.example .env && chmod 600 .env
-docker compose --env-file .env up -d
-```
-
-发布：`make dist` 或 tag `v*` 触发 `.github/workflows/release.yml`，产出  
-`relaygate-$VERSION-linux-{amd64,arm64}.tar.gz` + `.sha256`。
-
-单 module：`github.com/relaygate/relaygate`。
-
-## 命名规范
-
-| 角色/阶段 | 英文标识 | 示例 |
-|-----------|----------|------|
-| 网关 | gateway | `gateway-01`、nftables 表 `inet relaygate` |
-| 后端节点 | server / backend | `servers[].name` → `server-01` |
-| 用户入口 | ingress | listener `ingress-rule-server-01-production-tcp` |
-| 阶段 | production / canary | `rules[].kind` |
-| 上游 | upstream | cluster `upstream-server-01-tcp` |
-| 规则名 | `rule-{server}-{stage}-{proto}` | `rule-server-01-production-tcp` |
-| 限速 stat_prefix | `rl_{rule_name}` | `rl_rule_server_01_canary_tcp` |
-| 防火墙端口集 | forward-ports / FORWARD_* | `DataDir/firewall/forward-ports.nft`（`.nft` 为扩展名；应用用 `nft -f`） |
-| YAML 限流键 | `defaults.nftables.*` | 与 Go `NftablesDefaults` 对齐 |
-
-禁止在基础设施命名中使用 `game`/`player`（`meta.game_name` 等产品域字段除外）。渲染包：`core/render`（原 envoygen）。
+发布：`make dist` 或 tag `v*` → `relaygate-$VERSION-linux-{amd64,arm64}.tar.gz` + `.sha256`。  
+模块：`github.com/relaygate/relaygate`。
 
 ## 已知边界
 
@@ -308,3 +228,8 @@ docker compose --env-file .env up -d
 - UDP 无可靠主动健康检查
 - 后端看到的是网关源 IP
 - Envoy 非抗 DDoS；大流量需云高防
+- Panel 尚未覆盖全部 CLI 运维动作（见规划中）
+
+## 贡献 / License
+
+欢迎 Issue / PR。当前仓库**未附 LICENSE** 文件；使用前请与维护者确认授权条款。

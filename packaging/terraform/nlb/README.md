@@ -22,19 +22,22 @@ AWS credentials: environment variables, shared config, or CI OIDC. Do **not** pu
 
 ## Drain ↔ NLB timing
 
+本模板 `health_check`：`unhealthy_threshold = 3`，`interval = 10` → **30s**。
+
 | RelayGate | NLB / ops |
 |-----------|-----------|
-| `DRAIN_WAIT`（`.env`） | 建议 ≥ `unhealthy_threshold × interval` |
+| `DRAIN_WAIT`（`.env`，默认 **30**） | 建议 ≥ `unhealthy_threshold × interval`（本模板 = 30） |
 | `relaygate drain fail` | POST `/healthcheck/fail` → 等窗口 → 控制台确认 target unhealthy |
-| `relaygate reload` | 内置 drain → restart → poll `/ready` → undrain |
-| `relaygate doctor` | 打印 DRAIN_WAIT、/ready、双活角色与高防回源清单 |
+| `relaygate reload` | resources/Envoy：drain → restart → poll `/ready` → undrain |
+| `relaygate upgrade --drain` | 二进制/packaging：drain → `install.sh --upgrade` → undrain |
+| `relaygate doctor` | `DRAIN_WAIT` 过短且有双活/NLB 迹象时硬失败 |
 
 产品**不接**云 SDK：摘流确认请在控制台或现有 Terraform/CLI 完成。
 
 ```bash
 relaygate doctor
-relaygate drain fail    # 提示 NLB 核对项
-# …变更 / reload…
+relaygate drain fail    # 提示 NLB 核对项；过短 DRAIN_WAIT 会 WARN
+# …变更 / reload / upgrade…
 relaygate drain ok
 relaygate smoke
 ```

@@ -192,7 +192,23 @@ func Run(opt Options) error {
 			_ = resp.Body.Close()
 			fmt.Printf("reachable %s (HTTP %d)\n", u, resp.StatusCode)
 		}
-		fmt.Printf("DRAIN_WAIT=%ds（CLI drain fail 未设 env 时默认等 15s；reload 用此值）\n", env.DrainWait)
+		fmt.Printf("DRAIN_WAIT=%ds（默认/建议 %ds = NLB HC 3×10s；reload/drain/upgrade 用此值）\n",
+			env.DrainWait, config.RecommendedDrainWaitSec)
+		return nil
+	})
+
+	check("drain-wait", func() error {
+		rec := config.RecommendedDrainWaitSec
+		if env.DrainWait >= rec {
+			fmt.Printf("DRAIN_WAIT=%ds ≥ 建议 %ds\n", env.DrainWait, rec)
+			return nil
+		}
+		msg := fmt.Sprintf("DRAIN_WAIT=%ds < 建议 %ds（NLB HC unhealthy_threshold×interval；见 packaging/terraform/nlb）",
+			env.DrainWait, rec)
+		if dualActiveOrNLBHints(opt.Root, env) {
+			return fmt.Errorf("%s；双活/NLB 场景下摘流窗口不足", msg)
+		}
+		fmt.Printf("WARN: %s\n", msg)
 		return nil
 	})
 
@@ -200,13 +216,11 @@ func Run(opt Options) error {
 		fmt.Println("检查项（人工核对，不接云 SDK）：")
 		fmt.Printf("  [ ] GATEWAY_PUBLIC_IP=%s 已写入高防回源 / 后端放行\n", env.GatewayPublicIP)
 		fmt.Printf("  [ ] NLB HC 目标 = %s （/ready）或 admin TCP\n", env.AdminURL("/ready"))
-		fmt.Printf("  [ ] DRAIN_WAIT=%ds ≥ HC unhealthy_threshold × interval\n", env.DrainWait)
-		if env.DrainWait < 10 {
-			fmt.Println("  WARN: DRAIN_WAIT < 10s，NLB 可能来不及摘流")
-		}
+		fmt.Printf("  [ ] DRAIN_WAIT=%ds ≥ %ds（模板 unhealthy_threshold×interval）\n",
+			env.DrainWait, config.RecommendedDrainWaitSec)
 		role := strings.ToLower(strings.TrimSpace(env.PanelRole))
 		fmt.Printf("  [ ] 双活角色 PANEL_ROLE=%s（滚动时先 drain 变更节点）\n", role)
-		fmt.Println("  [ ] 维护剧本: doctor → drain fail →（控制台确认 unhealthy）→ reload → smoke")
+		fmt.Println("  [ ] 维护剧本: doctor → drain fail →（控制台确认 unhealthy）→ reload|upgrade → smoke")
 		fmt.Println("  详见 packaging/terraform/nlb/README.md 与 README「L4 维护窗口」")
 		return nil
 	})
@@ -230,7 +244,7 @@ func Run(opt Options) error {
 		for _, f := range failures {
 			if strings.HasPrefix(f, ".env") || strings.HasPrefix(f, "resources") ||
 				strings.HasPrefix(f, "docker") || strings.HasPrefix(f, "binary") ||
-				strings.HasPrefix(f, "dual-active") {
+				strings.HasPrefix(f, "dual-active") || strings.HasPrefix(f, "drain-wait") {
 				hard++
 			}
 			if opt.StrictPorts && strings.HasPrefix(f, "ports") {
@@ -244,6 +258,26 @@ func Run(opt Options) error {
 	}
 	fmt.Println("doctor 完成")
 	return nil
+}
+
+// dualActiveOrNLBHints reports whether this host looks like dual-active / NLB production.
+func dualActiveOrNLBHints(root string, env ops.Env) bool {
+	role := strings.ToLower(strings.TrimSpace(env.PanelRole))
+	if role == "standby" {
+		return true
+	}
+	ip := strings.TrimSpace(env.GatewayPublicIP)
+	if ip != "" && ip != "127.0.0.1" && ip != "::1" && ip != "0.0.0.0" {
+		return true
+	}
+	if _, err := os.Stat(config.ResolvePaths(root).Inventory); err == nil {
+		return true
+	}
+	if strings.TrimSpace(os.Getenv("GATEWAYS")) != "" || strings.TrimSpace(os.Getenv("GATEWAY_MATRIX")) != "" {
+		return true
+	}
+	// Standby-style primary (panel disabled) is typical for dual-active secondaries mislabeled.
+	return role == "primary" && env.EnablePanel != "1"
 }
 
 func portListening(port int) bool {

@@ -72,6 +72,8 @@ func Run(args []string) int {
 		return exitErr(ops.Baseline(mustRoot(), out))
 	case "fleet":
 		return exitErr(ops.Fleet(mustRoot(), os.Getenv("GATEWAYS")))
+	case "upgrade":
+		return runUpgrade(args[1:])
 	case "setup":
 		return runSetup(args[1:])
 	case "doctor":
@@ -130,6 +132,26 @@ func runDrain(args []string) int {
 		fmt.Fprintln(os.Stderr, "usage: relaygate drain fail|ok|status")
 		return 2
 	}
+}
+
+func runUpgrade(args []string) int {
+	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	drain := fs.Bool("drain", false, "升级前 drain fail、完成后 drain ok（双活）")
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "usage: relaygate upgrade [--drain]")
+		fmt.Fprintln(fs.Output(), "  二进制/packaging 升级：委托 install.sh --upgrade（需 RELAYGATE_VERSION 或 RELAYGATE_TAR）")
+		fmt.Fprintln(fs.Output(), "  ACL/nftables → firewall apply；resources/Envoy → reload；本命令仅用于产物升级")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() > 0 {
+		fs.Usage()
+		return 2
+	}
+	return exitErr(ops.Upgrade(mustRoot(), ops.UpgradeOptions{Drain: *drain}))
 }
 
 func runFirewall(args []string) int {
@@ -194,7 +216,7 @@ func runACL(args []string) int {
 		for _, c := range res.ACL.Allow {
 			fmt.Printf("  - %s\n", c)
 		}
-		fmt.Println("变更后请: relaygate validate && sudo relaygate firewall apply")
+		fmt.Println("变更分流：ACL → validate + sudo relaygate firewall apply（无需 reload Envoy）")
 		return 0
 	case "add", "remove":
 		if len(args) != 3 {
@@ -219,7 +241,7 @@ func runACL(args []string) int {
 			return exitErr(err)
 		}
 		fmt.Printf("%s %s %s → %s\n", args[0], list, canonical, resPath)
-		fmt.Println("请执行: relaygate validate && sudo relaygate firewall apply")
+		fmt.Println("变更分流：ACL → validate + sudo relaygate firewall apply（无需 reload Envoy）")
 		return 0
 	case "help", "-h", "--help":
 		fmt.Fprintln(os.Stderr, "usage: relaygate acl list|add|remove …")
@@ -578,23 +600,29 @@ func usage(out *os.File) {
 
 数据面:
   relaygate apply                 # 校验 + compose up（首次/全量）
-  relaygate reload                # 备份摘要 + drain + 重启 Envoy（分阶段计时）
+  relaygate reload                # resources/Envoy：backup + drain + 重启（分阶段计时）
   relaygate rollback [STAMP]
   relaygate drain fail|ok|status
+  relaygate upgrade [--drain]     # 二进制/packaging：委托 install.sh --upgrade
 
 检查:
   relaygate smoke [HOST]
   relaygate canary [HOST]
   relaygate baseline
-  relaygate doctor                # 含 admin/drain/双活/NLB 清单
+  relaygate doctor                # 含 admin/drain/DRAIN_WAIT/NLB 清单
 
 防火墙 / Panel:
-  relaygate firewall [check|apply]   # 默认 check；含 ACL set
+  relaygate firewall [check|apply]   # ACL/nftables-only；默认 check
   relaygate panel                    # 前台运行管理面
   relaygate panel install|uninstall  # systemd（需 root）
 
 多机:
-  relaygate fleet                 # 按 inventory 分批部署
+  relaygate fleet                 # inventory 分批：drain → install.sh --upgrade → smoke
+
+变更分流:
+  ACL / nftables-only     → firewall apply
+  resources / Envoy 配置  → reload
+  二进制 / packaging      → upgrade [--drain] 或 install.sh --upgrade
 
   relaygate version`)
 }

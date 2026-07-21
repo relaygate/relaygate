@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/relaygate/relaygate/core/config"
 )
 
 // Drain performs fail|ok|status against Envoy admin healthcheck endpoints.
@@ -15,11 +17,12 @@ func Drain(root string, action string) error {
 	}
 	wait := env.DrainWait
 	if os.Getenv("DRAIN_WAIT") == "" && (action == "fail" || action == "drain") {
-		wait = 15
+		wait = config.DefaultDrainWaitSec
 	}
 	switch action {
 	case "fail", "drain":
 		fmt.Printf("==> %s: healthcheck/fail (drain)\n", env.GatewayName)
+		WarnIfDrainWaitShort(wait, os.Stdout)
 		if err := HTTPPost(env.AdminURL("/healthcheck/fail")); err != nil {
 			return fmt.Errorf("healthcheck/fail: %w（Envoy 可能未运行或 admin 不可达）", err)
 		}
@@ -32,7 +35,8 @@ func Drain(root string, action string) error {
 		} else {
 			fmt.Println("OK: /ready 已非 LIVE（NLB 应开始将本目标标为 unhealthy）")
 		}
-		fmt.Printf("等待 LB 健康检查失败窗口（建议 %ds）…\n", wait)
+		fmt.Printf("等待 LB 健康检查失败窗口（建议 ≥%ds，当前 %ds）…\n",
+			config.RecommendedDrainWaitSec, wait)
 		time.Sleep(time.Duration(wait) * time.Second)
 		// Re-check after wait
 		ready2, _ := HTTPGet(env.AdminURL("/ready"))
@@ -56,7 +60,9 @@ func Drain(root string, action string) error {
 		ready, err := HTTPGet(env.AdminURL("/ready"))
 		fmt.Print(ready)
 		fmt.Println()
-		fmt.Printf("DRAIN_WAIT=%ds PANEL_ROLE=%s\n", env.DrainWait, env.PanelRole)
+		fmt.Printf("DRAIN_WAIT=%ds（建议 ≥%ds）PANEL_ROLE=%s\n",
+			env.DrainWait, config.RecommendedDrainWaitSec, env.PanelRole)
+		WarnIfDrainWaitShort(env.DrainWait, os.Stdout)
 		fmt.Printf("探活 URL: %s\n", env.AdminURL("/ready"))
 		fmt.Println("NLB：HTTP 探 /ready 或 TCP 探 admin 端口；维护用 drain fail → 等窗口 → 变更 → drain ok")
 		return err
@@ -70,11 +76,12 @@ func Drain(root string, action string) error {
 // Returns error if admin is unreachable so callers can decide whether to abort.
 func DrainFailQuick(root string, env Env, waitSec int) error {
 	fmt.Printf("==> draining %s (/healthcheck/fail → LB 摘流)\n", env.EnvoyContainer())
-	if err := HTTPPost(env.AdminURL("/healthcheck/fail")); err != nil {
-		return fmt.Errorf("healthcheck/fail: %w", err)
-	}
 	if waitSec < 0 {
 		waitSec = env.DrainWait
+	}
+	WarnIfDrainWaitShort(waitSec, os.Stdout)
+	if err := HTTPPost(env.AdminURL("/healthcheck/fail")); err != nil {
+		return fmt.Errorf("healthcheck/fail: %w", err)
 	}
 	time.Sleep(time.Duration(waitSec) * time.Second)
 	return nil
