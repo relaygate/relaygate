@@ -1,0 +1,17 @@
+# P2 容量告警草案（Prometheus，务实）：日志盘/根分区写满风险。
+# 与 Loki ruler（异常 flags）分工：此处只管主机容量，不论 LogQL。
+groups:
+  - name: gateway-log-capacity
+    rules:
+      - alert: EnvoyAccessLogDirFilling
+        # 当 DataDir 与根分区同盘时，与 HostDiskAlmostFull 等价；分盘部署时可改 mountpoint 标签。
+        expr: |
+          (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.gateway }} 磁盘使用率偏高（日志/Loki 风险）"
+          description: >-
+            根分区超过 80%。检查 DataDir/envoy/logs 的 logrotate、Loki retention，
+            以及 LOG_SAMPLE_RATE；参见 docs/logging-playbook.md。

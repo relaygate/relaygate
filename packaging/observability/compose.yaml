@@ -1,4 +1,4 @@
-# Optional shared metrics stack (Prometheus + Grafana) on a dedicated host
+# Optional shared metrics/logs stack (Prometheus + Grafana + optional Loki) on a dedicated host
 # or beside a gateway. Scrapes edge Envoy / node_exporter over private
 # network, VPN, or SSH tunnels.
 #
@@ -57,6 +57,28 @@ services:
         max-size: "20m"
         max-file: "3"
 
+
+  # 可选中心 Loki（与网关 with-loki 二选一；边缘 Fluent Bit 推到此 Host:3100）
+  loki:
+    image: ${LOKI_IMAGE:-grafana/loki:3.5.0}
+    restart: unless-stopped
+    profiles: ["with-loki"]
+    user: "0:0"
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ../loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - ../loki/rules:/etc/loki/rules:ro
+      - loki-data:/loki
+    command:
+      - -config.file=/etc/loki/local-config.yaml
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
 volumes:
   prometheus-data:
   grafana-data:
+  loki-data:

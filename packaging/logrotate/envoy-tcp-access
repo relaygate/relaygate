@@ -1,0 +1,14 @@
+# TCP access NDJSON（Envoy FileAccessLog → DataDir/envoy/logs/tcp-access.json）
+# 安装：relaygate apply（root）渲染到 /etc/logrotate.d/relaygate-envoy-tcp-access
+# 路径行中的 @DATA_DIR@ 由 ApplyLogrotate 替换为绝对 DataDir。
+# 使用 copytruncate：Envoy 持有 fd，勿 rename 后依赖 reopen。
+@DATA_DIR@/envoy/logs/tcp-access.json {
+    rotate 14
+    daily
+    compress
+    missingok
+    notifempty
+    delaycompress
+    copytruncate
+    maxsize 200M
+}

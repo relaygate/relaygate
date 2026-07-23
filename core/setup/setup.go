@@ -151,7 +151,8 @@ func writeEnv(opt Options) error {
 	envPath := filepath.Join(opt.Root, ".env")
 	profiles := ""
 	if opt.EnableGrafana == "1" {
-		profiles = "with-grafana"
+		// 主节点默认带 Loki + Fluent Bit（TCP access 日志）；从节点自行改 COMPOSE_PROFILES
+		profiles = "with-grafana,with-loki,with-logs"
 	}
 	grafanaURL := ""
 	if opt.EnablePanel == "1" && opt.EnableGrafana == "1" {
@@ -243,20 +244,27 @@ func patchExistingEnv(path string, opt Options, profiles, grafanaURL, dataDir st
 					if p == "" || p == "with-panel" {
 						continue
 					}
-					if p == "with-grafana" && opt.EnableGrafana == "0" {
+					if opt.EnableGrafana == "0" && (p == "with-grafana" || p == "with-loki") {
 						continue
 					}
 					cleaned = append(cleaned, p)
 				}
-				if profiles != "" {
-					has := false
-					for _, c := range cleaned {
-						if c == profiles {
-							has = true
+				if opt.EnableGrafana == "1" && profiles != "" {
+					for _, want := range strings.Split(profiles, ",") {
+						want = strings.TrimSpace(want)
+						if want == "" {
+							continue
 						}
-					}
-					if !has && opt.EnableGrafana == "1" {
-						cleaned = append(cleaned, profiles)
+						has := false
+						for _, c := range cleaned {
+							if c == want {
+								has = true
+								break
+							}
+						}
+						if !has {
+							cleaned = append(cleaned, want)
+						}
 					}
 				}
 				out = append(out, "COMPOSE_PROFILES="+strings.Join(cleaned, ","))

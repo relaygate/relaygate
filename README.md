@@ -8,7 +8,8 @@
 
 - [x] L4 TCP/UDP 固定目标转发（Envoy）与连接/PPS 限流（`rl_<forward>`）
 - [x] CLI 闭环：`setup` / `doctor` / `render` / `validate` / `apply` / `reload` / `rollback` / `smoke` / `canary`
-- [x] Panel（默认 `127.0.0.1:9000`）：上游 / 转发规则 / ACL 集合 / 配置 / 应用配置 / 运维（诊断·摘流·冒烟·验证·防火墙检查·运维档位）/ 变更（历史·回滚）/ 总览 / 监控（Grafana 同源反代）
+- [x] Panel（默认 `127.0.0.1:9000`）：上游 / 转发规则 / ACL 集合 / 配置 / 应用配置 / 运维（诊断·摘流·冒烟·验证·防火墙检查·运维档位）/ 变更（历史·回滚）/ 总览 / 监控（Grafana 同源反代 + 会话日志 Explore 深链）
+- [x] TCP access 日志：Fluent Bit → Loki（复用 Grafana）；logrotate；排查 Playbook 见 `docs/logging-playbook.md`
 - [x] IP 黑白名单 ACL（nftables 真相源；SSH 不受约束）
 - [x] 游戏类型 profile（`packaging/profiles/`）与 `defaults` 变更摘要（`changes`）
 - [x] `defaults.nftables.*` 同源限流 → Envoy + `forward-ports.nft`
@@ -132,7 +133,7 @@ Panel    sudo relaygate panel install|uninstall
 | 应用 | 变更摘要分流标签；**应用配置**（Envoy reload）与 **应用防火墙**（nft，强确认）分按钮 |
 | 运维 | 诊断 / 摘流（强确认）/ 冒烟·验证 / 防火墙检查（应用链到「应用」页）/ 运维档位预览与写入 |
 | 变更 | `backups/*/change-summary` 历史；回滚预览与强确认 |
-| 监控 | Grafana 嵌入 |
+| 监控 | Grafana 新窗口；会话日志 Explore 深链 + 薄查询表单；看板 TCP Session Logs |
 
 写操作在 `PANEL_ROLE=standby` 时拒写；成功写操作追加 `DataDir/panel-audit.log`（不含密码）。
 
@@ -172,6 +173,18 @@ acl:
 | 覆盖 | `RELAYGATE_DATA_DIR` |
 
 `setup` / 首次 `apply` 在目标缺失时从 `*.example` seed；`--reset-defaults` 才覆盖已有 `resources.yaml`。
+
+
+## TCP Access 日志（Loki）
+
+Envoy 将 TCP 会话写入 `${RELAYGATE_DATA_DIR}/envoy/logs/tcp-access.json`（NDJSON）。每机 **Fluent Bit**（compose profile `with-logs`）推送到中心 **Loki**（`with-loki`）；Grafana 已 provisioning Loki datasource，**不**在 Panel 内嵌日志库或 Envoy Admin。
+
+| 节点 | `COMPOSE_PROFILES` | 备注 |
+|------|-------------------|------|
+| 主管理 | `with-grafana,with-loki,with-logs` | 同机可起步 |
+| 从节点 | `with-logs` | 设 `LOKI_HOST=<中心私网>` |
+
+启用、LogQL 与对齐 Prometheus 的排查步骤见 **[`docs/logging-playbook.md`](docs/logging-playbook.md)**。
 
 ## 双活与维护窗口
 
@@ -264,9 +277,10 @@ sudo PURGE=1 bash install.sh --uninstall
 
 ```text
 *.example / .env.example   # seed 源
-packaging/                 # compose、systemd、grafana、firewall、profiles、terraform…
+packaging/                 # compose、systemd、grafana、loki、fluent-bit、firewall、profiles、terraform…
 core/                      # cmd、cli、config、ops、panel、render、resources、doctor…
 ui/                        # Panel SPA（Vite + React + shadcn）；产物 ui/dist
+docs/                      # 运维 Playbook（如 logging）
 install.sh                 # bootstrap：下载 release tar → setup/apply
 Makefile                   # build（含 ui）/ test / dist
 ```

@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { PlusIcon, RocketIcon, ServerIcon, Trash2Icon } from "lucide-react"
 
 import { EmptyState } from "@/components/layout/EmptyState"
+import { newId } from "@/lib/id"
 import { Page, PageHeader } from "@/components/layout/PageParts"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -111,7 +112,7 @@ type EntryDraft = {
 
 function newQuickRow(partial?: Partial<Omit<QuickRow, "id">>): QuickRow {
   return {
-    id: crypto.randomUUID(),
+    id: newId(),
     name: "",
     address: "",
     tcp_port: "7777",

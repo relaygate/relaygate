@@ -1,0 +1,33 @@
+# Loki ruler 告警草案（务实：异常 flags / 短会话尖峰）。
+# 挂载到 /etc/loki/rules/<tenant>/；单机 auth_enabled=false 时 tenant=fake。
+# 未配置 alertmanager_url 时仅评估，不外发通知。
+groups:
+  - name: relaygate-tcp-access
+    interval: 1m
+    rules:
+      - alert: EnvoyTcpAccessAnomalyFlags
+        expr: |
+          sum by (gateway) (
+            count_over_time({job="envoy-tcp-access"} | json | flags != "-" [5m])
+          ) > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.gateway }} TCP access 异常 flags 偏多"
+          description: >-
+            近 5 分钟 flags≠- 的会话日志超过 50 条。请对照 Prometheus
+            EnvoyNoHealthyUpstream / EnvoyCircuitBreakerOpen，并用 Explore 按 rule/upstream 下钻。
+
+      - alert: EnvoyTcpAccessShortSessions
+        expr: |
+          sum by (gateway) (
+            count_over_time({job="envoy-tcp-access"} | json | duration_ms < 2000 [5m])
+          ) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.gateway }} 短 TCP 会话激增"
+          description: >-
+            近 5 分钟 duration_ms<2000 的会话超过 100。可能是扫描、健康检查风暴或上游秒断。

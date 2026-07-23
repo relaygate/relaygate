@@ -745,7 +745,8 @@ func TestValidatePanelBind(t *testing.T) {
 		{"127.0.0.1:9000", true},
 		{"localhost:9000", true},
 		{"[::1]:9000", true},
-		{"0.0.0.0:9000", false},
+		{"0.0.0.0:9000", true},
+		{"[::]:9000", true},
 		{":9000", false},
 		{"192.168.1.1:9000", false},
 		{"bad", false},
@@ -761,13 +762,22 @@ func TestValidatePanelBind(t *testing.T) {
 	}
 }
 
-func TestNewRejectsNonLoopbackBind(t *testing.T) {
+func TestNewAcceptsUnspecifiedBind(t *testing.T) {
 	root := t.TempDir()
 	uiDir := filepath.Join(root, "ui", "dist")
 	writeMinimalUI(t, uiDir, false)
-	_, err := New(Config{Root: root, UIDir: uiDir, AdminPassword: "x", Bind: "0.0.0.0:9000"})
+	if _, err := New(Config{Root: root, UIDir: uiDir, AdminPassword: "x", Bind: "0.0.0.0:9000"}); err != nil {
+		t.Fatalf("0.0.0.0 bind: %v", err)
+	}
+}
+
+func TestNewRejectsPrivateNonLoopbackBind(t *testing.T) {
+	root := t.TempDir()
+	uiDir := filepath.Join(root, "ui", "dist")
+	writeMinimalUI(t, uiDir, false)
+	_, err := New(Config{Root: root, UIDir: uiDir, AdminPassword: "x", Bind: "192.168.1.1:9000"})
 	if err == nil {
-		t.Fatal("expected error for 0.0.0.0 bind")
+		t.Fatal("expected error for non-loopback/non-unspecified bind")
 	}
 }
 

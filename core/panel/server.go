@@ -189,18 +189,24 @@ func isLoopbackHost(host string) bool {
 func validatePanelBind(bind string) error {
 	host, port, err := net.SplitHostPort(strings.TrimSpace(bind))
 	if err != nil {
-		return fmt.Errorf("PANEL_BIND 无效 %q: %w（期望 127.0.0.1:9000）", bind, err)
+		return fmt.Errorf("PANEL_BIND 无效 %q: %w（期望 127.0.0.1:9000 或 0.0.0.0:9000）", bind, err)
 	}
 	if port == "" {
 		return fmt.Errorf("PANEL_BIND 缺少端口: %q", bind)
 	}
 	if host == "" {
-		return fmt.Errorf("PANEL_BIND 不能省略主机（禁止 :%s 监听全接口）", port)
+		return fmt.Errorf("PANEL_BIND 不能省略主机（请显式写 0.0.0.0:%s 或 [::]:%s）", port, port)
 	}
-	if !isLoopbackHost(host) {
-		return fmt.Errorf("PANEL_BIND 必须是 loopback（127.0.0.1 / ::1 / localhost），当前: %s", bind)
+	// loopback = 仅本机；unspecified (0.0.0.0 / ::) = 全接口（外网需配合防火墙放行 TCP 端口）
+	if isLoopbackHost(host) || isUnspecifiedHost(host) {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("PANEL_BIND 主机须为 loopback 或 0.0.0.0/::，当前: %s", bind)
+}
+
+func isUnspecifiedHost(host string) bool {
+	ip := net.ParseIP(strings.TrimSpace(host))
+	return ip != nil && ip.IsUnspecified()
 }
 
 func passwordMatch(got, want string) bool {

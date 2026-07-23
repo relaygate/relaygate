@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/relaygate/relaygate/core/config"
@@ -43,6 +44,11 @@ func Apply(root string) error {
 
 	fmt.Println("==> 应用内核参数（若存在）")
 	if err := ApplySysctl(root, env.GatewayName); err != nil {
+		warnf("%v", err)
+	}
+
+	fmt.Println("==> 安装 tcp-access logrotate（若 root）")
+	if err := ApplyLogrotate(root); err != nil {
 		warnf("%v", err)
 	}
 
@@ -90,5 +96,30 @@ func ApplySysctl(root, gatewayName string) error {
 		return err
 	}
 	fmt.Printf("sysctl applied: %s\n", dst)
+	return nil
+}
+
+// ApplyLogrotate installs /etc/logrotate.d/relaygate-envoy-tcp-access from packaging
+// template, substituting the absolute DataDir path for tcp-access.json rotation.
+func ApplyLogrotate(root string) error {
+	src := filepath.Join(root, config.PackagingDirName, "logrotate", "envoy-tcp-access")
+	if _, err := os.Stat(src); err != nil {
+		return nil
+	}
+	dataDir := config.ResolveDataDir(root)
+	dst := "/etc/logrotate.d/relaygate-envoy-tcp-access"
+	if !IsRoot() {
+		fmt.Printf("WARN: 非 root，跳过 logrotate；sudo sed \"s|@DATA_DIR@|%s|g\" %s | sudo tee %s\n", dataDir, src, dst)
+		return nil
+	}
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	content := strings.ReplaceAll(string(b), "@DATA_DIR@", dataDir)
+	if err := os.WriteFile(dst, []byte(content), 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("logrotate installed: %s (DataDir=%s)\n", dst, dataDir)
 	return nil
 }

@@ -44,6 +44,11 @@ table inet relaygate {
     # SSH 运维入口（必须保留；不受游戏 ACL 约束）
     tcp dport $SSH_PORT ct state new limit rate 10/second burst 20 packets accept comment "allow-ops-ssh"
 
+    # Panel 管理面（INPUT；需 PANEL_BIND=0.0.0.0:9000 或 [::]:9000 才对外监听）
+    # 可选来源限制：取消上方 OPS_IPV4 注释后改为
+    #   tcp dport 9000 ip saddr $OPS_IPV4 ct state new limit rate 20/second burst 40 packets accept
+    tcp dport 9000 ct state new limit rate 20/second burst 40 packets accept comment "allow-panel"
+
     # ACL deny（nft 真相源）：命中即丢，先于限速/放行
     tcp dport $FORWARD_TCP_PORTS ip saddr $ACL_DENY counter drop comment "acl-deny-tcp"
     udp dport $FORWARD_UDP_PORTS ip saddr $ACL_DENY counter drop comment "acl-deny-udp"

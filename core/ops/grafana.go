@@ -40,8 +40,10 @@ func EnsureGrafanaRuntime(root string, env Env) error {
 	prov := filepath.Join(root, config.PackagingDirName, "grafana", "provisioning")
 	for _, rel := range []string{
 		"datasources/prometheus.yml",
+		"datasources/loki.yml",
 		"dashboards/dashboards.yml",
 		"dashboards/json/gateway-overview.json",
+		"dashboards/json/tcp-session-logs.json",
 	} {
 		p := filepath.Join(prov, rel)
 		if _, err := os.Stat(p); err != nil {
