@@ -73,7 +73,7 @@ Grafana provisioning 已含 Loki datasource（`uid: loki`）与看板 **TCP Sess
 | 异常 flags | `{job="envoy-tcp-access"} \| json \| flags != "-"` | `EnvoyNoHealthyUpstream`、`EnvoyCircuitBreakerOpen` |
 | 短会话 | `{job="envoy-tcp-access"} \| json \| duration_ms < 2000` | UDP/TCP 错误率、限速命中 |
 
-Explore 深链（经 Panel 反代）：`/grafana/explore?...`（Panel「监控」页可生成）。
+Explore 深链（经 Panel 反代）：`/grafana/explore?...`（运维在 Grafana Explore 中查询即可）。
 
 ## 排查步骤（与指标对齐）
 

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next"
 import {
   ActivityIcon,
   ArrowLeftRightIcon,
+  ExternalLinkIcon,
   FileClockIcon,
   FileCodeIcon,
   LanguagesIcon,
@@ -51,6 +52,7 @@ import { useSession } from "@/context/SessionContext"
 import { useTheme } from "@/components/theme-provider"
 import { cn } from "@/lib/utils"
 
+const GRAFANA_HREF = "/grafana/"
 
 const navButtonClass = cn(
   "h-9 gap-2.5 px-2.5 text-[13px] text-muted-foreground transition-colors duration-150",
@@ -195,7 +197,8 @@ function UserMenu() {
 export function AppShell() {
   const { t } = useTranslation()
   const location = useLocation()
-  const { standby } = useSession()
+  const { standby, session } = useSession()
+  const grafanaEnabled = session?.grafana_enabled === true
   function navActive(to: string, end?: boolean) {
     if (end) return location.pathname === to
     return location.pathname === to || location.pathname.startsWith(`${to}/`)
@@ -233,13 +236,26 @@ export function AppShell() {
                 ))}
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    tooltip={t("nav.monitoring")}
-                    render={<NavLink to="/monitoring" />}
-                    isActive={navActive("/monitoring")}
+                    tooltip={
+                      grafanaEnabled
+                        ? `${t("nav.monitoring")} · ${t("monitoring.open_window")}`
+                        : t("nav.monitoring")
+                    }
+                    render={
+                      grafanaEnabled ? (
+                        <a href={GRAFANA_HREF} target="_blank" rel="noopener noreferrer" />
+                      ) : (
+                        <NavLink to="/monitoring" />
+                      )
+                    }
+                    isActive={!grafanaEnabled && navActive("/monitoring")}
                     className={navButtonClass}
                   >
                     <ActivityIcon />
-                    <span>{t("nav.monitoring")}</span>
+                    <span className="min-w-0 flex-1 truncate">{t("nav.monitoring")}</span>
+                    {grafanaEnabled ? (
+                      <ExternalLinkIcon className="ml-auto opacity-55 group-data-[collapsible=icon]:hidden" />
+                    ) : null}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>
