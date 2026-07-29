@@ -32,7 +32,7 @@ func SeedDefaults(root string, reset bool) error {
 		return err
 	}
 	if err := seedFile(root, p.DataDir, "resources.example.yaml", filepath.Join(p.DataDir, "resources.yaml"), reset,
-		"占位 IP；请填入真实后端后 relaygate render / reload"); err != nil {
+		"占位 IP；请填入真实上游后 relaygate render / reload"); err != nil {
 		return err
 	}
 	if err := seedFile(root, p.DataDir, "gateways.env.example", filepath.Join(p.DataDir, "inventory", "gateways.env"), reset,
@@ -49,7 +49,12 @@ func ensureDataDirs(dataDir string) error {
 			// Envoy 容器 uid=101 需写 access log；bind mount 到 DataDir。
 			mode = 0o777
 		}
-		if err := os.MkdirAll(filepath.Join(dataDir, name), mode); err != nil {
+		path := filepath.Join(dataDir, name)
+		if err := os.MkdirAll(path, mode); err != nil {
+			return err
+		}
+		// MkdirAll 不纠正已存在目录的 mode（且受调用方 umask 影响）
+		if err := os.Chmod(path, mode); err != nil {
 			return err
 		}
 	}

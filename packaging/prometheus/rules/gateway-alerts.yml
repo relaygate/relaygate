@@ -30,7 +30,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "{{ $labels.gateway }} 集群 {{ $labels.envoy_cluster_name }} 无健康后端"
+          summary: "{{ $labels.gateway }} 集群 {{ $labels.envoy_cluster_name }} 无健康上游"
           description: "固定目标集群连续 2 分钟无健康 endpoint。"
 
       - alert: EnvoyCircuitBreakerOpen
@@ -43,7 +43,7 @@ groups:
           severity: warning
         annotations:
           summary: "{{ $labels.gateway }} 集群 {{ $labels.envoy_cluster_name }} 触发熔断/溢出"
-          description: "近 5 分钟出现连接或 pending 溢出，请检查并发与后端容量。"
+          description: "近 5 分钟出现连接或 pending 溢出，请检查并发与上游容量。"
 
   - name: gateway-traffic
     rules:
@@ -55,7 +55,7 @@ groups:
           severity: warning
         annotations:
           summary: "{{ $labels.gateway }} TCP 本地限速命中频繁"
-          description: "近 5 分钟本地限速拒绝超过 50 次，可能存在扫描或突发流量。Panel Overview 可看 per-rule Top。"
+          description: "近 5 分钟本地限速拒绝超过 50 次，可能存在扫描或突发流量。Panel Overview 可看 per-forward Top。"
 
       - alert: EnvoyTcpLocalRateLimitedPerRule
         expr: |
@@ -66,8 +66,8 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "{{ $labels.gateway }} 规则 {{ $labels.envoy_local_rate_limit }} 限速命中偏高"
-          description: "单规则近 5 分钟限速超过 30 次；可考虑 ACL deny 或 profile 调档。"
+          summary: "{{ $labels.gateway }} 转发 {{ $labels.envoy_local_rate_limit }} 限速命中偏高"
+          description: "单条转发近 5 分钟限速超过 30 次；可考虑 ACL deny 或 profile 调档。"
 
       - alert: EnvoyUdpSessionErrors
         expr: |
@@ -79,7 +79,7 @@ groups:
           severity: warning
         annotations:
           summary: "{{ $labels.gateway }} UDP 会话发送错误偏高"
-          description: "UDP 转发错误增加，检查后端连通性与 MTU。"
+          description: "UDP 转发错误增加，检查上游连通性与 MTU。"
 
   - name: host-resources
     rules:

@@ -161,6 +161,7 @@ func fixPanelPermissions(opt PanelInstallOptions, dataDir string) error {
 		{filepath.Join(dataDir, "prometheus"), 0o770, "root", "relaygate"},
 		{filepath.Join(dataDir, "backups"), 0o770, "root", "relaygate"},
 		{opt.SecretsDir, 0o750, "root", "relaygate"},
+		{filepath.Dir(opt.SecretsDir), 0o750, "root", "relaygate"},
 	}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d.path, d.mode); err != nil {
@@ -285,6 +286,8 @@ func writePanelEnv(opt PanelInstallOptions, dataDir string) error {
 		return err
 	}
 	_ = ops.RunCmd(opt.InstallDir, "chown", "root:relaygate", "/etc/relaygate")
+	// 显式 chmod：调用方 umask 077 时 MkdirAll(0750) 会变成 0700，Panel 用户无法进入
+	_ = os.Chmod("/etc/relaygate", 0o750)
 	helperPath := "/usr/local/libexec/relaygate/apply"
 	body := fmt.Sprintf(`# Managed by relaygate panel install — Panel systemd EnvironmentFile
 PANEL_ROOT=%s

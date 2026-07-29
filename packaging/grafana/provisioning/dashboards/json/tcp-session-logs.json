@@ -79,7 +79,7 @@
     },
     {
       "type": "bargauge",
-      "title": "按转发规则 TopN（近时段日志条数）",
+      "title": "按转发 TopN（近时段日志条数）",
       "id": 3,
       "gridPos": {
         "h": 8,

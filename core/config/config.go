@@ -19,7 +19,7 @@ import (
 const (
 	DefaultInstallDir = "/opt/relaygate"
 	DefaultSecretsDir = "/etc/relaygate/secrets"
-	DefaultSSHPort    = "30455"
+	DefaultSSHPort    = "22"
 	DefaultPanelBind  = "127.0.0.1:9000"
 
 	PackagingDirName = "packaging"

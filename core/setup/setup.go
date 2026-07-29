@@ -289,6 +289,11 @@ func ensureSecrets(opt Options) error {
 	if err := os.MkdirAll(opt.SecretsDir, 0o750); err != nil {
 		return err
 	}
+	// 纠正 umask：MkdirAll(0750) 在 umask 077 下会变成 0700
+	_ = os.Chmod(opt.SecretsDir, 0o750)
+	if parent := filepath.Dir(opt.SecretsDir); parent != "" && parent != "/" && parent != "." {
+		_ = os.Chmod(parent, 0o750)
+	}
 	for _, name := range []string{"panel_admin_password", "grafana_admin_password"} {
 		p := filepath.Join(opt.SecretsDir, name)
 		st, err := os.Stat(p)
@@ -307,6 +312,7 @@ func ensureSecrets(opt Options) error {
 		if err := os.WriteFile(p, []byte(pw+"\n"), 0o640); err != nil {
 			return err
 		}
+		_ = os.Chmod(p, 0o640)
 	}
 	fmt.Printf("==> 密钥保存在 %s（不会打印明文）\n", opt.SecretsDir)
 	return nil

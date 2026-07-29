@@ -68,7 +68,7 @@ Grafana provisioning 已含 Loki datasource（`uid: loki`）与看板 **TCP Sess
 |------|-------|-----------------|
 | 某网关近 1h | `{job="envoy-tcp-access", gateway="gateway-01"}` | `up{job="envoy", gateway="gateway-01"}` |
 | 按客户端 IP | `{job="envoy-tcp-access", gateway="gateway-01"} \|= \`"downstream":"203.0.113.9\` | 主机侧 ACL / `HostNetworkErrors` |
-| 按转发规则 | `{job="envoy-tcp-access"} \| json \| rule="forward-server-01-production-tcp"` | `envoy_local_rate_limit_*` / cluster 健康 |
+| 按转发 | `{job="envoy-tcp-access"} \| json \| rule="forward-server-01-production-tcp"` | `envoy_local_rate_limit_*` / cluster 健康 |
 | 按上游 | `{job="envoy-tcp-access"} \| json \| upstream=~"10.0.0.11:.*"` | `envoy_cluster_membership_healthy{envoy_cluster_name="upstream-server-01-tcp"}` |
 | 异常 flags | `{job="envoy-tcp-access"} \| json \| flags != "-"` | `EnvoyNoHealthyUpstream`、`EnvoyCircuitBreakerOpen` |
 | 短会话 | `{job="envoy-tcp-access"} \| json \| duration_ms < 2000` | UDP/TCP 错误率、限速命中 |

@@ -28,14 +28,42 @@ func TestResolveReleaseSpecPrefersTar(t *testing.T) {
 	_ = ver
 }
 
-func TestResolveReleaseSpecRejectsFloating(t *testing.T) {
+func TestResolveReleaseSpecLatestByDefault(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("RELAYGATE_TAR", "")
+	t.Setenv("RELAYGATE_VERSION", "")
+	t.Setenv("DEPLOY_REF", "")
+	ver, tar, err := ResolveReleaseSpec(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ver != "latest" || tar != "" {
+		t.Fatalf("ver=%q tar=%q want latest", ver, tar)
+	}
+}
+
+func TestResolveReleaseSpecExplicitLatest(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("RELAYGATE_TAR", "")
 	t.Setenv("RELAYGATE_VERSION", "latest")
 	t.Setenv("DEPLOY_REF", "")
+	ver, tar, err := ResolveReleaseSpec(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ver != "latest" || tar != "" {
+		t.Fatalf("ver=%q tar=%q", ver, tar)
+	}
+}
+
+func TestResolveReleaseSpecRejectsBranch(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("RELAYGATE_TAR", "")
+	t.Setenv("RELAYGATE_VERSION", "master")
+	t.Setenv("DEPLOY_REF", "")
 	_, _, err := ResolveReleaseSpec(root)
 	if err == nil {
-		t.Fatal("expected error for floating version")
+		t.Fatal("expected error for branch ref")
 	}
 }
 

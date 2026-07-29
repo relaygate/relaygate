@@ -1,6 +1,6 @@
 # AWS NLB for RelayGate (TCP+UDP active-active)
 
-Overview, HA topology, drain, and backend allowlists: root [`README.md`](../../../README.md)（「双活」「游戏后端放行」「L4 维护窗口」）.
+Overview, HA topology, drain, and upstream allowlists: root [`README.md`](../../../README.md)（「双活」「上游放行」「L4 维护窗口」）.
 
 ## Quick start
 

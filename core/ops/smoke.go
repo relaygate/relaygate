@@ -102,7 +102,7 @@ func Canary(root string, host string) error {
 			}
 			fmt.Printf("使用 resources validation 端口 TCP=%s UDP=%s\n", tcpPort, udpPort)
 		} else {
-			fmt.Println("WARN: 无启用的 validation 规则，回退 TCP_PORT/UDP_PORT env")
+			fmt.Println("WARN: 无启用的验证转发（validation），回退 TCP_PORT/UDP_PORT env")
 		}
 	}
 	timeoutSec, _ := strconv.Atoi(env.Timeout)

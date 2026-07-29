@@ -13,24 +13,26 @@ meta:
 gateway:
   name: gateway-01
   public_ip: 203.0.113.10
-  ssh_port: 30455
+  # SSH 端口：安装/配置时指定，默认 22
+  ssh_port: 22
   # 监听地址：公网入口用 0.0.0.0
   listen_address: 0.0.0.0
 
 defaults:
+  # 默认上游回源端口（字段名 backend_* 为历史兼容，产品层称「上游端口」）
   backend_tcp_port: 7777
   backend_udp_port: 7778
   # TCP 连接空闲超时
   tcp_idle_timeout: 3600s
   # UDP 会话空闲超时（按游戏心跳调整）
   udp_idle_timeout: 120s
-  # 单条转发规则最大并发连接/会话
+  # 单条转发最大并发连接/会话
   max_connections: 1024
   max_pending_requests: 256
   # TCP 新建连接本地限速（每秒 token）
   tcp_local_rate_limit_per_sec: 200
   tcp_local_rate_limit_burst: 400
-  # 健康检查（仅 TCP upstream cluster）
+  # 健康检查（仅 TCP；Envoy upstream cluster）
   health_check:
     timeout: 2s
     interval: 10s
@@ -48,8 +50,10 @@ acl:
   deny: []
   allow: []
 
-# 上游（servers）：别名、地址、可选 TCP/UDP（有端口=启用该协议）；无独立 health_check_port（有 TCP 则探活口=tcp.port）
-# 入口类型 / listen / 放量不在 Server 上，见下方 rules
+# 上游 Upstreams（YAML key 仍为 servers，兼容保留）：
+#   别名、地址、可选 TCP/UDP（有端口=启用该协议）；域内口语可称「游戏服」。
+#   无独立 health_check_port（有 TCP 则探活口=tcp.port）。
+# 入口类型 / listen / 放量不在上游上，见下方 rules（转发）。
 servers:
   - name: server-01
     address: 10.0.0.11
@@ -66,9 +70,11 @@ servers:
       port: 7778
     enabled: true
 
-# 转发规则：入口类型 entry、协议、listen、开关、指向 server（不管上游 IP/端口）
-# 默认递进：验证入口 → 启用正式入口；也可并行同时开。回退=关正式规则。
-# 命名：forward-{server}-{entry}-{proto}；entry = validation | production（展示名：验证 / 正式）
+# 转发 Forwards（YAML key 仍为 rules）：入口类型 entry、协议、listen、开关 → 引用 server
+# （上游 IP/端口只在 servers 上）。一条 rule 生成一个 Envoy Listener（ingress-{forward名}）。
+# 默认递进：验证入口 → 启用正式入口；也可并行。回退=关正式转发（不是金丝雀阶段）。
+# 命名：forward-{server}-{entry}-{proto}；entry = validation | production（验证 / 正式）
+# Downstream（玩家）连 listen_port；Envoy 回源到 Upstream（servers）。
 rules:
   - name: forward-server-01-validation-tcp
     entry: validation

@@ -11,8 +11,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// UpstreamClusterName is the Envoy upstream cluster for a backend server/protocol pair.
-// Format: upstream-{server}-{proto} — shared by all forwarding rules for that pair.
+// UpstreamClusterName is the Envoy upstream cluster for an upstream server/protocol pair.
+// Format: upstream-{server}-{proto} — shared by all forwards for that pair.
+// Product display: Upstream; Envoy resource remains cluster.
 func UpstreamClusterName(server, protocol string) string {
 	return fmt.Sprintf("upstream-%s-%s", server, strings.ToLower(protocol))
 }
@@ -120,7 +121,14 @@ func Write(envoyPath, nftPath string, r *resources.Resources) error {
 	if err := os.WriteFile(envoyPath, append([]byte(header), body...), 0o644); err != nil {
 		return err
 	}
-	return os.WriteFile(nftPath, []byte(nft), 0o644)
+	// 显式 chmod：调用方若 umask 077，WriteFile(0644) 会变成 0600，Envoy 容器读失败
+	if err := os.Chmod(envoyPath, 0o644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(nftPath, []byte(nft), 0o644); err != nil {
+		return err
+	}
+	return os.Chmod(nftPath, 0o644)
 }
 
 func renderTCPCluster(server resources.Server, d resources.Defaults) map[string]any {
@@ -415,7 +423,7 @@ func Summarize(r *resources.Resources) string {
 	servers := r.ServerMap()
 	rules := r.EnabledRules()
 	var b strings.Builder
-	fmt.Fprintf(&b, "校验通过: %d 台服务器, %d 条启用规则\n", len(servers), len(rules))
+	fmt.Fprintf(&b, "校验通过: %d 台上游, %d 条启用转发\n", len(servers), len(rules))
 	for _, rule := range rules {
 		fmt.Fprintf(&b, "  - %s: %s/%d -> %s (%s)\n",
 			rule.Name, strings.ToUpper(rule.Protocol), rule.ListenPort, rule.Server, rule.Entry)

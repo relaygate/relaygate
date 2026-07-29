@@ -113,18 +113,14 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// ResolveReleaseSpec picks an immutable release from env / RELEASE file.
-// Preference: RELAYGATE_TAR > RELAYGATE_VERSION > DEPLOY_REF > RELEASE file.
+// ResolveReleaseSpec picks a release from env.
+// Preference: RELAYGATE_TAR > RELAYGATE_VERSION > DEPLOY_REF > "latest"（由 install.sh 解析最新 GitHub Release tag）。
 func ResolveReleaseSpec(root string) (version, tarPath string, err error) {
+	_ = root
 	tarPath = strings.TrimSpace(os.Getenv("RELAYGATE_TAR"))
 	version = strings.TrimSpace(os.Getenv("RELAYGATE_VERSION"))
 	if version == "" {
 		version = strings.TrimSpace(os.Getenv("DEPLOY_REF"))
-	}
-	if version == "" {
-		if b, readErr := os.ReadFile(filepath.Join(root, "RELEASE")); readErr == nil {
-			version = strings.TrimSpace(string(b))
-		}
 	}
 	if tarPath != "" {
 		if st, statErr := os.Stat(tarPath); statErr != nil || st.IsDir() {
@@ -132,18 +128,13 @@ func ResolveReleaseSpec(root string) (version, tarPath string, err error) {
 		}
 		return version, tarPath, nil
 	}
-	if isFloatingRelease(version) {
-		return "", "", fmt.Errorf("需要不可变版本：请设置 RELAYGATE_VERSION=<tag|sha> 或 RELAYGATE_TAR=/path/to.tar.gz（也可用 DEPLOY_REF / RELEASE）；当前 %q", version)
-	}
-	return version, "", nil
-}
-
-func isFloatingRelease(ref string) bool {
-	switch strings.ToLower(strings.TrimSpace(ref)) {
-	case "", "master", "main", "latest":
-		return true
+	switch strings.ToLower(version) {
+	case "", "latest":
+		return "latest", "", nil
+	case "master", "main":
+		return "", "", fmt.Errorf("RELAYGATE_VERSION 不能为 %q；请省略以用最新 Release，或指定具体 tag / RELAYGATE_TAR", version)
 	default:
-		return false
+		return version, "", nil
 	}
 }
 

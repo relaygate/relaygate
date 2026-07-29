@@ -92,7 +92,8 @@ type ProtoPort struct {
 	Port int `yaml:"port" json:"port"`
 }
 
-// Server is a backend node: alias, address, optional TCP/UDP upstreams, and enabled.
+// Server is an upstream (game server): alias, address, optional TCP/UDP ports, and enabled.
+// Product display name: Upstream; YAML key remains "servers".
 // Stage/listen/rollout live on Rule only. Health check (internal) uses TCP port when TCP is set;
 // UDP-only servers are not health-checked.
 type Server struct {
@@ -270,7 +271,7 @@ func (r *Resources) Validate() error {
 		}
 		key := fmt.Sprintf("%s/%d", proto, rule.ListenPort)
 		if other, ok := allPorts[key]; ok {
-			return fmt.Errorf("端口冲突: %s 同时被 %s 与 %s 使用（含未启用规则；验证与正式入口也不可重叠）", key, other, rule.Name)
+			return fmt.Errorf("端口冲突: %s 同时被 %s 与 %s 使用（含未启用转发；验证与正式入口也不可重叠）", key, other, rule.Name)
 		}
 		allPorts[key] = rule.Name
 	}
@@ -282,7 +283,7 @@ func (r *Resources) Validate() error {
 		}
 	}
 	if len(r.EnabledRules()) == 0 {
-		return fmt.Errorf("没有启用的 rules；至少启用一条入口规则后再渲染")
+		return fmt.Errorf("没有启用的转发（rules）；至少启用一条转发后再渲染")
 	}
 	return nil
 }
@@ -407,7 +408,7 @@ func (r *Resources) AddEntries(opts AddEntryOptions) (created []Rule, err error)
 	return created, nil
 }
 
-// EnsureEntries creates missing rules for the given entry type + protocols.
+// EnsureEntries creates missing forwards for the given entry type + protocols.
 // Unlike filling only existing entries, this may create a brand-new entry type.
 func (r *Resources) EnsureEntries(server, entry string, protocols []string, enable bool) (created []Rule, err error) {
 	return r.AddEntries(AddEntryOptions{
@@ -580,7 +581,8 @@ func preferredListenPort(serverName string, base int) (int, bool) {
 	return base + n, true
 }
 
-// PortMapRow is one client-facing ingress → backend mapping.
+// PortMapRow is one client-facing entry (listen) → upstream mapping.
+// JSON fields backend_* are historical; product layer calls them upstream address/port.
 type PortMapRow struct {
 	Server         string `json:"server"`
 	Entry          string `json:"entry"`
@@ -697,7 +699,7 @@ func (r *Resources) SetRuleEnabled(name string, enabled bool) error {
 	return fmt.Errorf("rule not found: %s", name)
 }
 
-// EnableProductionForServer enables production entry rules for a server.
+// EnableProductionForServer enables production entry forwards for a server.
 // If none exist, creates them (all server protocols, enabled) then returns.
 func (r *Resources) EnableProductionForServer(server string, enabled bool) (changed int, err error) {
 	server = strings.TrimSpace(server)
@@ -719,7 +721,7 @@ func (r *Resources) EnableProductionForServer(server string, enabled bool) (chan
 		return changed, nil
 	}
 	if server == "" || !enabled {
-		return 0, fmt.Errorf("没有匹配的 production 规则")
+		return 0, fmt.Errorf("没有匹配的正式转发（production）")
 	}
 	// Missing production entry: create then enable (product: 禁止有上游缺入口却无法补)
 	created, err := r.EnsureEntries(server, EntryProduction, nil, true)
@@ -727,7 +729,7 @@ func (r *Resources) EnableProductionForServer(server string, enabled bool) (chan
 		return 0, err
 	}
 	if len(created) == 0 {
-		return 0, fmt.Errorf("没有匹配的 production 规则")
+		return 0, fmt.Errorf("没有匹配的正式转发（production）")
 	}
 	return len(created), nil
 }
@@ -769,7 +771,7 @@ func PatchRuleEnabledInPlace(path, ruleName string, enabled bool) (bool, error) 
 		return sub[1] + val
 	})
 	if !pattern.MatchString(string(text)) {
-		return false, fmt.Errorf("未能定位规则块: %s", ruleName)
+		return false, fmt.Errorf("未能定位转发配置块: %s", ruleName)
 	}
 	if !changed {
 		return false, nil

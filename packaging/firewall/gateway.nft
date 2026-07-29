@@ -13,7 +13,7 @@ flush ruleset
 # 占位 include；firewall/apply 会改写为 DataDir/firewall/forward-ports.nft 的绝对路径
 include "forward-ports.nft"
 
-define SSH_PORT = 30455
+define SSH_PORT = 22
 # 可选：限制管理面来源（示例，按需取消注释并修改）
 # define OPS_IPV4 = { 203.0.113.10 }
 

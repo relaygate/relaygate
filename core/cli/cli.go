@@ -140,7 +140,7 @@ func runUpgrade(args []string) int {
 	drain := fs.Bool("drain", false, "升级前 drain fail、完成后 drain ok（双活）")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "usage: relaygate upgrade [--drain]")
-		fmt.Fprintln(fs.Output(), "  二进制/packaging 升级：委托 install.sh --upgrade（需 RELAYGATE_VERSION 或 RELAYGATE_TAR）")
+		fmt.Fprintln(fs.Output(), "  二进制/packaging 升级：委托 install.sh --upgrade（默认最新 Release；可设 RELAYGATE_VERSION / RELAYGATE_TAR）")
 		fmt.Fprintln(fs.Output(), "  ACL/nftables → firewall apply；resources/Envoy → reload；本命令仅用于产物升级")
 		fs.PrintDefaults()
 	}
@@ -429,7 +429,7 @@ func runServer(args []string) int {
 	enabled := args[0] == "enable"
 	flags := flag.NewFlagSet("server "+args[0], flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
-	all := flags.Bool("all-production", false, "修改全部 production 规则")
+	all := flags.Bool("all-production", false, "修改全部正式转发（production）")
 	resourcesFlag := flags.String("resources", "", "resources.yaml 路径")
 	flags.Usage = func() {
 		fmt.Fprintf(flags.Output(), "usage: relaygate server %s <server-01> | --all-production\n", args[0])
@@ -474,10 +474,10 @@ func runServer(args []string) int {
 		}
 	}
 	if matched == 0 {
-		return exitErr(fmt.Errorf("没有匹配的 production 规则"))
+		return exitErr(fmt.Errorf("没有匹配的正式转发（production）"))
 	}
 	if changed == 0 {
-		fmt.Println("没有规则被修改（已经是目标状态）")
+		fmt.Println("没有转发被修改（已经是目标状态）")
 		return 0
 	}
 	fmt.Printf("已更新 %s（%d 条）\n", resourcesPath, changed)
@@ -513,7 +513,7 @@ func runServerStatus(args []string) int {
 	}
 	fmt.Print(resources.FormatLifecycle(res))
 	enabled := res.EnabledRules()
-	fmt.Printf("启用规则: %d\n", len(enabled))
+	fmt.Printf("启用转发: %d\n", len(enabled))
 	for _, rule := range enabled {
 		fmt.Printf("  - %s: %s/%d -> %s (%s)\n",
 			rule.Name, strings.ToUpper(rule.Protocol), rule.ListenPort, rule.Server, rule.Entry)

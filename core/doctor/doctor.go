@@ -219,7 +219,7 @@ func Run(opt Options) error {
 
 	check("NLB / 高防清单", func() error {
 		fmt.Println("检查项（人工核对，不接云 SDK）：")
-		fmt.Printf("  [ ] GATEWAY_PUBLIC_IP=%s 已写入高防回源 / 后端放行\n", env.GatewayPublicIP)
+		fmt.Printf("  [ ] GATEWAY_PUBLIC_IP=%s 已写入高防回源 / 上游放行\n", env.GatewayPublicIP)
 		fmt.Printf("  [ ] NLB HC 目标 = %s （/ready）或 admin TCP\n", env.AdminURL("/ready"))
 		fmt.Printf("  [ ] DRAIN_WAIT=%ds ≥ %ds（模板 unhealthy_threshold×interval）\n",
 			env.DrainWait, config.RecommendedDrainWaitSec)
