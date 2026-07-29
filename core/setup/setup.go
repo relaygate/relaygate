@@ -190,10 +190,10 @@ RELAYGATE_SECRETS_DIR=%s
 RELAYGATE_DATA_DIR=%s
 `, opt.GatewayName, opt.PublicIP, opt.SSHPort, opt.EnablePanel, opt.EnableGrafana, opt.GatewayName,
 		profiles, opt.ImageTag, grafanaURL, opt.SecretsDir, dataDir)
-	if err := os.WriteFile(envPath, []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(envPath, []byte(body), 0o640); err != nil {
 		return err
 	}
-	return nil
+	return secureEnvFile(envPath)
 }
 
 func patchExistingEnv(path string, opt Options, profiles, grafanaURL, dataDir string) error {
@@ -282,7 +282,21 @@ func patchExistingEnv(path string, opt Options, profiles, grafanaURL, dataDir st
 	if !seen["COMPOSE_PROFILES"] && profiles != "" {
 		out = append(out, "COMPOSE_PROFILES="+profiles)
 	}
-	return os.WriteFile(path, []byte(strings.Join(out, "\n")), 0o600)
+	if err := os.WriteFile(path, []byte(strings.Join(out, "\n")), 0o640); err != nil {
+		return err
+	}
+	return secureEnvFile(path)
+}
+
+// secureEnvFile makes .env readable by the Panel user (group relaygate) without
+// world access. WriteFile mode is masked by umask (often 077 → 0600), so chmod
+// explicitly; chown is best-effort when the group exists (panel install later).
+func secureEnvFile(path string) error {
+	_ = os.Chmod(path, 0o640)
+	if exec.Command("getent", "group", "relaygate").Run() == nil {
+		_ = ops.RunCmd(filepath.Dir(path), "chown", "root:relaygate", path)
+	}
+	return nil
 }
 
 func ensureSecrets(opt Options) error {
@@ -293,6 +307,12 @@ func ensureSecrets(opt Options) error {
 	_ = os.Chmod(opt.SecretsDir, 0o750)
 	if parent := filepath.Dir(opt.SecretsDir); parent != "" && parent != "/" && parent != "." {
 		_ = os.Chmod(parent, 0o750)
+		if exec.Command("getent", "group", "relaygate").Run() == nil {
+			_ = ops.RunCmd(filepath.Dir(opt.SecretsDir), "chown", "root:relaygate", parent)
+		}
+	}
+	if exec.Command("getent", "group", "relaygate").Run() == nil {
+		_ = ops.RunCmd(filepath.Dir(opt.SecretsDir), "chown", "root:relaygate", opt.SecretsDir)
 	}
 	for _, name := range []string{"panel_admin_password", "grafana_admin_password"} {
 		p := filepath.Join(opt.SecretsDir, name)
@@ -301,6 +321,9 @@ func ensureSecrets(opt Options) error {
 			// Grafana 镜像以 uid=472 gid=0 运行；密钥需对 root 组可读（0640），
 			// 0600 会导致容器读不到 GF_SECURITY_ADMIN_PASSWORD__FILE。
 			if name == "grafana_admin_password" {
+				_ = os.Chmod(p, 0o640)
+			} else if exec.Command("getent", "group", "relaygate").Run() == nil {
+				_ = ops.RunCmd(filepath.Dir(p), "chown", "root:relaygate", p)
 				_ = os.Chmod(p, 0o640)
 			}
 			continue
@@ -313,6 +336,9 @@ func ensureSecrets(opt Options) error {
 			return err
 		}
 		_ = os.Chmod(p, 0o640)
+		if name == "panel_admin_password" && exec.Command("getent", "group", "relaygate").Run() == nil {
+			_ = ops.RunCmd(filepath.Dir(p), "chown", "root:relaygate", p)
+		}
 	}
 	fmt.Printf("==> 密钥保存在 %s（不会打印明文）\n", opt.SecretsDir)
 	return nil

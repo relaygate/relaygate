@@ -11,7 +11,15 @@ import (
 )
 
 // Rollback restores config from backups/<stamp> or backups/latest and recreates envoy.
+// When RELAYGATE_PRIVILEGED_HELPER is set and not root, re-execs via sudo (needs docker).
 func Rollback(root string, stamp string) error {
+	args := []string{"rollback"}
+	if stamp != "" {
+		args = append(args, stamp)
+	}
+	if handled, err := maybePrivilegedReexec(os.Stdout, os.Stderr, args...); handled {
+		return err
+	}
 	env, err := LoadEnv(root)
 	if err != nil {
 		return err
@@ -60,8 +68,8 @@ func Rollback(root string, stamp string) error {
 	if err := Validate(root); err != nil {
 		return err
 	}
-	args := append(ComposeArgs(root, true), "up", "-d", "--force-recreate", "--no-deps", "envoy")
-	if err := RunCmd(root, "docker", args...); err != nil {
+	composeArgs := append(ComposeArgs(root, true), "up", "-d", "--force-recreate", "--no-deps", "envoy")
+	if err := RunCmd(root, "docker", composeArgs...); err != nil {
 		return err
 	}
 	if err := WaitHTTP(env.AdminURL("/ready"), 30, 2*time.Second); err != nil {

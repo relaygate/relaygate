@@ -155,11 +155,13 @@ func fixPanelPermissions(opt PanelInstallOptions, dataDir string) error {
 		{opt.InstallDir, 0o755, "root", "root"},
 		{filepath.Join(opt.InstallDir, "bin"), 0o755, "root", "root"},
 		{filepath.Join(opt.InstallDir, "ui"), 0o755, "root", "root"},
+		{filepath.Join(opt.InstallDir, config.PackagingDirName), 0o755, "root", "root"},
 		{dataDir, 0o770, "root", "relaygate"},
 		{filepath.Join(dataDir, "envoy"), 0o770, "root", "relaygate"},
 		{filepath.Join(dataDir, "firewall"), 0o770, "root", "relaygate"},
 		{filepath.Join(dataDir, "prometheus"), 0o770, "root", "relaygate"},
 		{filepath.Join(dataDir, "backups"), 0o770, "root", "relaygate"},
+		{filepath.Join(dataDir, "inventory"), 0o750, "root", "relaygate"},
 		{opt.SecretsDir, 0o750, "root", "relaygate"},
 		{filepath.Dir(opt.SecretsDir), 0o750, "root", "relaygate"},
 	}
@@ -168,15 +170,27 @@ func fixPanelPermissions(opt PanelInstallOptions, dataDir string) error {
 			return err
 		}
 		_ = ops.RunCmd(opt.InstallDir, "chown", d.uid+":"+d.gid, d.path)
+		// 显式 chmod：调用方 umask 077 时 MkdirAll(mode) 会被收窄
 		_ = os.Chmod(d.path, d.mode)
 	}
 	bin := filepath.Join(opt.InstallDir, "bin", "relaygate")
 	_ = ops.RunCmd(opt.InstallDir, "chown", "root:root", bin)
 	_ = os.Chmod(bin, 0o755)
+	envFile := filepath.Join(opt.InstallDir, ".env")
+	if _, err := os.Stat(envFile); err == nil {
+		// Panel / doctor 以 User=relaygate 读 .env；勿用 0600 root:root
+		_ = ops.RunCmd(opt.InstallDir, "chown", "root:relaygate", envFile)
+		_ = os.Chmod(envFile, 0o640)
+	}
 	res := filepath.Join(dataDir, "resources.yaml")
 	if _, err := os.Stat(res); err == nil {
 		_ = ops.RunCmd(opt.InstallDir, "chown", "root:relaygate", res)
 		_ = os.Chmod(res, 0o660)
+	}
+	inv := filepath.Join(dataDir, "inventory", "gateways.env")
+	if _, err := os.Stat(inv); err == nil {
+		_ = ops.RunCmd(opt.InstallDir, "chown", "root:relaygate", inv)
+		_ = os.Chmod(inv, 0o640)
 	}
 	panelPW := filepath.Join(opt.SecretsDir, "panel_admin_password")
 	if _, err := os.Stat(panelPW); err == nil {

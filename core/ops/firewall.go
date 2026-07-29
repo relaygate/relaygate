@@ -63,7 +63,25 @@ func FirewallApplyConfirmed(root string) error {
 
 func firewallExec(root string, apply bool, skipConfirm bool) error {
 	if !IsRoot() {
-		return fmt.Errorf("需要 root")
+		// Confirm on the unprivileged side (TTY / env) before elevating apply.
+		if apply && !skipConfirm {
+			env, err := LoadEnv(root)
+			if err != nil {
+				return err
+			}
+			if err := confirmFirewall(env); err != nil {
+				return err
+			}
+			skipConfirm = true
+		}
+		args := []string{"firewall-check"}
+		if apply {
+			args = []string{"firewall-apply"}
+		}
+		if handled, err := maybePrivilegedReexec(os.Stdout, os.Stderr, args...); handled {
+			return err
+		}
+		return errNeedRootOrHelper()
 	}
 	env, err := LoadEnv(root)
 	if err != nil {
@@ -102,6 +120,7 @@ func firewallExec(root string, apply bool, skipConfirm bool) error {
 		fmt.Println("变更分流：ACL / nftables-only → sudo relaygate firewall apply（无需 reload Envoy）")
 		fmt.Println("默认未应用。确认无误后执行: sudo relaygate firewall apply")
 		fmt.Println("（非交互: sudo APPLY_FIREWALL=1 FIREWALL_CONFIRM=YES_FLUSH_NFTABLES relaygate firewall apply）")
+		fmt.Println("（Panel：运维工具 → 防火墙检查 / 应用防火墙，经 privileged helper）")
 		return nil
 	}
 

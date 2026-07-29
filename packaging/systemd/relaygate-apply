@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
-# Root-owned privileged helper for Panel Apply (relaygate reload via Docker).
+# Root-owned privileged helper for Panel ops (compose/docker / nftables).
 # Installed to /usr/local/libexec/relaygate/apply (root:root 0755).
 # Invoked only via sudoers whitelist from user relaygate; never writable by that user.
+#
+# Allowed subcommands (argv[1]):
+#   reload              — Envoy reload via docker (default if omitted; backward compatible)
+#   firewall-check      — render + nft -c (no ruleset change)
+#   firewall-apply      — apply nftables (Panel already confirmed YES_FLUSH_NFTABLES)
+#   rollback [STAMP]    — restore backup + recreate Envoy
+#
+# No shell, no arbitrary args, no docker.sock for the Panel user.
 set -euo pipefail
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -9,7 +17,7 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
-# Clear so nested reload does not re-exec sudo (avoid recursion).
+# Clear so nested CLI does not re-exec sudo (avoid recursion).
 unset RELAYGATE_PRIVILEGED_HELPER
 
 INSTALL_DIR="${RELAYGATE_INSTALL_DIR:-/opt/relaygate}"
@@ -21,4 +29,46 @@ if [[ ! -x "$BIN" ]]; then
 fi
 
 cd "$INSTALL_DIR"
-exec "$BIN" reload "$@"
+
+cmd="${1:-reload}"
+shift || true
+
+case "$cmd" in
+  reload)
+    exec "$BIN" reload "$@"
+    ;;
+  firewall-check)
+    if [[ "$#" -ne 0 ]]; then
+      echo "ERROR: firewall-check takes no arguments" >&2
+      exit 2
+    fi
+    exec "$BIN" firewall check
+    ;;
+  firewall-apply)
+    if [[ "$#" -ne 0 ]]; then
+      echo "ERROR: firewall-apply takes no arguments" >&2
+      exit 2
+    fi
+    # Panel UI already required YES_FLUSH_NFTABLES; elevate with the same gate.
+    export NONINTERACTIVE=1
+    export FIREWALL_CONFIRM=YES_FLUSH_NFTABLES
+    export APPLY_FIREWALL=1
+    exec "$BIN" firewall apply
+    ;;
+  rollback)
+    stamp="${1:-}"
+    if [[ -n "$stamp" ]]; then
+      if [[ ! "$stamp" =~ ^[0-9]{8}-[0-9]{6}$ ]]; then
+        echo "ERROR: invalid rollback stamp (want YYYYMMDD-HHMMSS)" >&2
+        exit 2
+      fi
+      exec "$BIN" rollback "$stamp"
+    fi
+    exec "$BIN" rollback
+    ;;
+  *)
+    echo "ERROR: disallowed helper command: ${cmd}" >&2
+    echo "allowed: reload | firewall-check | firewall-apply | rollback [STAMP]" >&2
+    exit 2
+    ;;
+esac

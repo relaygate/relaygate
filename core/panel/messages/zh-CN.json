@@ -12,6 +12,6 @@
   "apply.none": "尚无",
   "changes.no_summary": "（无变更摘要文件，仍可回滚该时间戳）",
   "changes.no_diff": "无差异",
-  "ops.fw_root_hint": "需要 root。请在主机执行：\nsudo relaygate firewall check\n",
+  "ops.fw_root_hint": "防火墙操作需要 privileged helper。请检查：\n1) /usr/local/libexec/relaygate/apply 已安装\n2) /etc/sudoers.d/relaygate-panel 允许 relaygate 无密码执行该 helper\n3) Panel unit 未设置 NoNewPrivileges（及隐含项）\n然后：systemctl restart relaygate-panel\n",
   "ops.profile_applied_body": "\n默认配置已写入。请先应用配置；若改了 nftables 档位，另需执行防火墙应用。\n"
 }

@@ -39,19 +39,18 @@ RestartSec=3s
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
-# Hardening — do NOT set NoNewPrivileges=true (breaks sudo helper for Apply).
-# do NOT set RestrictSUIDSGID=true (breaks sudo setuid).
+# Hardening that MUST remain compatible with sudo → /usr/local/libexec/relaygate/apply.
+# Do NOT set NoNewPrivileges=true or RestrictSUIDSGID=true.
+# Also avoid options that *imply* NoNewPrivileges=yes (systemd.exec), e.g.:
+#   PrivateDevices, ProtectKernelTunables/Modules, ProtectControlGroups,
+#   LockPersonality, RestrictRealtime, RestrictNamespaces, SystemCallArchitectures,
+#   SystemCallFilter, MemoryDenyWriteExecute, RestrictAddressFamilies, PrivateUsers, …
+# Those leave NoNewPrivs=1 on the Panel process and sudo fails with:
+#   "The no new privileges flag is set, which prevents sudo from running as root."
+NoNewPrivileges=false
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-PrivateDevices=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-LockPersonality=true
-RestrictRealtime=true
-RestrictNamespaces=true
-SystemCallArchitectures=native
 ReadWritePaths=/opt/relaygate/data
 
 [Install]

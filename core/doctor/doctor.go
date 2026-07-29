@@ -86,9 +86,23 @@ func Run(opt Options) error {
 			return fmt.Errorf("docker 未安装")
 		}
 		if out, err := exec.Command("docker", "version", "--format", "{{.Server.Version}}").CombinedOutput(); err != nil {
-			return fmt.Errorf("docker daemon 不可用: %s", strings.TrimSpace(string(out)))
+			msg := strings.TrimSpace(string(out))
+			// Panel 故意不进 docker 组、不挂 docker.sock；compose 经 root helper。
+			// 非 root 下 sock 不可达视为预期，不记为 doctor 失败。
+			if !ops.IsRoot() && (strings.Contains(msg, "permission denied") ||
+				strings.Contains(msg, "docker.sock") ||
+				strings.Contains(msg, "connect to the Docker daemon") ||
+				strings.Contains(msg, "connect to the docker API")) {
+				fmt.Println("WARN: 当前用户无法访问 docker.sock（Panel 设计如此；apply/reload/firewall 经 privileged helper）")
+				return nil
+			}
+			return fmt.Errorf("docker daemon 不可用: %s", msg)
 		}
 		if err := exec.Command("docker", "compose", "version").Run(); err != nil {
+			if !ops.IsRoot() {
+				fmt.Println("WARN: docker compose 对当前用户不可用（Panel 经 helper 提权）")
+				return nil
+			}
 			return fmt.Errorf("docker compose v2 不可用")
 		}
 		return nil

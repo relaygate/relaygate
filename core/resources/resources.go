@@ -743,7 +743,11 @@ func Save(path string, r *Resources) error {
 		return err
 	}
 	header := "# 由 relaygate 写入\n# 源文件可继续手工编辑后重新 apply\n"
-	return os.WriteFile(path, append([]byte(header), b...), 0o644)
+	if err := os.WriteFile(path, append([]byte(header), b...), 0o660); err != nil {
+		return err
+	}
+	// Panel UMask=0077 会把 WriteFile(0660) 收成 0600；显式 chmod 保留组可写。
+	return os.Chmod(path, 0o660)
 }
 
 // PatchRuleEnabledInPlace toggles enabled for a named rule while preserving surrounding comments.

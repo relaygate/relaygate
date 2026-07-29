@@ -609,6 +609,23 @@ Invoke_Product() {
       chown root:relaygate "${SECRETS_DIR}/panel_admin_password"
       chmod 0640 "${SECRETS_DIR}/panel_admin_password"
     fi
+    # doctor/smoke 等以 relaygate 读 .env；勿留 0600 root:root
+    if [[ -f "${INSTALL_DIR}/.env" ]]; then
+      chown root:relaygate "${INSTALL_DIR}/.env"
+      chmod 0640 "${INSTALL_DIR}/.env"
+    fi
+    if [[ -f "${INSTALL_DIR}/data/resources.yaml" ]]; then
+      chown root:relaygate "${INSTALL_DIR}/data/resources.yaml"
+      chmod 0660 "${INSTALL_DIR}/data/resources.yaml"
+    fi
+    if [[ -d "${INSTALL_DIR}/data/inventory" ]]; then
+      chown root:relaygate "${INSTALL_DIR}/data/inventory"
+      chmod 0750 "${INSTALL_DIR}/data/inventory"
+    fi
+    if [[ -f "${INSTALL_DIR}/data/inventory/gateways.env" ]]; then
+      chown root:relaygate "${INSTALL_DIR}/data/inventory/gateways.env"
+      chmod 0640 "${INSTALL_DIR}/data/inventory/gateways.env"
+    fi
     systemctl restart relaygate-panel 2>/dev/null || true
   else
     PURGE=0 ./bin/relaygate panel uninstall || true

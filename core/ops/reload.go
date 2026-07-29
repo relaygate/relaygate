@@ -20,7 +20,7 @@ func Reload(root string) error {
 // Stages are logged with elapsed timing for L4-friendly observability:
 //   backup → render → validate → drain → restart → ready → undrain
 func ReloadTo(root string, stdout, stderr io.Writer) error {
-	if handled, err := maybePrivilegedReexec(stdout, stderr); handled {
+	if handled, err := maybePrivilegedReexec(stdout, stderr, "reload"); handled {
 		return err
 	}
 	env, err := LoadEnv(root)

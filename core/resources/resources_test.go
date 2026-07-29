@@ -288,6 +288,23 @@ func TestLifecycleStatus(t *testing.T) {
 	if tcp != 11001 || udp != 11001 {
 		t.Fatalf("validation ports tcp=%d udp=%d", tcp, udp)
 	}
+	ptcp, pudp := r.ProductionListenPorts()
+	if ptcp != 0 || pudp != 0 {
+		t.Fatalf("expected no enabled production ports, got tcp=%d udp=%d", ptcp, pudp)
+	}
+	// Enable one production rule and confirm ProductionListenPorts.
+	for i := range r.Rules {
+		if r.Rules[i].Name == "forward-server-01-production-tcp" {
+			r.Rules[i].Enabled = true
+		}
+		if r.Rules[i].Name == "forward-server-01-production-udp" {
+			r.Rules[i].Enabled = true
+		}
+	}
+	ptcp, pudp = r.ProductionListenPorts()
+	if ptcp != 10001 || pudp != 10001 {
+		t.Fatalf("production ports tcp=%d udp=%d", ptcp, pudp)
+	}
 }
 
 func TestUpdateServerCascadesDisable(t *testing.T) {

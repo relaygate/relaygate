@@ -1,4 +1,5 @@
-# Allow relaygate user to run ONLY the Apply helper (no shell, no docker.sock).
+# Allow relaygate user to run ONLY the privileged helper (no shell, no docker.sock).
 # Installed as /etc/sudoers.d/relaygate-panel (mode 0440).
-# Defaults: no password, no env keep except what sudo passes from the command line.
+# Helper itself whitelists subcommands: reload | firewall-check | firewall-apply | rollback.
+# Defaults: no password; do not grant NOPASSWD for arbitrary binaries.
 relaygate ALL=(root) NOPASSWD: /usr/local/libexec/relaygate/apply

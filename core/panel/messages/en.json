@@ -12,6 +12,6 @@
   "apply.none": "None",
   "changes.no_summary": "(no change-summary.txt; stamp can still be rolled back)",
   "changes.no_diff": "No changes",
-  "ops.fw_root_hint": "Needs root. Run on the host:\nsudo relaygate firewall check\n",
+  "ops.fw_root_hint": "Firewall ops need the privileged helper. Check:\n1) /usr/local/libexec/relaygate/apply is installed\n2) /etc/sudoers.d/relaygate-panel allows relaygate NOPASSWD for that helper\n3) Panel unit does not set NoNewPrivileges (or options that imply it)\nThen: systemctl restart relaygate-panel\n",
   "ops.profile_applied_body": "\nDefaults written. Apply config; run firewall apply if nftables profile changed.\n"
 }

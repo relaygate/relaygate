@@ -95,10 +95,11 @@ func FormatLifecycle(r *Resources) string {
 	return b.String()
 }
 
-// ValidationListenPorts returns enabled validation TCP/UDP listen ports (0 if none).
-func (r *Resources) ValidationListenPorts() (tcpPort, udpPort int) {
+// EntryListenPorts returns the first enabled TCP/UDP listen ports for entry (0 if none).
+func (r *Resources) EntryListenPorts(entry string) (tcpPort, udpPort int) {
+	want := strings.ToLower(strings.TrimSpace(entry))
 	for _, rule := range r.EnabledRules() {
-		if strings.ToLower(strings.TrimSpace(rule.Entry)) != EntryValidation {
+		if strings.ToLower(strings.TrimSpace(rule.Entry)) != want {
 			continue
 		}
 		switch strings.ToUpper(rule.Protocol) {
@@ -113,4 +114,14 @@ func (r *Resources) ValidationListenPorts() (tcpPort, udpPort int) {
 		}
 	}
 	return tcpPort, udpPort
+}
+
+// ValidationListenPorts returns enabled validation TCP/UDP listen ports (0 if none).
+func (r *Resources) ValidationListenPorts() (tcpPort, udpPort int) {
+	return r.EntryListenPorts(EntryValidation)
+}
+
+// ProductionListenPorts returns enabled production TCP/UDP listen ports (0 if none).
+func (r *Resources) ProductionListenPorts() (tcpPort, udpPort int) {
+	return r.EntryListenPorts(EntryProduction)
 }

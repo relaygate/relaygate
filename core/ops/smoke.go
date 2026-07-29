@@ -76,8 +76,10 @@ func Smoke(root string, host string) error {
 	return nil
 }
 
-// Canary probes TCP/UDP validation entry ports on host.
-// Prefer listen ports from enabled validation rules in resources.yaml; fall back to TCP_PORT/UDP_PORT env.
+// Canary probes TCP/UDP entry ports on host.
+// Prefer enabled validation listen ports; if none, fall back to enabled production
+// (common for live gateways with only正式入口). Env TCP_PORT/UDP_PORT is used only
+// when resources.yaml cannot be loaded.
 func Canary(root string, host string) error {
 	env, err := LoadEnv(root)
 	if err != nil {
@@ -86,25 +88,11 @@ func Canary(root string, host string) error {
 	if host == "" {
 		host = "127.0.0.1"
 	}
-	tcpPort := env.TCPPort
-	udpPort := env.UDPPort
-	resPath := config.ResolvePaths(root).Resources
-	if res, err := resources.Load(resPath); err == nil {
-		fmt.Print(resources.FormatLifecycle(res))
-		if t, u := res.ValidationListenPorts(); t > 0 || u > 0 {
-			if t > 0 {
-				tcpPort = strconv.Itoa(t)
-			}
-			if u > 0 {
-				udpPort = strconv.Itoa(u)
-			} else if t > 0 {
-				udpPort = tcpPort
-			}
-			fmt.Printf("使用 resources validation 端口 TCP=%s UDP=%s\n", tcpPort, udpPort)
-		} else {
-			fmt.Println("WARN: 无启用的验证转发（validation），回退 TCP_PORT/UDP_PORT env")
-		}
+	tcpPort, udpPort, source, err := resolveCanaryPorts(root, env.TCPPort, env.UDPPort)
+	if err != nil {
+		return err
 	}
+	fmt.Printf("使用 %s 端口 TCP=%s UDP=%s\n", source, tcpPort, udpPort)
 	timeoutSec, _ := strconv.Atoi(env.Timeout)
 	if timeoutSec <= 0 {
 		timeoutSec = 3
@@ -135,6 +123,62 @@ func Canary(root string, host string) error {
 	}
 	fmt.Println("下一步: relaygate server enable <server> && relaygate reload")
 	return nil
+}
+
+// resolveCanaryPorts picks probe ports from resources: validation → production.
+// Env TCP_PORT/UDP_PORT is only used when resources.yaml cannot be loaded (bootstrap).
+func resolveCanaryPorts(root, envTCP, envUDP string) (tcpPort, udpPort, source string, err error) {
+	resPath := config.ResolvePaths(root).Resources
+	res, loadErr := resources.Load(resPath)
+	if loadErr != nil {
+		fmt.Printf("WARN: 无法加载 resources（%v），回退 TCP_PORT/UDP_PORT env\n", loadErr)
+		return applyCanaryPortPair(envTCP, envUDP, "TCP_PORT/UDP_PORT env")
+	}
+	fmt.Print(resources.FormatLifecycle(res))
+	if t, u := res.ValidationListenPorts(); t > 0 || u > 0 {
+		return applyCanaryPorts(t, u, "resources validation")
+	}
+	if t, u := res.ProductionListenPorts(); t > 0 || u > 0 {
+		fmt.Println("INFO: 无启用的验证转发（validation），回退正式入口（production）")
+		return applyCanaryPorts(t, u, "resources production")
+	}
+	return "", "", "", fmt.Errorf("无启用的 validation/production 入口可探测；请启用至少一条转发后 reload，或先配置验证入口")
+}
+
+func applyCanaryPorts(tcp, udp int, source string) (tcpPort, udpPort, src string, err error) {
+	if tcp > 0 {
+		tcpPort = strconv.Itoa(tcp)
+	}
+	if udp > 0 {
+		udpPort = strconv.Itoa(udp)
+	} else if tcp > 0 {
+		udpPort = tcpPort
+	}
+	if tcpPort == "" && udpPort != "" {
+		tcpPort = udpPort
+	}
+	if tcpPort == "" {
+		return "", "", "", fmt.Errorf("未解析到可探测的 TCP/UDP 端口（来源 %s）", source)
+	}
+	if udpPort == "" {
+		udpPort = tcpPort
+	}
+	return tcpPort, udpPort, source, nil
+}
+
+func applyCanaryPortPair(envTCP, envUDP, source string) (tcpPort, udpPort, src string, err error) {
+	tcpPort = strings.TrimSpace(envTCP)
+	udpPort = strings.TrimSpace(envUDP)
+	if tcpPort == "" && udpPort != "" {
+		tcpPort = udpPort
+	}
+	if udpPort == "" {
+		udpPort = tcpPort
+	}
+	if tcpPort == "" {
+		return "", "", "", fmt.Errorf("未设置 TCP_PORT/UDP_PORT，无法做 Canary 探测")
+	}
+	return tcpPort, udpPort, source, nil
 }
 
 func dialTCP(host, port string, timeout time.Duration) error {
