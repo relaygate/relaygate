@@ -36,13 +36,13 @@ func Run(opt Options) error {
 	}
 	var failures []string
 	check := func(name string, fn func() error) {
-		fmt.Printf("-- %s --\n", name)
+		fmt.Printf("==> [%s] start\n", name)
 		if err := fn(); err != nil {
-			fmt.Printf("FAIL: %v\n", err)
+			fmt.Printf("==> [%s] FAIL: %v\n", name, err)
 			failures = append(failures, name+": "+err.Error())
 			return
 		}
-		fmt.Println("OK")
+		fmt.Printf("==> [%s] ok\n", name)
 	}
 
 	env, err := ops.LoadEnv(opt.Root)

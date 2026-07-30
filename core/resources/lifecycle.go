@@ -65,10 +65,11 @@ func (r *Resources) LifecycleStatus() []ServerLifecycle {
 }
 
 // FormatLifecycle prints a human-readable validation/production entry matrix.
+// Panel OpsLogView treats this block as informational (never error-colored).
 func FormatLifecycle(r *Resources) string {
 	rows := r.LifecycleStatus()
 	var b strings.Builder
-	fmt.Fprintf(&b, "入口状态: %d 台上游\n", len(rows))
+	fmt.Fprintf(&b, "## 入口状态: %d 台上游\n", len(rows))
 	for _, lc := range rows {
 		srv := "off"
 		if lc.ServerEnabled {
@@ -90,7 +91,9 @@ func FormatLifecycle(r *Resources) string {
 				prod = "off（可启用正式入口后 reload）"
 			}
 		}
-		fmt.Fprintf(&b, "  - %s server=%s validation=%s production=%s\n", lc.Name, srv, validation, prod)
+		// Use "·" (not "-") so change-summary coloring does not treat rows as
+		// `  - server <removed>` when names are server-*.
+		fmt.Fprintf(&b, "  · %s server=%s validation=%s production=%s\n", lc.Name, srv, validation, prod)
 	}
 	return b.String()
 }

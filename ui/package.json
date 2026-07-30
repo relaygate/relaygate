@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
+    "test:ops-log": "npx --yes tsx src/lib/opsLog.selftest.ts",
     "preview": "vite preview"
   },
   "dependencies": {

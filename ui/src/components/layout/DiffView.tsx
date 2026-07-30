@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { isLifecycleInfoLine, opsLineTone, opsToneClass } from "@/lib/opsLog"
 import { cn } from "@/lib/utils"
 
 function lineKind(line: string): "add" | "del" | "hunk" | "meta" | "ctx" {
@@ -28,50 +29,18 @@ const diffKindClass: Record<ReturnType<typeof lineKind>, string> = {
   ctx: "text-foreground",
 }
 
-/**
- * Lightweight log-line tone for unstructured shell / ops output.
- * Not a language highlighter — only severity / status keywords.
- */
-function logTone(line: string): "error" | "warn" | "ok" | "meta" | "ctx" {
-  const s = line.trim()
-  if (!s) return "ctx"
-  if (/^#{1,3}\s|^={3,}|^-{3,}\s*$|^\*{3,}/.test(s)) return "meta"
-  if (
-    /\b(error|err|fatal|panic|critical|failed|failure|denied|refused)\b/i.test(s) ||
-    /\berror:/i.test(s) ||
-    /^\[\s*(error|err|fatal|crit)\s*\]/i.test(s)
-  ) {
-    return "error"
-  }
-  if (/\b(warn|warning|caution)\b/i.test(s) || /^\[\s*warn(ing)?\s*\]/i.test(s)) {
-    return "warn"
-  }
-  if (
-    /\b(ok|success|succeeded|ready|healthy|pass(ed)?|done)\b/i.test(s) ||
-    /^\[\s*(ok|info|pass)\s*\]/i.test(s)
-  ) {
-    return "ok"
-  }
-  return "ctx"
-}
-
-const logToneClass: Record<ReturnType<typeof logTone>, string> = {
-  error: "text-red-800 dark:text-red-300",
-  warn: "text-amber-900 dark:text-amber-300",
-  ok: "text-emerald-800 dark:text-emerald-300",
-  meta: "text-muted-foreground",
-  ctx: "text-foreground",
-}
-
 /** RelayGate change-summary lines: `  + server`, `  - rule`, `  ~ defaults`. */
 function summaryKind(line: string): "add" | "del" | "chg" | "head" | "ctx" {
   const s = line.trimStart()
-  if (/^(校验通过|Validation)/i.test(s)) {
+  if (/^(校验通过|Validation)/i.test(s) || isLifecycleInfoLine(s.trim())) {
     return "head"
   }
-  if (/^\+\s+(server|rule)\b/i.test(s)) return "add"
-  if (/^-\s+(server|rule)\b/i.test(s)) return "del"
-  if (/^~\s+(server|rule|port|defaults|acl)\b/i.test(s)) return "chg"
+  // Require whitespace after the type keyword so FormatLifecycle rows like
+  // `  - server-01 server=on …` are not treated as `  - server <name>` removals
+  // (\b matches between "server" and "-01").
+  if (/^\+\s+(server|rule)\s+/i.test(s)) return "add"
+  if (/^-\s+(server|rule)\s+/i.test(s)) return "del"
+  if (/^~\s+(server|rule|port|defaults|acl)\s+/i.test(s)) return "chg"
   return "ctx"
 }
 
@@ -90,7 +59,8 @@ function looksLikeDiff(lines: string[]): boolean {
 function looksLikeChangeSummary(lines: string[]): boolean {
   for (const line of lines) {
     const s = line.trimStart()
-    if (/^[+~-]\s+(server|rule|port|defaults|acl)\b/i.test(s)) return true
+    // Same `\s+` (not `\b`) rule as summaryKind — see comment there.
+    if (/^[+~-]\s+(server|rule|port|defaults|acl)\s+/i.test(s)) return true
   }
   return false
 }
@@ -202,7 +172,7 @@ export function DiffView({
             ? diffKindClass[lineKind(line)]
             : asSummary
               ? summaryKindClass[summaryKind(line)]
-              : logToneClass[logTone(line)]
+              : opsToneClass[opsLineTone(line)]
           return (
             <div
               key={i}

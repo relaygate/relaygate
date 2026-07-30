@@ -22,19 +22,22 @@ func Smoke(root string, host string) error {
 	if host == "" {
 		host = "127.0.0.1"
 	}
-	fmt.Printf("==> smoke %s @ %s\n", env.GatewayName, host)
+	fmt.Printf("==> [smoke] start gateway=%s host=%s\n", env.GatewayName, host)
 
-	fmt.Println("-- Envoy /ready --")
+	fmt.Printf("==> [envoy/ready] start\n")
 	ready, err := HTTPGet(env.AdminURL("/ready"))
 	if err != nil {
+		fmt.Printf("==> [envoy/ready] FAIL: %v\n", err)
 		return fmt.Errorf("envoy /ready: %w", err)
 	}
 	fmt.Print(ready)
 	fmt.Println()
+	fmt.Printf("==> [envoy/ready] ok\n")
 
-	fmt.Println("-- Envoy /stats prometheus sample --")
+	fmt.Printf("==> [envoy/stats] start\n")
 	stats, err := HTTPGet(env.AdminURL("/stats/prometheus"))
 	if err != nil {
+		fmt.Printf("==> [envoy/stats] FAIL: %v\n", err)
 		return fmt.Errorf("envoy stats: %w", err)
 	}
 	lines := strings.Split(stats, "\n")
@@ -42,14 +45,13 @@ func Smoke(root string, host string) error {
 		lines = lines[:5]
 	}
 	_ = lines
-	fmt.Println("stats OK")
+	fmt.Printf("==> [envoy/stats] ok\n")
 
 	if HTTPGetOK("http://127.0.0.1:9090/-/ready") {
-		fmt.Println("-- Prometheus ready --")
+		fmt.Printf("==> [prometheus] start\n")
 		out, _ := HTTPGet("http://127.0.0.1:9090/-/ready")
 		fmt.Print(out)
 		fmt.Println()
-		fmt.Println("-- Prometheus external label gateway --")
 		cfg, _ := HTTPGet("http://127.0.0.1:9090/api/v1/status/config")
 		needle := "gateway: " + env.GatewayName
 		if strings.Contains(cfg, needle) {
@@ -57,22 +59,24 @@ func Smoke(root string, host string) error {
 		} else {
 			warnf("未在 Prometheus config 中看到 %s（请先 render observability）", needle)
 		}
+		fmt.Printf("==> [prometheus] ok\n")
 	} else {
 		warnf("Prometheus 未 ready，跳过标签检查")
 	}
 
 	cname := env.EnvoyContainer()
 	if DockerInspectOK(cname) {
-		fmt.Printf("-- container %s running --\n", cname)
+		fmt.Printf("==> [container] start name=%s\n", cname)
 		out, _ := RunCmdCapture(root, "docker", "inspect", "-f", "{{.State.Status}}", cname)
 		fmt.Print(out)
+		fmt.Printf("==> [container] ok\n")
 	} else {
 		warnf("容器 %s 不存在", cname)
 	}
 
 	_ = Canary(root, host) // best-effort like the shell script
 
-	fmt.Printf("smoke OK: %s\n", env.GatewayName)
+	fmt.Printf("==> [smoke] ok gateway=%s\n", env.GatewayName)
 	return nil
 }
 
@@ -92,23 +96,22 @@ func Canary(root string, host string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("使用 %s 端口 TCP=%s UDP=%s\n", source, tcpPort, udpPort)
 	timeoutSec, _ := strconv.Atoi(env.Timeout)
 	if timeoutSec <= 0 {
 		timeoutSec = 3
 	}
-	fmt.Printf("==> Canary 目标: %s TCP/UDP %s\n", host, tcpPort)
+	fmt.Printf("==> [canary] start host=%s source=%s tcp=%s udp=%s\n", host, source, tcpPort, udpPort)
 
-	fmt.Println("-- TCP connect --")
+	fmt.Printf("==> [tcp] start\n")
 	if err := dialTCP(host, tcpPort, time.Duration(timeoutSec)*time.Second); err != nil {
-		fmt.Println("TCP FAIL")
+		fmt.Printf("==> [tcp] FAIL: %v\n", err)
 		return fmt.Errorf("TCP connect: %w", err)
 	}
-	fmt.Println("TCP OK")
+	fmt.Printf("==> [tcp] ok\n")
 
-	fmt.Println("-- UDP send --")
+	fmt.Printf("==> [udp] start\n")
 	_ = sendUDP(host, udpPort)
-	fmt.Println("UDP datagram 已发送")
+	fmt.Printf("==> [udp] ok\n")
 
 	if host == "127.0.0.1" || host == "localhost" {
 		if HTTPGetOK(env.AdminURL("/ready")) {
@@ -122,11 +125,13 @@ func Canary(root string, host string) error {
 		}
 	}
 	fmt.Println("下一步: relaygate server enable <server> && relaygate reload")
+	fmt.Printf("==> [canary] ok\n")
 	return nil
 }
 
 // resolveCanaryPorts picks probe ports from resources: validation → production.
 // Env TCP_PORT/UDP_PORT is only used when resources.yaml cannot be loaded (bootstrap).
+// Prints the entry-status matrix first (info block) so it is not mixed into probe results.
 func resolveCanaryPorts(root, envTCP, envUDP string) (tcpPort, udpPort, source string, err error) {
 	resPath := config.ResolvePaths(root).Resources
 	res, loadErr := resources.Load(resPath)
@@ -135,6 +140,7 @@ func resolveCanaryPorts(root, envTCP, envUDP string) (tcpPort, udpPort, source s
 		return applyCanaryPortPair(envTCP, envUDP, "TCP_PORT/UDP_PORT env")
 	}
 	fmt.Print(resources.FormatLifecycle(res))
+	fmt.Println()
 	if t, u := res.ValidationListenPorts(); t > 0 || u > 0 {
 		return applyCanaryPorts(t, u, "resources validation")
 	}

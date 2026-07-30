@@ -12,7 +12,7 @@ import {
   WrenchIcon,
 } from "lucide-react"
 
-import { DiffView } from "@/components/layout/DiffView"
+import { OpsLogView } from "@/components/layout/OpsLogView"
 import { EmptyState } from "@/components/layout/EmptyState"
 import { Page, PageHeader } from "@/components/layout/PageParts"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -265,8 +265,7 @@ export function OpsPage() {
             </Button>
           }
         >
-          <DiffView
-            fixedHeight
+          <OpsLogView
             value={doctorOut}
             placeholder={
               <EmptyState
@@ -313,8 +312,7 @@ export function OpsPage() {
             </>
           }
         >
-          <DiffView
-            fixedHeight
+          <OpsLogView
             value={drainOut}
             placeholder={
               <EmptyState
@@ -353,8 +351,7 @@ export function OpsPage() {
             </>
           }
         >
-          <DiffView
-            fixedHeight
+          <OpsLogView
             value={probeOut}
             placeholder={
               <EmptyState
@@ -386,8 +383,7 @@ export function OpsPage() {
             </>
           }
         >
-          <DiffView
-            fixedHeight
+          <OpsLogView
             value={firewallOut}
             placeholder={
               <EmptyState
@@ -455,8 +451,7 @@ export function OpsPage() {
               description={t("ops.profile_empty_hint")}
             />
           ) : null}
-          <DiffView
-            fixedHeight
+          <OpsLogView
             value={profileOut}
             placeholder={
               <EmptyState
