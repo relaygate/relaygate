@@ -11,6 +11,60 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Options controls Envoy knobs from host .env (not resources.yaml).
+//
+// PROXY_PROTOCOL defaults to off: product primary path is public direct exposure
+// (no cloud L4 LB in front). Multiple upstreams ≠ need PROXY — PROXY only matters
+// when a LB (or similar) prepends PROXY headers before the gateway.
+//
+// Never auto-enable PROXY/compat on public listeners: clients can forge PROXY
+// headers and spoof access-log / ACL source IPs. Compat is only for LB-trusted CIDRs.
+type Options struct {
+	// ProxyProtocol: off | v1 | v2. Empty / unset → off.
+	ProxyProtocol string
+	// ProxyProtocolAllowWithout: Envoy allow_requests_without_proxy_protocol
+	// (compat: no header → TCP peer; with header → header IP). Unsafe on public ports.
+	ProxyProtocolAllowWithout bool
+}
+
+// OptionsFromEnv reads PROXY_PROTOCOL / PROXY_PROTOCOL_ALLOW_WITHOUT.
+//
+//	off (default)     — no PROXY filter; downstream = TCP peer (直连 / preserve)
+//	v1 | v2 | on(=v2) — require PROXY header (LB only; ports must not be public)
+//	v2-compat|compat  — v2 + allow_without (same as v2 + PROXY_PROTOCOL_ALLOW_WITHOUT=1)
+//
+// Unknown values → off (fail closed for public exposure).
+func OptionsFromEnv() Options {
+	raw := strings.ToLower(strings.TrimSpace(os.Getenv("PROXY_PROTOCOL")))
+	allowEnv := false
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("PROXY_PROTOCOL_ALLOW_WITHOUT"))) {
+	case "1", "true", "yes", "on":
+		allowEnv = true
+	}
+
+	mode := "off"
+	allow := allowEnv
+	switch raw {
+	case "", "0", "off", "false", "no", "none":
+		mode = "off"
+		allow = false
+	case "1", "on", "true", "yes", "proxy", "v2":
+		mode = "v2"
+	case "v1":
+		mode = "v1"
+	case "v2-compat", "compat", "v2_compat":
+		mode = "v2"
+		allow = true
+	default:
+		mode = "off"
+		allow = false
+	}
+	if mode == "off" {
+		allow = false
+	}
+	return Options{ProxyProtocol: mode, ProxyProtocolAllowWithout: allow}
+}
+
 // UpstreamClusterName is the Envoy upstream cluster for an upstream server/protocol pair.
 // Format: upstream-{server}-{proto} — shared by all forwards for that pair.
 // Product display: Upstream; Envoy resource remains cluster.
@@ -34,7 +88,13 @@ func proxyStatPrefix(rule resources.Rule, proto string) string {
 	return strings.ToLower(proto) + "_" + strings.ReplaceAll(rule.Name, "-", "_")
 }
 
+// Render builds Envoy static config + nft defines using OptionsFromEnv().
 func Render(r *resources.Resources) (map[string]any, string, error) {
+	return RenderWith(r, OptionsFromEnv())
+}
+
+// RenderWith is like Render but with explicit options (tests / callers that already loaded env).
+func RenderWith(r *resources.Resources, opt Options) (map[string]any, string, error) {
 	if err := r.Validate(); err != nil {
 		return nil, "", err
 	}
@@ -59,7 +119,7 @@ func Render(r *resources.Resources) (map[string]any, string, error) {
 			}
 		}
 		if proto == "TCP" {
-			listeners = append(listeners, renderTCPListener(rule, listenAddress, defaults))
+			listeners = append(listeners, renderTCPListener(rule, listenAddress, defaults, opt))
 		} else {
 			listeners = append(listeners, renderUDPListener(rule, listenAddress, defaults))
 		}
@@ -103,7 +163,11 @@ func Render(r *resources.Resources) (map[string]any, string, error) {
 }
 
 func Write(envoyPath, nftPath string, r *resources.Resources) error {
-	cfg, nft, err := Render(r)
+	return WriteWith(envoyPath, nftPath, r, OptionsFromEnv())
+}
+
+func WriteWith(envoyPath, nftPath string, r *resources.Resources, opt Options) error {
+	cfg, nft, err := RenderWith(r, opt)
 	if err != nil {
 		return err
 	}
@@ -224,9 +288,9 @@ func renderUDPCluster(server resources.Server, d resources.Defaults) map[string]
 	}
 }
 
-func renderTCPListener(rule resources.Rule, listenAddress string, d resources.Defaults) map[string]any {
+func renderTCPListener(rule resources.Rule, listenAddress string, d resources.Defaults, opt Options) map[string]any {
 	cname := UpstreamClusterName(rule.Server, "TCP")
-	return map[string]any{
+	listener := map[string]any{
 		"name": IngressListenerName(rule),
 		"address": map[string]any{
 			"socket_address": map[string]any{
@@ -274,6 +338,7 @@ func renderTCPListener(rule resources.Rule, listenAddress string, d resources.De
 												"bytes_tx":    "%BYTES_SENT%",
 												"duration_ms": "%DURATION%",
 												"flags":       "%RESPONSE_FLAGS%",
+												"conn_id":     "%CONNECTION_ID%",
 											},
 										},
 									},
@@ -284,6 +349,37 @@ func renderTCPListener(rule resources.Rule, listenAddress string, d resources.De
 				},
 			},
 		},
+	}
+	if filter := proxyProtocolListenerFilter(opt); filter != nil {
+		listener["listener_filters"] = []any{filter}
+	}
+	return listener
+}
+
+// proxyProtocolListenerFilter returns Envoy PROXY listener filter, or nil when off.
+// Security: Envoy does not CIDR-scope who may send PROXY; restrict peers via SG/nft to LB only.
+func proxyProtocolListenerFilter(opt Options) map[string]any {
+	mode := strings.ToLower(strings.TrimSpace(opt.ProxyProtocol))
+	if mode == "" || mode == "off" {
+		return nil
+	}
+	typed := map[string]any{
+		"@type": "type.googleapis.com/envoy.extensions.filters.listener.proxy_protocol.v3.ProxyProtocol",
+	}
+	if opt.ProxyProtocolAllowWithout {
+		typed["allow_requests_without_proxy_protocol"] = true
+	}
+	switch mode {
+	case "v1":
+		typed["disallowed_versions"] = []any{"V2"}
+	case "v2":
+		typed["disallowed_versions"] = []any{"V1"}
+	default:
+		return nil
+	}
+	return map[string]any{
+		"name":         "envoy.filters.listener.proxy_protocol",
+		"typed_config": typed,
 	}
 }
 

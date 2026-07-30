@@ -69,6 +69,9 @@ resource "aws_lb_target_group" "tcp" {
     type    = "source_ip"
   }
 
+  # 默认关：与网关 PROXY_PROTOCOL=off（公网直连）对齐。仅 LB+PROXY 时与网关同步打开。
+  proxy_protocol_v2 = var.enable_proxy_protocol_v2
+
   health_check {
     enabled             = true
     protocol            = var.health_check_protocol

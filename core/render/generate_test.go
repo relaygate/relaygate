@@ -45,7 +45,7 @@ func testResources() *resources.Resources {
 
 func TestEnvoyNaming(t *testing.T) {
 	r := testResources()
-	cfg, _, err := Render(r)
+	cfg, _, err := RenderWith(r, Options{ProxyProtocol: "off"})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -133,5 +133,135 @@ func TestSummarizeIncludesLifecycle(t *testing.T) {
 	}
 	if !strings.Contains(text, "validation=on") {
 		t.Fatalf("expected validation on: %s", text)
+	}
+}
+
+func TestTCPAccessLogHasConnID(t *testing.T) {
+	cfg, _, err := RenderWith(testResources(), Options{ProxyProtocol: "off"})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	listeners := cfg["static_resources"].(map[string]any)["listeners"].([]any)
+	found := false
+	for _, raw := range listeners {
+		l := raw.(map[string]any)
+		if !strings.Contains(l["name"].(string), "-tcp") {
+			continue
+		}
+		if _, ok := l["listener_filters"]; ok {
+			t.Fatalf("PROXY off must not emit listener_filters")
+		}
+		fc := l["filter_chains"].([]any)[0].(map[string]any)
+		filters := fc["filters"].([]any)
+		tcp := filters[len(filters)-1].(map[string]any)
+		typed := tcp["typed_config"].(map[string]any)
+		al := typed["access_log"].([]any)[0].(map[string]any)
+		fmt := al["typed_config"].(map[string]any)["log_format"].(map[string]any)
+		jf := fmt["json_format"].(map[string]any)
+		if jf["conn_id"] != "%CONNECTION_ID%" {
+			t.Fatalf("conn_id=%v", jf["conn_id"])
+		}
+		if jf["downstream"] != "%DOWNSTREAM_REMOTE_ADDRESS%" {
+			t.Fatalf("downstream=%v", jf["downstream"])
+		}
+		found = true
+	}
+	if !found {
+		t.Fatal("no TCP listener")
+	}
+}
+
+func TestProxyProtocolV2ListenerFilter(t *testing.T) {
+	cfg, _, err := RenderWith(testResources(), Options{ProxyProtocol: "v2"})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	listeners := cfg["static_resources"].(map[string]any)["listeners"].([]any)
+	tcpOK, udpOK := false, false
+	for _, raw := range listeners {
+		l := raw.(map[string]any)
+		name := l["name"].(string)
+		if strings.Contains(name, "-udp") {
+			if _, ok := l["listener_filters"]; ok {
+				// UDP already has udp_proxy filter; must not add PROXY
+				lfs := l["listener_filters"].([]any)
+				for _, f := range lfs {
+					if f.(map[string]any)["name"] == "envoy.filters.listener.proxy_protocol" {
+						t.Fatal("UDP must not get PROXY filter")
+					}
+				}
+			}
+			udpOK = true
+			continue
+		}
+		lfs, ok := l["listener_filters"].([]any)
+		if !ok || len(lfs) != 1 {
+			t.Fatalf("TCP expected 1 PROXY listener_filter, got %#v", l["listener_filters"])
+		}
+		typed := lfs[0].(map[string]any)["typed_config"].(map[string]any)
+		if typed["disallowed_versions"].([]any)[0] != "V1" {
+			t.Fatalf("v2 should disallow V1: %#v", typed)
+		}
+		if _, has := typed["allow_requests_without_proxy_protocol"]; has {
+			t.Fatal("allow_without must be unset by default")
+		}
+		tcpOK = true
+	}
+	if !tcpOK || !udpOK {
+		t.Fatalf("tcpOK=%v udpOK=%v", tcpOK, udpOK)
+	}
+}
+
+func TestOptionsFromEnvDefaultsOff(t *testing.T) {
+	t.Setenv("PROXY_PROTOCOL", "")
+	t.Setenv("PROXY_PROTOCOL_ALLOW_WITHOUT", "")
+	opt := OptionsFromEnv()
+	if opt.ProxyProtocol != "off" || opt.ProxyProtocolAllowWithout {
+		t.Fatalf("unset default: %+v", opt)
+	}
+	t.Setenv("PROXY_PROTOCOL", "off")
+	t.Setenv("PROXY_PROTOCOL_ALLOW_WITHOUT", "1")
+	opt = OptionsFromEnv()
+	if opt.ProxyProtocol != "off" || opt.ProxyProtocolAllowWithout {
+		t.Fatalf("off ignores allow_without: %+v", opt)
+	}
+}
+
+func TestOptionsFromEnvV2Compat(t *testing.T) {
+	t.Setenv("PROXY_PROTOCOL_ALLOW_WITHOUT", "")
+	t.Setenv("PROXY_PROTOCOL", "v2-compat")
+	opt := OptionsFromEnv()
+	if opt.ProxyProtocol != "v2" || !opt.ProxyProtocolAllowWithout {
+		t.Fatalf("v2-compat: %+v", opt)
+	}
+	t.Setenv("PROXY_PROTOCOL", "v2")
+	t.Setenv("PROXY_PROTOCOL_ALLOW_WITHOUT", "1")
+	opt = OptionsFromEnv()
+	if opt.ProxyProtocol != "v2" || !opt.ProxyProtocolAllowWithout {
+		t.Fatalf("v2+allow: %+v", opt)
+	}
+}
+
+func TestProxyProtocolCompatEmitsAllowWithout(t *testing.T) {
+	cfg, _, err := RenderWith(testResources(), Options{ProxyProtocol: "v2", ProxyProtocolAllowWithout: true})
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	listeners := cfg["static_resources"].(map[string]any)["listeners"].([]any)
+	found := false
+	for _, raw := range listeners {
+		l := raw.(map[string]any)
+		if !strings.Contains(l["name"].(string), "-tcp") {
+			continue
+		}
+		lfs := l["listener_filters"].([]any)
+		typed := lfs[0].(map[string]any)["typed_config"].(map[string]any)
+		if typed["allow_requests_without_proxy_protocol"] != true {
+			t.Fatalf("expected allow_without: %#v", typed)
+		}
+		found = true
+	}
+	if !found {
+		t.Fatal("no TCP listener")
 	}
 }

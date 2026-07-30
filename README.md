@@ -13,7 +13,7 @@
 | **入口类型** `entry` | `validation`（验证）/ `production`（正式），可并行；回退 = 关正式转发 |
 | **运行态** | 默认 `/opt/relaygate/data`（可用 `RELAYGATE_DATA_DIR` 覆盖） |
 
-**已知边界：** 固定目标转发（不做跨服 LB）· UDP 无可靠主动健康检查 · 上游看到的是网关源 IP · Envoy 非抗 DDoS（大流量需云高防）
+**已知边界：** 固定目标转发（不做跨服 LB）· UDP 无可靠主动健康检查 · 上游看到的是网关源 IP · Envoy 非抗 DDoS（大流量需云高防）· 默认 `PROXY_PROTOCOL=off`（公网直连；有云 LB 发 PROXY 时再开，见 [logging-playbook](docs/logging-playbook.md)）
 
 产品用语与 YAML 字段对照见文末 [术语](#术语运维对照)。
 

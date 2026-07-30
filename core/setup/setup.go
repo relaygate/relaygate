@@ -188,6 +188,8 @@ GRAFANA_ANONYMOUS=true
 PROMETHEUS_RETENTION=15d
 RELAYGATE_SECRETS_DIR=%s
 RELAYGATE_DATA_DIR=%s
+# 公网直连暴露默认 off；前面有云 LB 发 PROXY 时再改 v2（见 docs/logging-playbook.md）
+PROXY_PROTOCOL=off
 `, opt.GatewayName, opt.PublicIP, opt.SSHPort, opt.EnablePanel, opt.EnableGrafana, opt.GatewayName,
 		profiles, opt.ImageTag, grafanaURL, opt.SecretsDir, dataDir)
 	if err := os.WriteFile(envPath, []byte(body), 0o640); err != nil {

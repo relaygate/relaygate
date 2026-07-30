@@ -81,3 +81,15 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "enable_proxy_protocol_v2" {
+  description = <<-EOT
+    TCP target group: send PROXY v2 to targets. Default false.
+    Gateway product default is PROXY_PROTOCOL=off (public direct exposure).
+    Set true only with gateway PROXY_PROTOCOL=v2 (or v2-compat) and SG locking
+    forward ports to the NLB — never on publicly reachable listeners.
+    See docs/logging-playbook.md. Not applied to UDP target groups.
+  EOT
+  type    = bool
+  default = false
+}

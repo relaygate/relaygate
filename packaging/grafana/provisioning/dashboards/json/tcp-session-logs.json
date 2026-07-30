@@ -41,7 +41,15 @@
         "wrapLogMessage": true,
         "prettifyLogMessage": true,
         "enableLogDetails": true,
-        "sortOrder": "Descending"
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "displayedFields": [
+          "conn_id",
+          "rule",
+          "downstream",
+          "flags",
+          "duration_ms"
+        ]
       }
     },
     {
@@ -72,9 +80,65 @@
       ],
       "options": {
         "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
         "wrapLogMessage": true,
+        "prettifyLogMessage": true,
         "enableLogDetails": true,
-        "sortOrder": "Descending"
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "displayedFields": [
+          "conn_id",
+          "rule",
+          "downstream",
+          "flags",
+          "duration_ms"
+        ]
+      }
+    },
+    {
+      "type": "logs",
+      "title": "按 conn_id（变量为空/.* 不过滤）",
+      "id": 5,
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{job=\"envoy-tcp-access\", gateway=~\"$gateway\"} | json | conn_id=~\"$conn_id\"",
+          "queryType": "range",
+          "maxLines": 100
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none",
+        "displayedFields": [
+          "conn_id",
+          "rule",
+          "downstream",
+          "upstream",
+          "flags",
+          "duration_ms"
+        ]
       }
     },
     {
@@ -85,7 +149,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 20
+        "y": 30
       },
       "datasource": {
         "type": "loki",
@@ -129,7 +193,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 20
+        "y": 30
       },
       "datasource": {
         "type": "loki",
@@ -198,6 +262,16 @@
           "text": "2000",
           "value": "2000"
         }
+      },
+      {
+        "name": "conn_id",
+        "type": "textbox",
+        "label": "conn_id",
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        },
+        "description": "Envoy CONNECTION_ID；填具体数字过滤；.* = 不过滤"
       }
     ]
   },
@@ -209,5 +283,5 @@
   "timezone": "browser",
   "title": "TCP Session Logs",
   "uid": "relaygate-tcp-session-logs",
-  "version": 1
+  "version": 2
 }
