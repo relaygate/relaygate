@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/relaygate/relaygate/core/config"
 	"github.com/relaygate/relaygate/core/ops"
 	"github.com/relaygate/relaygate/core/render"
 	"github.com/relaygate/relaygate/core/resources"
@@ -72,7 +73,7 @@ func New(cfg Config) (*Server, error) {
 		cfg.Root = root
 	}
 	if cfg.Bind == "" {
-		cfg.Bind = "127.0.0.1:9000"
+		cfg.Bind = config.DefaultPanelBind
 	}
 	if err := validatePanelBind(cfg.Bind); err != nil {
 		return nil, err

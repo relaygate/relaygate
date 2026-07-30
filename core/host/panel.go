@@ -292,8 +292,9 @@ func writePanelEnv(opt PanelInstallOptions, dataDir string) error {
 	if opt.GrafanaURL != "" {
 		grafanaLine = "GRAFANA_URL=" + opt.GrafanaURL
 	}
+	panelBind := config.Getenv("PANEL_BIND", config.DefaultPanelBind)
 	if opt.DryRun {
-		fmt.Printf("[dry-run] 将写入 /etc/relaygate/panel.env (%s PANEL_ROLE=%s)\n", grafanaLine, role)
+		fmt.Printf("[dry-run] 将写入 /etc/relaygate/panel.env (%s PANEL_BIND=%s PANEL_ROLE=%s)\n", grafanaLine, panelBind, role)
 		return nil
 	}
 	if err := os.MkdirAll("/etc/relaygate", 0o750); err != nil {
@@ -305,7 +306,7 @@ func writePanelEnv(opt PanelInstallOptions, dataDir string) error {
 	helperPath := "/usr/local/libexec/relaygate/apply"
 	body := fmt.Sprintf(`# Managed by relaygate panel install — Panel systemd EnvironmentFile
 PANEL_ROOT=%s
-PANEL_BIND=127.0.0.1:9000
+PANEL_BIND=%s
 PANEL_ADMIN_PASSWORD_FILE=%s/panel_admin_password
 PANEL_ROLE=%s
 RELAYGATE_BIN=%s/bin/relaygate
@@ -314,7 +315,7 @@ RELAYGATE_DATA_DIR=%s
 ENVOY_ADMIN_URL=http://127.0.0.1:9901
 PROMETHEUS_URL=http://127.0.0.1:9090
 %s
-`, opt.InstallDir, opt.SecretsDir, role, opt.InstallDir, helperPath, dataDir, grafanaLine)
+`, opt.InstallDir, panelBind, opt.SecretsDir, role, opt.InstallDir, helperPath, dataDir, grafanaLine)
 	panelEnv := "/etc/relaygate/panel.env"
 	if err := os.WriteFile(panelEnv, []byte(body), 0o640); err != nil {
 		return err

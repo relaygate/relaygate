@@ -67,8 +67,8 @@ func Apply(root string) error {
 	_ = Compose(root, os.Stdout, os.Stderr, "ps")
 	fmt.Println()
 	fmt.Printf("部署完成: %s\n", env.GatewayName)
-	fmt.Printf("Panel（含 Grafana）: ssh -p %s -L 9000:127.0.0.1:9000 root@%s\n", env.GatewaySSHPort, env.GatewayPublicIP)
-	fmt.Println("浏览器: http://127.0.0.1:9000/monitoring （无需隧道 3000）")
+	fmt.Printf("Panel（含 Grafana）: http://%s:9000 （默认 PANEL_BIND=0.0.0.0:9000）\n", env.GatewayPublicIP)
+	fmt.Println("监控: http://<公网IP>:9000/monitoring （Grafana 经 Panel 反代，无需隧道 3000）")
 	fmt.Println("回滚: relaygate rollback")
 	fmt.Println("冒烟: relaygate smoke")
 	return nil

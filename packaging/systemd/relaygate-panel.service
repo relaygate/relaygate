@@ -23,7 +23,7 @@ WorkingDirectory=/opt/relaygate
 UMask=0077
 
 Environment=PANEL_ROOT=/opt/relaygate
-Environment=PANEL_BIND=127.0.0.1:9000
+Environment=PANEL_BIND=0.0.0.0:9000
 Environment=PANEL_ADMIN_PASSWORD_FILE=/etc/relaygate/secrets/panel_admin_password
 Environment=RELAYGATE_BIN=/opt/relaygate/bin/relaygate
 Environment=RELAYGATE_PRIVILEGED_HELPER=/usr/local/libexec/relaygate/apply

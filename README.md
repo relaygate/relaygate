@@ -67,6 +67,7 @@ sudo RELAYGATE_TAR=/path/relaygate-v0.1.0-linux-amd64.tar.gz bash install.sh
 | `GATEWAY_NAME` / `GATEWAY_PUBLIC_IP` | 网关身份 |
 | `GATEWAY_SSH_PORT` | 安装/配置时指定（常见 `22` 或其他；示例值见 [`.env.example`](.env.example)） |
 | `ENABLE_PANEL` / `ENABLE_GRAFANA` | `1` |
+| `PANEL_BIND` | `0.0.0.0:9000`（对外；可改 `127.0.0.1:9000`） |
 | `APPLY_FIREWALL` | `0`（安装时只校验防火墙） |
 
 ### 首启检查
@@ -173,13 +174,13 @@ GATEWAYS=gateway-01,gateway-02 relaygate fleet   # 默认升到最新 Release
 
 ## Panel（:9000）
 
-默认 `PANEL_BIND=127.0.0.1:9000`（仅 loopback）。经 SSH 隧道访问：
+默认 `PANEL_BIND=0.0.0.0:9000`（对外监听；gateway nft 放行 `9000/tcp`）。浏览器打开：
 
 ```bash
-ssh -p <GATEWAY_SSH_PORT> -L 9000:127.0.0.1:9000 root@<GATEWAY_PUBLIC_IP>
-# 浏览器打开 http://127.0.0.1:9000
-# <GATEWAY_SSH_PORT> 为安装时指定的 SSH 端口（常见 22 或其他）
+http://<GATEWAY_PUBLIC_IP>:9000
 ```
+
+仅本机访问时改 `PANEL_BIND=127.0.0.1:9000`，并可用 SSH 隧道：`ssh -p <GATEWAY_SSH_PORT> -L 9000:127.0.0.1:9000 root@<GATEWAY_PUBLIC_IP>`。
 
 | 页 | 做什么 |
 |----|--------|
@@ -250,7 +251,7 @@ sudo PURGE=1 bash install.sh --uninstall
 | `/ready` 非 LIVE / LB 不健康 | `relaygate doctor`；是否误摘流 `drain status` |
 | 转发不通 | 转发是否 `enabled`；入口类型是否开错；上游 TCP/UDP 端口；`smoke` / `canary` |
 | 改了 YAML 不生效 | 是否走了对应 Apply（`reload` vs `firewall apply`） |
-| Panel 打不开 | SSH 隧道、`PANEL_BIND`、systemd `relaygate-panel` |
+| Panel 打不开 | `PANEL_BIND`、防火墙 9000、systemd `relaygate-panel` |
 | 无会话日志 | `COMPOSE_PROFILES`、Fluent Bit/Loki 就绪；见 [logging-playbook](docs/logging-playbook.md) |
 | 限速过猛 / ACL 误伤 | `defaults` 限速字段、`acl.deny`/`allow`；SSH 不受 ACL 影响 |
 

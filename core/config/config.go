@@ -20,7 +20,7 @@ const (
 	DefaultInstallDir = "/opt/relaygate"
 	DefaultSecretsDir = "/etc/relaygate/secrets"
 	DefaultSSHPort    = "22"
-	DefaultPanelBind  = "127.0.0.1:9000"
+	DefaultPanelBind  = "0.0.0.0:9000"
 
 	PackagingDirName = "packaging"
 	ComposeFileRel   = "packaging/compose.yaml"

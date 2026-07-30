@@ -653,7 +653,7 @@ Show_Result() {
   log "目录: ${INSTALL_DIR}  密钥: ${SECRETS_DIR}"
   log "运维: cd ${INSTALL_DIR} && ./bin/relaygate reload|smoke|doctor"
   if [[ "${ENABLE_PANEL:-1}" == "1" ]]; then
-    log "Panel: ssh -p ${GATEWAY_SSH_PORT:-22} -L 9000:127.0.0.1:9000 root@${GATEWAY_PUBLIC_IP:-<IP>}"
+    log "Panel: http://${GATEWAY_PUBLIC_IP:-<IP>}:9000 （默认 PANEL_BIND=0.0.0.0:9000；仅本机可改 127.0.0.1:9000）"
   fi
 }
 
