@@ -35,12 +35,14 @@ func Run(args []string) int {
 	case "apply":
 		return exitErr(ops.Apply(mustRoot()))
 	case "reload":
+		fmt.Fprintln(os.Stderr, "警告: reload 会重启 Envoy 并断开本网关上全部现有连接（drain 只摘新流，不保留长连接）。双活请先 drain 本节点。")
 		return exitErr(ops.Reload(mustRoot()))
 	case "rollback":
 		stamp := ""
 		if len(args) > 1 {
 			stamp = args[1]
 		}
+		fmt.Fprintln(os.Stderr, "警告: rollback 会 force-recreate Envoy，断开本网关上全部现有连接。")
 		return exitErr(ops.Rollback(mustRoot(), stamp))
 	case "drain":
 		return runDrain(args[1:])
@@ -126,7 +128,10 @@ func runDrain(args []string) int {
 		return 2
 	}
 	switch args[0] {
-	case "fail", "drain", "ok", "undrain", "status":
+	case "fail", "drain":
+		fmt.Fprintln(os.Stderr, "警告: drain fail 会使 LB/NLB 停止向本节点分配新连接；单节点生产请确认维护窗口。已有长连接通常仍保留。")
+		return exitErr(ops.Drain(mustRoot(), args[0]))
+	case "ok", "undrain", "status":
 		return exitErr(ops.Drain(mustRoot(), args[0]))
 	default:
 		fmt.Fprintln(os.Stderr, "usage: relaygate drain fail|ok|status")
@@ -150,6 +155,11 @@ func runUpgrade(args []string) int {
 	if fs.NArg() > 0 {
 		fs.Usage()
 		return 2
+	}
+	if *drain {
+		fmt.Fprintln(os.Stderr, "警告: --drain 会先摘流本节点；升级本身替换二进制/packaging，通常不重启 Envoy，但请按双活剧本操作。")
+	} else {
+		fmt.Fprintln(os.Stderr, "提示: 未加 --drain；双活生产建议 upgrade --drain，或先手动 drain fail。")
 	}
 	return exitErr(ops.Upgrade(mustRoot(), ops.UpgradeOptions{Drain: *drain}))
 }
@@ -600,8 +610,8 @@ func usage(out *os.File) {
 
 数据面:
   relaygate apply                 # 校验 + compose up（首次/全量）
-  relaygate reload                # resources/Envoy：backup + drain + 重启（分阶段计时）
-  relaygate rollback [STAMP]
+  relaygate reload                # resources/Envoy：backup + drain + 重启（会断现有连接）
+  relaygate rollback [STAMP]      # 回滚并 force-recreate Envoy（会断现有连接）
   relaygate drain fail|ok|status
   relaygate upgrade [--drain]     # 二进制/packaging：委托 install.sh --upgrade
 

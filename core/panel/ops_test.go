@@ -179,6 +179,31 @@ func TestFirewallApplyRequiresConfirm(t *testing.T) {
 	}
 }
 
+func TestApplyRequiresConfirm(t *testing.T) {
+	srv, token, csrf := setupPanel(t)
+	h := srv.Handler()
+
+	body, _ := json.Marshal(map[string]string{"confirm": "nope"})
+	req := httptest.NewRequest(http.MethodPost, "/api/apply", bytes.NewReader(body))
+	authedCSRF(req, token, csrf)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("apply without confirm status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "RELOAD_ENVOY") {
+		t.Fatalf("expected confirm hint: %s", rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/apply", bytes.NewReader(nil))
+	authedCSRF(req, token, csrf)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("apply empty body status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestAPILang(t *testing.T) {
 	srv, _, _ := setupPanel(t)
 	h := srv.Handler()

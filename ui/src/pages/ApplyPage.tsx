@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
-import { FileClockIcon } from "lucide-react"
+import { FileClockIcon, TriangleAlertIcon } from "lucide-react"
 
 import { DiffView } from "@/components/layout/DiffView"
 import { EmptyState } from "@/components/layout/EmptyState"
 import { Page, PageHeader, Section } from "@/components/layout/PageParts"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -23,6 +24,7 @@ import { useStandby } from "@/context/SessionContext"
 import { ApiError, applyConfig, applyFirewall, getApplyPreview } from "@/lib/api"
 
 const FW_CONFIRM = "YES_FLUSH_NFTABLES"
+const RELOAD_CONFIRM = "RELOAD_ENVOY"
 
 export function ApplyPage() {
   const { t } = useTranslation()
@@ -38,6 +40,8 @@ export function ApplyPage() {
   const [applyingFirewall, setApplyingFirewall] = useState(false)
   const [fwOpen, setFwOpen] = useState(false)
   const [fwConfirm, setFwConfirm] = useState("")
+  const [reloadOpen, setReloadOpen] = useState(false)
+  const [reloadConfirm, setReloadConfirm] = useState("")
 
   async function loadPreview() {
     try {
@@ -56,14 +60,16 @@ export function ApplyPage() {
   }, [])
 
   async function handleApplyConfig() {
-    if (standby || !needsReload) return
+    if (standby || !needsReload || reloadConfirm !== RELOAD_CONFIRM) return
     setApplyingConfig(true)
     setError(false)
     try {
-      const res = await applyConfig()
+      const res = await applyConfig(RELOAD_CONFIRM)
       const out = res.output ?? t("apply.toast_config_ok")
       setResult(out)
       toast.success(t("apply.toast_config_ok"))
+      setReloadOpen(false)
+      setReloadConfirm("")
       await loadPreview()
     } catch (err) {
       setError(true)
@@ -125,7 +131,10 @@ export function ApplyPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant={configPrimary || mixed ? "default" : "outline"}
-              onClick={handleApplyConfig}
+              onClick={() => {
+                setReloadConfirm("")
+                setReloadOpen(true)
+              }}
               disabled={standby || busy || !needsReload}
               title={t("apply.submit_config")}
             >
@@ -146,6 +155,12 @@ export function ApplyPage() {
           </div>
         }
       />
+
+      <Alert variant="destructive">
+        <TriangleAlertIcon />
+        <AlertTitle>{t("apply.risk_title")}</AlertTitle>
+        <AlertDescription>{t("apply.risk_body")}</AlertDescription>
+      </Alert>
 
       <Section title={t("apply.summary")} actions={summaryBadges}>
         <DiffView
@@ -194,6 +209,48 @@ export function ApplyPage() {
           <DiffView value={result} error={error} />
         </Section>
       ) : null}
+
+      <Dialog
+        open={reloadOpen}
+        onOpenChange={(open) => {
+          if (!applyingConfig) {
+            setReloadOpen(open)
+            if (!open) setReloadConfirm("")
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("apply.reload_confirm_title")}</DialogTitle>
+            <DialogDescription>{t("apply.reload_confirm_body")}</DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel>{t("apply.reload_confirm_label")}</FieldLabel>
+              <Input
+                value={reloadConfirm}
+                onChange={(e) => setReloadConfirm(e.target.value)}
+                disabled={standby || applyingConfig}
+                autoComplete="off"
+                className="font-mono"
+              />
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setReloadOpen(false)} disabled={applyingConfig}>
+              {t("ops.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleApplyConfig}
+              disabled={standby || applyingConfig || reloadConfirm !== RELOAD_CONFIRM}
+            >
+              {applyingConfig ? <Spinner data-icon="inline-start" /> : null}
+              {t("apply.submit_config")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={fwOpen}

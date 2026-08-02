@@ -355,8 +355,8 @@ export async function getApplyPreview(): Promise<ApplyPreview> {
   }
 }
 
-export async function applyConfig(): Promise<OpsResult> {
-  return normalizeOpsResult(await api.post("/api/apply"))
+export async function applyConfig(confirm: string): Promise<OpsResult> {
+  return normalizeOpsResult(await api.post("/api/apply", { confirm }))
 }
 
 export async function applyFirewall(confirm: string): Promise<OpsResult> {

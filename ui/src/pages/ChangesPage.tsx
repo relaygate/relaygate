@@ -225,6 +225,8 @@ export function ChangesPage({ embedded = false }: { embedded?: boolean }) {
             <DialogDescription>
               {t("changes.rollback_to")}:{" "}
               <code className="font-mono text-foreground">{rollbackStamp}</code>
+              <br />
+              {t("changes.rollback_body")}
             </DialogDescription>
           </DialogHeader>
           <DiffView value={rollbackSummary} />

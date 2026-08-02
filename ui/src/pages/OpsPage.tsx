@@ -475,7 +475,7 @@ export function OpsPage() {
               {drainAction === "fail" ? t("ops.btn_drain_fail") : t("ops.btn_drain_ok")}
             </DialogTitle>
             <DialogDescription>
-              {drainAction === "fail" ? t("ops.drain_label_fail") : t("ops.drain_label_ok")}
+              {drainAction === "fail" ? t("ops.drain_confirm_fail") : t("ops.drain_confirm_ok")}
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
@@ -535,9 +535,11 @@ export function OpsPage() {
                 <>
                   {t("ops.profile_select")}: {profileShortLabel(t, profileName)}{" "}
                   <code className="font-mono text-foreground">({profileName})</code>
+                  <br />
+                  {t("ops.profile_confirm_body")}
                 </>
               ) : (
-                t("ops.profile_confirm")
+                t("ops.profile_confirm_body")
               )}
             </DialogDescription>
           </DialogHeader>

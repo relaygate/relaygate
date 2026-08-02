@@ -1066,6 +1066,15 @@ func (s *Server) apiApply(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
+	var body struct {
+		Confirm string `json:"confirm"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	const phrase = "RELOAD_ENVOY"
+	if strings.TrimSpace(body.Confirm) != phrase {
+		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", phrase)})
+		return
+	}
 	res, err := s.load()
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})

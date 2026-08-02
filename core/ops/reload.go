@@ -12,6 +12,16 @@ import (
 
 // Reload renders config, drains, restarts Envoy, waits for ready.
 // When RELAYGATE_PRIVILEGED_HELPER is set and not root, re-execs via sudo.
+//
+// Connection impact (current): docker restart / --force-recreate terminates ALL
+// existing L4 TCP/UDP flows on this gateway. Drain only flips /healthcheck so
+// NLB stops new targets; it does NOT preserve established connections.
+//
+// Hot-update roadmap (not implemented): see docs/hot-update-xds.md
+//  1. Short-term ops: dual-active + drain one node + reload + undrain (fleet/NLB).
+//  2. Primary mid-term: in-process ADS (CDS+LDS) so Panel apply does not kill
+//     the data-plane process. hot_restart is fallback for binary/bootstrap only.
+//     Keep HardReload (drain+restart) for schema/bootstrap/image jumps.
 func Reload(root string) error {
 	return ReloadTo(root, os.Stdout, os.Stderr)
 }
@@ -27,6 +37,8 @@ func ReloadTo(root string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+
+	logf(stdout, "WARN: 应用配置将重启 Envoy（docker restart / force-recreate），会断开本网关上全部现有连接；热更新尚未实现")
 
 	totalStart := time.Now()
 	stage := func(name string, fn func() error) error {
