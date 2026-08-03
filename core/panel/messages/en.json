@@ -3,7 +3,7 @@
   "error.grafana_unavailable": "Grafana unavailable: %s",
   "error.no_output": "(no output)",
   "error.drain_action": "action must be status|fail|ok",
-  "error.confirm_typed": "Type %s to confirm",
+  "error.confirm_typed": "Type Confirm or 确认",
   "error.invalid_stamp": "Invalid stamp",
   "error.summary_not_found": "Summary not found: %s",
   "login.error_password": "Wrong password",

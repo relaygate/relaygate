@@ -38,15 +38,19 @@ UI、i18n、Panel、确认框、EmptyState、toast、CLI 帮助等**面向运维
 
 写操作 / 危险操作须用户**显式二次确认**（输入确认词或等价开关），**禁止**一键静默执行。
 
-- 确认框文案：风险说明 + 下一步（面向运维）；确认词可保留英文大写。
+- 确认框文案：**一句话**说明要做什么；若**影响连接**，再补**一句红字**说明断连风险。
+- 确认输入统一为中文 **`确认`** 或英文 **`Confirm`**（`Confirm` 大小写敏感；后端两者都接受）。**不再**使用按操作区分的指令词（如已废除的 `HOT_APPLY` / `RELOAD_ENVOY` / `PUBLISH_FLEET` 等）。
 - **standby / 只读角色禁止写操作**；须引导到主控。
-- CLI：危险操作须交互确认，或显式开关（如 `relaygate reload --hard`、`FIREWALL_CONFIRM=…`）；避免默认真销毁。
-- 确认词**沿用产品约定**（以代码 / i18n 为准）；新危险操作须新增独立确认词，勿复用。可 grep `confirm` / 下列词核对现状：
-  - 配置：`HOT_APPLY`（热更新）、`RELOAD_ENVOY`（硬重启）、`YES_FLUSH_NFTABLES`（防火墙）
-  - 机群 / 运维：`PUBLISH_FLEET`、`FLEET_LEAVE`、`APPLY_PROFILE`、`DRAIN_FAIL` / `DRAIN_OK`（接入 `fleet join` 无需确认词，主 UX 为一句话安装命令）
-  - **已废除**作主确认词：`FLEET_SYNC`、`SCALE_EXPAND`、`SCALE_SHRINK`
+- CLI：危险操作须交互确认，或显式开关（如 `relaygate reload --hard`、`FIREWALL_CONFIRM=Confirm`、`RELAYGATE_CONFIRM=Confirm`）；避免默认真销毁。
+- 接入 `fleet join` 无需确认词（主 UX 为一句话安装命令）。
 
 ```text
-❌ 将把本地变更同步到全部网关节点。请输入 FLEET_SYNC 确认。
-✅ 将当前业务配置发布为机群新版本；各网关节点将自行拉取并在本机热更新。请输入 PUBLISH_FLEET 确认。
+❌ 将当前业务配置发布为机群新版本。请输入 PUBLISH_FLEET 确认。
+✅ 将当前业务配置发布为机群新版本，各节点自行拉取并应用。请输入「确认」或 Confirm。
 ```
+
+## Panel 操作按钮风险色
+
+- **红（destructive）**：会断连 / 破坏性 / 不可轻易撤销（硬重启本机应用、退役节点、摘流、回滚、应用防火墙 flush、删除上游等）。
+- **橙（caution）**：有影响但非立刻全断，或需留意（热更新本机应用、发布到机群、恢复承接、应用档位等）。
+- **灰（outline / secondary）**：常规保存、生成接入命令、只读刷新、检查/诊断等。

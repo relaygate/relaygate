@@ -6,8 +6,8 @@
 
 | 路径 | 适用 | 确认词 |
 |------|------|--------|
-| 热更新 | 上游 / 转发 / 多数 Envoy defaults | `HOT_APPLY` |
-| 硬重启 | bootstrap、镜像、`meta.admin_*` 等 | `RELOAD_ENVOY`（`reload --hard`） |
+| 热更新 | 上游 / 转发 / 多数 Envoy defaults | 确认「确认」/`Confirm` |
+| 硬重启 | bootstrap、镜像、`meta.admin_*` 等 | 确认「确认」/`Confirm`（`reload --hard`） |
 
 - 热更新：无关长连接通常保留；**改/删的监听口**上连接可能中断
 - 硬重启：摘流并重启本机 Envoy，该网关上现有连接断开

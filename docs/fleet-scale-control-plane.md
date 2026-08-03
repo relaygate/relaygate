@@ -19,7 +19,7 @@
 ## 稳态数据流
 
 1. 主控编辑业务配置并（建议）先本机应用
-2. **发布到机群**（确认词 `PUBLISH_FLEET`）
+2. **发布到机群**（确认「确认」/`Confirm`）
 3. 节点 Agent 拉取 → 落盘 → 本机 HotApply
 4. Envoy 只连本机 loopback ADS（`127.0.0.1`），不指远程主控
 
@@ -44,6 +44,6 @@
 
 ## 确认词（机群相关）
 
-`PUBLISH_FLEET` · `FLEET_LEAVE` · 本机 `HOT_APPLY` / `RELOAD_ENVOY` · 摘流 `DRAIN_FAIL` / `DRAIN_OK`
+统一确认「确认」/`Confirm`：发布 · 退役 · 本机热更新/硬重启 · 摘流/恢复
 
 接入 `fleet join` 无需确认词（一句话安装命令）。

@@ -36,9 +36,9 @@ func TestBundleT(t *testing.T) {
 	if zh == "" || en == "" || zh == en {
 		t.Fatalf("expected different translations: zh=%q en=%q", zh, en)
 	}
-	got := b.T(langEnglish, "error.confirm_typed", "ROLLBACK")
-	if !strings.Contains(got, "ROLLBACK") {
-		t.Fatalf("format failed: %q", got)
+	got := b.T(langEnglish, "error.confirm_typed")
+	if !strings.Contains(got, "Confirm") {
+		t.Fatalf("confirm hint missing: %q", got)
 	}
 }
 

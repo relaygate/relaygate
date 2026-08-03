@@ -69,7 +69,7 @@ func BuildScalePlaybook(root, mode string) (ScalePlaybook, error) {
 					Title:       "名册移除与吊销令牌",
 					Description: "从节点名册移除并吊销代理凭证。",
 					Checklist:   []string{"已确认退役窗口"},
-					Commands:    []string{"relaygate fleet leave <name>  # 确认 FLEET_LEAVE", "POST /api/ops/fleet/leave"},
+					Commands:    []string{"relaygate fleet leave <name>  # 输入 确认 或 Confirm", "POST /api/ops/fleet/leave"},
 					Automated:   true,
 				},
 				{

@@ -37,7 +37,7 @@ RelayGate（单一产品）
 | 发布配置 | `fleet publish` | 使机群可见新版本 |
 | 已对齐 / 未对齐 / 离线 | aligned / drifted / offline | 节点相对发布版本 |
 | 接入 / 退役 | `fleet join` / `leave` | 名册 + 令牌 |
-| 热更新 / 硬重启 | hot apply / `reload --hard` | 确认词 `HOT_APPLY` / `RELOAD_ENVOY` |
+| 热更新 / 硬重启 | hot apply / `reload --hard` | 二次确认输入「确认」/`Confirm` |
 | 上游 / 转发 / 入口 | upstream / forward / entry | L4 产品主词 |
 
 ## 2. Panel 侧栏（主控）
@@ -56,7 +56,7 @@ RelayGate（单一产品）
 | 监控面板 | Grafana | 中心观测 |
 
 **机群页**：节点列表 · 发布概况 · 接入节点 · 退役节点  
-**配置应用**：本机应用（热/硬）与发布到机群分按钮。
+**配置应用**：本机应用（热/硬）与发布到机群分按钮；风险说明只在各操作二次确认框。
 
 ## 3. CLI 主树
 
@@ -71,15 +71,25 @@ relaygate apply | firewall | drain | diag | …
 
 ## 4. 确认词
 
-| 操作 | 确认词 |
+所有需二次确认的敏感操作统一输入：
+
+| 语言 | 确认词 |
 |------|--------|
-| 热更新 | `HOT_APPLY` |
-| 硬重启 | `RELOAD_ENVOY` |
-| 防火墙 | `YES_FLUSH_NFTABLES` |
-| 发布到机群 | `PUBLISH_FLEET` |
-| 退役节点 | `FLEET_LEAVE` |
-| 应用档位 | `APPLY_PROFILE` |
-| 摘流 / 恢复 | `DRAIN_FAIL` / `DRAIN_OK` |
-| 回滚 | `ROLLBACK` |
+| 中文 | `确认`（精确） |
+| 英文 | `Confirm`（大小写敏感） |
+
+Panel / API / CLI 均接受两者（避免语言切换踩坑）。非交互：`RELAYGATE_CONFIRM=Confirm` 或 `FIREWALL_CONFIRM=Confirm`。
+
+涉及操作：热更新、硬重启、防火墙应用、发布到机群、退役节点、应用档位、摘流/恢复、回滚。
 
 接入 `fleet join` **无需**确认词。
+
+**已废除**的按操作指令词：`HOT_APPLY`、`RELOAD_ENVOY`、`YES_FLUSH_NFTABLES`、`PUBLISH_FLEET`、`FLEET_LEAVE`、`APPLY_PROFILE`、`DRAIN_FAIL` / `DRAIN_OK`、`ROLLBACK`，以及更早的 `FLEET_SYNC` / `SCALE_*`。
+
+## 5. Panel 按钮风险色
+
+| 色 | variant | 典型操作 |
+|----|---------|----------|
+| 红 | `destructive` | 硬重启本机应用、应用防火墙、退役、摘流、回滚、删除上游 |
+| 橙 | `caution` | 热更新本机应用、发布到机群、恢复承接、应用档位 |
+| 灰 | `outline` / `secondary` | 刷新、接入命令、保存、检查、诊断、查看 |

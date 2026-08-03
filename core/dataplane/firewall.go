@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/relaygate/relaygate/core/config"
+	"github.com/relaygate/relaygate/core/confirm"
 	"github.com/relaygate/relaygate/core/resources"
 )
 
@@ -56,7 +57,7 @@ func Firewall(root string, apply bool) error {
 }
 
 // FirewallApplyConfirmed applies nftables after the caller already verified
-// YES_FLUSH_NFTABLES (e.g. Panel API). Skips TTY / env confirm prompts.
+// 确认 / Confirm (e.g. Panel API). Skips TTY / env confirm prompts.
 func FirewallApplyConfirmed(root string) error {
 	return firewallExec(root, true, true)
 }
@@ -119,7 +120,7 @@ func firewallExec(root string, apply bool, skipConfirm bool) error {
 	if !apply {
 		fmt.Println("变更分流：ACL / nftables-only → sudo relaygate firewall apply（无需 reload Envoy）")
 		fmt.Println("默认未应用。确认无误后执行: sudo relaygate firewall apply")
-		fmt.Println("（非交互: sudo APPLY_FIREWALL=1 FIREWALL_CONFIRM=YES_FLUSH_NFTABLES relaygate firewall apply）")
+		fmt.Println("（非交互: sudo APPLY_FIREWALL=1 FIREWALL_CONFIRM=Confirm relaygate firewall apply）")
 		fmt.Println("（Panel：运维工具 → 防火墙检查 / 应用防火墙，经 privileged helper）")
 		return nil
 	}
@@ -159,24 +160,23 @@ func firewallExec(root string, apply bool, skipConfirm bool) error {
 }
 
 func confirmFirewall(env Env) error {
-	const phrase = "YES_FLUSH_NFTABLES"
 	if env.NonInteractive == "1" || os.Getenv("NONINTERACTIVE") == "1" {
-		if env.FirewallConfirm != phrase && os.Getenv("FIREWALL_CONFIRM") != phrase {
-			return fmt.Errorf("非交互应用还需 FIREWALL_CONFIRM=YES_FLUSH_NFTABLES")
+		if !confirm.Match(env.FirewallConfirm) && !confirm.Match(os.Getenv("FIREWALL_CONFIRM")) {
+			return fmt.Errorf("非交互应用还需 FIREWALL_CONFIRM=Confirm（或「确认」）")
 		}
 		return nil
 	}
 	tty, err := os.Open("/dev/tty")
 	if err != nil {
-		return fmt.Errorf("无交互终端；请设置 NONINTERACTIVE=1 和 FIREWALL_CONFIRM=YES_FLUSH_NFTABLES")
+		return fmt.Errorf("无交互终端；请设置 NONINTERACTIVE=1 和 FIREWALL_CONFIRM=Confirm")
 	}
 	defer tty.Close()
-	fmt.Fprint(os.Stderr, "输入 YES_FLUSH_NFTABLES 继续: ")
+	fmt.Fprint(os.Stderr, "输入 确认 或 Confirm 继续: ")
 	sc := bufio.NewScanner(tty)
 	if !sc.Scan() {
 		return fmt.Errorf("已取消")
 	}
-	if strings.TrimSpace(sc.Text()) != phrase {
+	if !confirm.Match(sc.Text()) {
 		return fmt.Errorf("已取消")
 	}
 	return nil

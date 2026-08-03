@@ -13,12 +13,12 @@
 
 ## 发布到机群
 
-1. 建议先在主控 **配置应用 → 本机应用**（`HOT_APPLY` / `RELOAD_ENVOY`）
-2. **发布到机群**，确认词 `PUBLISH_FLEET`
+1. 建议先在主控 **配置应用 → 本机应用**（热更新或硬重启，确认输入「确认」/`Confirm`）
+2. **发布到机群**，确认输入「确认」/`Confirm`
 3. 节点 Agent 自拉并本机热更新；未跟上显示「未对齐」
 
 ```bash
-relaygate fleet publish                 # 或 RELAYGATE_CONFIRM=PUBLISH_FLEET
+relaygate fleet publish                 # 或 RELAYGATE_CONFIRM=Confirm
 relaygate fleet status
 relaygate agent pull                    # 节点侧拉一次
 relaygate agent run                     # 节点常驻
@@ -44,7 +44,7 @@ curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.
 ## 退役节点
 
 1. **机群管理 → 退役节点**（不可退役主控角色）
-2. 确认词 `FLEET_LEAVE`：名册移除并吊销令牌
+2. 确认输入「确认」/`Confirm`：名册移除并吊销令牌
 3. 若用云 LB：deregister 该目标
 
 ## API 摘要
@@ -53,8 +53,8 @@ curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.
 |------|------|------|
 | GET | `/api/ops/fleet` | 节点名册 |
 | GET | `/api/ops/fleet/status` | 对齐状态 / 版本 |
-| POST | `/api/ops/fleet/publish` | `{ "confirm": "PUBLISH_FLEET" }` |
+| POST | `/api/ops/fleet/publish` | `{ "confirm": "Confirm" }`（或「确认」） |
 | POST | `/api/ops/fleet/join` | `{ "name": "gateway-02" }` → `join_command` |
-| POST | `/api/ops/fleet/leave` | `{ "confirm": "FLEET_LEAVE", "name": "…" }` |
+| POST | `/api/ops/fleet/leave` | `{ "confirm": "Confirm", "name": "…" }`（或「确认」） |
 | GET | `/api/agent/config` | 节点拉取（Bearer） |
 | POST | `/api/agent/heartbeat` | 节点心跳（Bearer） |

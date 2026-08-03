@@ -568,7 +568,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                         </Button>
                         <Button
                           size="sm"
-                          variant="outline"
+                          variant="caution"
                           onClick={() => setPromoteTarget(srv.name)}
                           disabled={standby}
                           title={t("servers.promote_hint")}
@@ -1206,7 +1206,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
             <Button variant="ghost" onClick={() => setPromoteTarget(null)} disabled={promoting}>
               {t("servers.cancel")}
             </Button>
-            <Button onClick={confirmPromote} disabled={standby || promoting}>
+            <Button variant="caution" onClick={confirmPromote} disabled={standby || promoting}>
               {promoting ? <Spinner data-icon="inline-start" /> : null}
               {t("servers.promote")}
             </Button>

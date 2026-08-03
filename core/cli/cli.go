@@ -11,6 +11,7 @@ import (
 
 	"github.com/relaygate/relaygate/core/agent"
 	"github.com/relaygate/relaygate/core/config"
+	"github.com/relaygate/relaygate/core/confirm"
 	"github.com/relaygate/relaygate/core/diag"
 	"github.com/relaygate/relaygate/core/render"
 	"github.com/relaygate/relaygate/core/host"
@@ -193,7 +194,7 @@ func runFirewall(args []string) int {
 		case "-h", "--help", "help":
 			fmt.Fprintln(os.Stderr, "usage: relaygate firewall [check|apply]")
 			fmt.Fprintln(os.Stderr, "  check  渲染并校验 nftables（默认，不改主机规则）")
-			fmt.Fprintln(os.Stderr, "  apply  应用规则（需 root；非交互另需 FIREWALL_CONFIRM=YES_FLUSH_NFTABLES）")
+			fmt.Fprintln(os.Stderr, "  apply  应用规则（需 root；非交互另需 FIREWALL_CONFIRM=Confirm）")
 			return 2
 		default:
 			if os.Getenv("APPLY_FIREWALL") == "1" {
@@ -643,9 +644,9 @@ func usage(out *os.File) {
 
 机群（主控）:
   relaygate fleet status
-  relaygate fleet publish              # 确认 PUBLISH_FLEET
+  relaygate fleet publish              # 输入 确认 或 Confirm
   relaygate fleet join <name>          # 打印一句话节点安装命令
-  relaygate fleet leave <name>         # 确认 FLEET_LEAVE
+  relaygate fleet leave <name>         # 输入 确认 或 Confirm
 
 节点代理:
   relaygate agent run                  # 心跳 + 拉取（可内嵌本机 ADS）
@@ -692,7 +693,7 @@ func runFleet(args []string) int {
 		}
 		return 0
 	case "publish":
-		if err := requireConfirm("PUBLISH_FLEET", "将当前业务配置发布为机群新版本；各网关节点将自行拉取并在本机热更新。"); err != nil {
+		if err := requireConfirm("将当前业务配置发布为机群新版本；各网关节点将自行拉取并在本机热更新。"); err != nil {
 			return exitErr(err)
 		}
 		res, err := agent.Publish(root)
@@ -722,7 +723,7 @@ func runFleet(args []string) int {
 			fmt.Fprintln(os.Stderr, "usage: relaygate fleet leave <name>")
 			return 2
 		}
-		if err := requireConfirm("FLEET_LEAVE", "将从机群名册移除该网关节点并吊销其代理凭证。"); err != nil {
+		if err := requireConfirm("将从机群名册移除该网关节点并吊销其代理凭证。"); err != nil {
 			return exitErr(err)
 		}
 		res, err := agent.LeaveNode(root, args[1])
@@ -806,17 +807,17 @@ func runAgent(args []string) int {
 	}
 }
 
-func requireConfirm(phrase, risk string) error {
-	if v := strings.TrimSpace(os.Getenv("RELAYGATE_CONFIRM")); v == phrase {
+func requireConfirm(risk string) error {
+	if confirm.Match(os.Getenv("RELAYGATE_CONFIRM")) {
 		return nil
 	}
 	fmt.Fprintln(os.Stderr, risk)
-	fmt.Fprintf(os.Stderr, "请输入 %s 确认（非交互可设 RELAYGATE_CONFIRM=%s）: ", phrase, phrase)
+	fmt.Fprintf(os.Stderr, "请输入 确认 或 Confirm（非交互可设 RELAYGATE_CONFIRM=Confirm）: ")
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {
-		return fmt.Errorf("需要确认词 %s", phrase)
+		return fmt.Errorf("需要确认（输入 确认 或 Confirm）")
 	}
-	if strings.TrimSpace(line) != phrase {
+	if !confirm.Match(line) {
 		return fmt.Errorf("确认词不匹配，已取消")
 	}
 	return nil

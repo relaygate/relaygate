@@ -57,7 +57,7 @@ func TestDrainRequiresConfirm(t *testing.T) {
 	if rec.Code != 400 {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "DRAIN_FAIL") {
+	if !strings.Contains(rec.Body.String(), "Confirm") && !strings.Contains(rec.Body.String(), "确认") {
 		t.Fatalf("body=%s", rec.Body.String())
 	}
 }
@@ -75,7 +75,7 @@ func TestStandbyAllowsDoctorBlocksDrainFail(t *testing.T) {
 		t.Fatalf("doctor should be allowed on standby: %s", rec.Body.String())
 	}
 
-	body, _ := json.Marshal(map[string]string{"action": "fail", "confirm": "DRAIN_FAIL"})
+	body, _ := json.Marshal(map[string]string{"action": "fail", "confirm": "Confirm"})
 	req = httptest.NewRequest(http.MethodPost, "/api/ops/drain", bytes.NewReader(body))
 	authedCSRF(req, token, csrf)
 	rec = httptest.NewRecorder()
@@ -174,7 +174,7 @@ func TestFirewallApplyRequiresConfirm(t *testing.T) {
 	if rec.Code != 400 {
 		t.Fatalf("firewall apply without confirm status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "YES_FLUSH_NFTABLES") {
+	if !strings.Contains(rec.Body.String(), "Confirm") && !strings.Contains(rec.Body.String(), "确认") {
 		t.Fatalf("expected confirm hint: %s", rec.Body.String())
 	}
 }
@@ -201,8 +201,8 @@ func TestApplyRequiresConfirm(t *testing.T) {
 	if rec.Code != 400 {
 		t.Fatalf("apply without confirm status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "HOT_APPLY") {
-		t.Fatalf("expected HOT_APPLY confirm hint (XDS default on + migrated): %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "Confirm") && !strings.Contains(rec.Body.String(), "确认") {
+		t.Fatalf("expected confirm hint (XDS default on + migrated): %s", rec.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/api/apply", bytes.NewReader(nil))
@@ -227,7 +227,7 @@ func TestFleetPublishRequiresConfirm(t *testing.T) {
 	if rec.Code != 400 {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "PUBLISH_FLEET") {
+	if !strings.Contains(rec.Body.String(), "Confirm") && !strings.Contains(rec.Body.String(), "确认") {
 		t.Fatalf("body=%s", rec.Body.String())
 	}
 }
@@ -237,7 +237,7 @@ func TestStandbyBlocksFleetPublish(t *testing.T) {
 	t.Setenv("PANEL_ROLE", "standby")
 	h := srv.Handler()
 
-	body, _ := json.Marshal(map[string]string{"confirm": "PUBLISH_FLEET"})
+	body, _ := json.Marshal(map[string]string{"confirm": "Confirm"})
 	req := httptest.NewRequest(http.MethodPost, "/api/ops/fleet/publish", bytes.NewReader(body))
 	authedCSRF(req, token, csrf)
 	rec := httptest.NewRecorder()
@@ -327,7 +327,7 @@ func TestFleetLeaveRequiresConfirm(t *testing.T) {
 	if rec.Code != 400 {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "FLEET_LEAVE") {
+	if !strings.Contains(rec.Body.String(), "Confirm") && !strings.Contains(rec.Body.String(), "确认") {
 		t.Fatalf("body=%s", rec.Body.String())
 	}
 }
@@ -338,7 +338,7 @@ func TestStandbyBlocksFleetLeave(t *testing.T) {
 	h := srv.Handler()
 
 	body, _ := json.Marshal(map[string]any{
-		"confirm": "FLEET_LEAVE",
+		"confirm": "Confirm",
 		"name":    "gateway-02",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/ops/fleet/leave", bytes.NewReader(body))

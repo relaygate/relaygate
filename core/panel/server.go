@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/relaygate/relaygate/core/config"
+	"github.com/relaygate/relaygate/core/confirm"
 	"github.com/relaygate/relaygate/core/dataplane"
 	"github.com/relaygate/relaygate/core/render"
 	"github.com/relaygate/relaygate/core/resources"
@@ -1091,13 +1092,8 @@ func (s *Server) apiApply(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": err.Error()})
 		return
 	}
-	before, _, _ := resources.LoadPreviousBackupResources(s.cfg.Root)
-	diff := resources.Diff(before, res)
-	env, _ := dataplane.LoadEnv(s.cfg.Root)
-	mode := dataplane.ApplyModeForRoot(s.cfg.Root, env, diff)
-	phrase := applyConfirmPhrase(mode)
-	if strings.TrimSpace(body.Confirm) != phrase {
-		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", phrase)})
+	if !confirm.Match(body.Confirm) {
+		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed")})
 		return
 	}
 	msg, err := dataplane.ReloadCapture(s.cfg.Root)
@@ -1141,17 +1137,10 @@ func (s *Server) apiApplyPreview(w http.ResponseWriter, r *http.Request) {
 		"needs_reload":       plan.NeedsReload,
 		"needs_firewall":     plan.NeedsFirewall,
 		"apply_mode":         mode,
-		"confirm_phrase":     applyConfirmPhrase(mode),
+		"confirm_phrase":     confirm.Hint(),
 		"bootstrap_migrated": migrated,
 		"needs_hard_reload":  plan.NeedsHardReload || (plan.NeedsReload && mode == "hard"),
 	})
-}
-
-func applyConfirmPhrase(mode string) string {
-	if mode == "hot" {
-		return "HOT_APPLY"
-	}
-	return "RELOAD_ENVOY"
 }
 
 func (s *Server) apiFirewallApply(w http.ResponseWriter, r *http.Request) {
@@ -1163,9 +1152,8 @@ func (s *Server) apiFirewallApply(w http.ResponseWriter, r *http.Request) {
 		Confirm string `json:"confirm"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
-	const phrase = "YES_FLUSH_NFTABLES"
-	if strings.TrimSpace(body.Confirm) != phrase {
-		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", phrase)})
+	if !confirm.Match(body.Confirm) {
+		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed")})
 		return
 	}
 	out, err := dataplane.FirewallApplyCapture(s.cfg.Root)

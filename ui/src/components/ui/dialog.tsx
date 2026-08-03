@@ -132,17 +132,33 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
 
 function DialogDescription({
   className,
+  asChild,
+  children,
   ...props
-}: DialogPrimitive.Description.Props) {
+}: DialogPrimitive.Description.Props & { asChild?: boolean }) {
+  const descriptionClass = cn(
+    "text-sm text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
+    className,
+  )
+  // Radix-style asChild → Base UI `render` (confirm dialogs wrap a <div>).
+  if (asChild && React.isValidElement(children)) {
+    return (
+      <DialogPrimitive.Description
+        data-slot="dialog-description"
+        className={descriptionClass}
+        render={children}
+        {...props}
+      />
+    )
+  }
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn(
-        "text-sm text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
-        className
-      )}
+      className={descriptionClass}
       {...props}
-    />
+    >
+      {children}
+    </DialogPrimitive.Description>
   )
 }
 

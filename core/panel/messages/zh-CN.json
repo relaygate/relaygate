@@ -3,7 +3,7 @@
   "error.grafana_unavailable": "Grafana 暂不可用：%s",
   "error.no_output": "（无输出）",
   "error.drain_action": "操作须为 status、fail 或 ok",
-  "error.confirm_typed": "请输入 %s 确认",
+  "error.confirm_typed": "请输入「确认」或 Confirm",
   "error.invalid_stamp": "无效时间戳",
   "error.summary_not_found": "未找到摘要：%s",
   "login.error_password": "密码错误",

@@ -408,9 +408,9 @@ export async function rollbackPreview(stamp: string): Promise<RollbackPreview> {
   }
 }
 
-export async function rollback(stamp: string): Promise<OpsResult> {
+export async function rollback(stamp: string, confirm: string): Promise<OpsResult> {
   return normalizeOpsResult(
-    await api.post("/api/rollback", { stamp, confirm: "ROLLBACK" }),
+    await api.post("/api/rollback", { stamp, confirm }),
   )
 }
 

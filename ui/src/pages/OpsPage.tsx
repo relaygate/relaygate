@@ -59,6 +59,7 @@ import {
   type RateLimitDefaults,
 } from "@/lib/resourcesDefaults"
 import { cn } from "@/lib/utils"
+import { matchesConfirm } from "@/lib/confirm"
 
 function profileShortLabel(t: (key: string) => string, name: string): string {
   const key = `ops.profile_label.${name}`
@@ -121,7 +122,7 @@ function OpsCard({
 }
 
 export function OpsPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const standby = useStandby()
   const [busy, setBusy] = useState<BusyKey>(null)
   const [doctorOut, setDoctorOut] = useState("")
@@ -188,12 +189,11 @@ export function OpsPage() {
 
   async function runDrain(action: "status" | "fail" | "ok") {
     if (action !== "status") {
-      const expected = `DRAIN_${action.toUpperCase()}`
-      if (drainConfirm !== expected) return
+      if (!matchesConfirm(drainConfirm)) return
     }
     setBusy("drain")
     try {
-      const res = await opsDrain(action, action === "status" ? undefined : drainConfirm)
+      const res = await opsDrain(action, action === "status" ? undefined : drainConfirm.trim())
       setDrainOut(res.output ?? res.error ?? t("error.no_output"))
       toast.success(tf("ops.toast_drain_ok", action))
       setDrainAction(null)
@@ -257,10 +257,10 @@ export function OpsPage() {
   }
 
   async function runProfileApply() {
-    if (!profileName || profileConfirm !== "APPLY_PROFILE") return
+    if (!profileName || !matchesConfirm(profileConfirm)) return
     setBusy("profile")
     try {
-      const res = await opsProfileApply(profileName, profileConfirm)
+      const res = await opsProfileApply(profileName, profileConfirm.trim())
       setProfileOut(res.output ?? t("error.no_output"))
       toast.success(t("ops.toast_profile_ok"))
       setProfileApplyOpen(false)
@@ -325,7 +325,7 @@ export function OpsPage() {
           title={t("ops.doctor")}
           description={t("ops.doctor_desc")}
           actions={
-            <Button size="sm" onClick={runDoctor} disabled={anyBusy}>
+            <Button size="sm" variant="outline" onClick={runDoctor} disabled={anyBusy}>
               {busy === "doctor" ? <Spinner data-icon="inline-start" /> : null}
               {t("ops.run")}
             </Button>
@@ -350,7 +350,7 @@ export function OpsPage() {
           description={t("ops.drain_hint")}
           actions={
             <>
-              <Button size="sm" onClick={() => runDrain("status")} disabled={anyBusy}>
+              <Button size="sm" variant="outline" onClick={() => runDrain("status")} disabled={anyBusy}>
                 {busy === "drain" ? <Spinner data-icon="inline-start" /> : null}
                 {t("ops.btn_drain_status")}
               </Button>
@@ -367,6 +367,7 @@ export function OpsPage() {
               </Button>
               <Button
                 size="sm"
+                variant="caution"
                 onClick={() => {
                   setDrainAction("ok")
                   setDrainConfirm("")
@@ -406,11 +407,11 @@ export function OpsPage() {
                 placeholder="127.0.0.1"
                 aria-label={t("ops.host")}
               />
-              <Button size="sm" onClick={() => runProbe("smoke")} disabled={anyBusy}>
+              <Button size="sm" variant="outline" onClick={() => runProbe("smoke")} disabled={anyBusy}>
                 {busy === "smoke" ? <Spinner data-icon="inline-start" /> : null}
                 {t("ops.btn_smoke")}
               </Button>
-              <Button size="sm" onClick={() => runProbe("canary")} disabled={anyBusy}>
+              <Button size="sm" variant="outline" onClick={() => runProbe("canary")} disabled={anyBusy}>
                 {busy === "canary" ? <Spinner data-icon="inline-start" /> : null}
                 {t("ops.btn_canary")}
               </Button>
@@ -436,7 +437,7 @@ export function OpsPage() {
           description={t("ops.fw_desc")}
           actions={
             <>
-              <Button size="sm" onClick={runFirewall} disabled={anyBusy}>
+              <Button size="sm" variant="outline" onClick={runFirewall} disabled={anyBusy}>
                 {busy === "firewall" ? <Spinner data-icon="inline-start" /> : null}
                 {t("ops.fw_check")}
               </Button>
@@ -471,7 +472,7 @@ export function OpsPage() {
             <>
               <Button
                 size="sm"
-                variant="secondary"
+                variant="outline"
                 onClick={() => {
                   setRlLoading(true)
                   loadRateLimits()
@@ -488,6 +489,7 @@ export function OpsPage() {
               </Button>
               <Button
                 size="sm"
+                variant="outline"
                 onClick={saveRateLimits}
                 disabled={standby || anyBusy || rlLoading || !rl || !rlDirty}
               >
@@ -620,7 +622,7 @@ export function OpsPage() {
                 </Select>
                 <Button
                   size="sm"
-                  variant="secondary"
+                  variant="outline"
                   onClick={runProfilePreview}
                   disabled={anyBusy || !profileName}
                 >
@@ -629,6 +631,7 @@ export function OpsPage() {
                 </Button>
                 <Button
                   size="sm"
+                  variant="caution"
                   onClick={() => {
                     setProfileConfirm("")
                     setProfileApplyOpen(true)
@@ -672,22 +675,27 @@ export function OpsPage() {
             <DialogTitle>
               {drainAction === "fail" ? t("ops.btn_drain_fail") : t("ops.btn_drain_ok")}
             </DialogTitle>
-            <DialogDescription>
-              {drainAction === "fail" ? t("ops.drain_confirm_fail") : t("ops.drain_confirm_ok")}
+            <DialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  {drainAction === "fail" ? t("ops.drain_confirm_fail") : t("ops.drain_confirm_ok")}
+                </p>
+                {drainAction === "fail" ? (
+                  <p className="text-destructive">{t("ops.drain_confirm_fail_disconnect")}</p>
+                ) : null}
+              </div>
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="drain-confirm">
-                {drainAction === "fail" ? "DRAIN_FAIL" : "DRAIN_OK"}
-              </FieldLabel>
+              <FieldLabel htmlFor="drain-confirm">{t("common.confirm_typed_label")}</FieldLabel>
               <Input
                 id="drain-confirm"
                 value={drainConfirm}
                 onChange={(e) => setDrainConfirm(e.target.value)}
                 disabled={busy === "drain"}
                 autoComplete="off"
-                className="font-mono"
+                placeholder={i18n.language.toLowerCase().startsWith("zh") ? "确认" : "Confirm"}
               />
             </Field>
           </FieldGroup>
@@ -700,13 +708,13 @@ export function OpsPage() {
               {t("ops.cancel")}
             </Button>
             <Button
-              variant={drainAction === "fail" ? "destructive" : "default"}
+              variant={drainAction === "fail" ? "destructive" : "caution"}
               onClick={() => drainAction && runDrain(drainAction)}
               disabled={
                 standby ||
                 busy === "drain" ||
                 !drainAction ||
-                drainConfirm !== `DRAIN_${drainAction.toUpperCase()}`
+                !matchesConfirm(drainConfirm)
               }
             >
               {busy === "drain" ? <Spinner data-icon="inline-start" /> : null}
@@ -728,29 +736,29 @@ export function OpsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("ops.profile_apply")}</DialogTitle>
-            <DialogDescription>
-              {profileName ? (
-                <>
-                  {t("ops.profile_select")}: {profileShortLabel(t, profileName)}{" "}
-                  <code className="font-mono text-foreground">({profileName})</code>
-                  <br />
-                  {t("ops.profile_confirm_body")}
-                </>
-              ) : (
-                t("ops.profile_confirm_body")
-              )}
+            <DialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                {profileName ? (
+                  <p>
+                    {t("ops.profile_select")}: {profileShortLabel(t, profileName)}{" "}
+                    <code className="font-mono text-foreground">({profileName})</code>
+                  </p>
+                ) : null}
+                <p>{t("ops.profile_confirm_body")}</p>
+                <p className="text-destructive">{t("ops.profile_confirm_disconnect")}</p>
+              </div>
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="profile-confirm">{t("ops.profile_confirm")}</FieldLabel>
+              <FieldLabel htmlFor="profile-confirm">{t("common.confirm_typed_label")}</FieldLabel>
               <Input
                 id="profile-confirm"
                 value={profileConfirm}
                 onChange={(e) => setProfileConfirm(e.target.value)}
                 disabled={standby || busy === "profile"}
                 autoComplete="off"
-                className="font-mono"
+                placeholder={i18n.language.toLowerCase().startsWith("zh") ? "确认" : "Confirm"}
               />
             </Field>
           </FieldGroup>
@@ -763,8 +771,9 @@ export function OpsPage() {
               {t("ops.cancel")}
             </Button>
             <Button
+              variant="caution"
               onClick={runProfileApply}
-              disabled={standby || busy === "profile" || profileConfirm !== "APPLY_PROFILE"}
+              disabled={standby || busy === "profile" || !matchesConfirm(profileConfirm)}
             >
               {busy === "profile" ? <Spinner data-icon="inline-start" /> : null}
               {t("ops.profile_apply")}

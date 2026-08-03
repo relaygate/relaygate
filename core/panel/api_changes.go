@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/relaygate/relaygate/core/confirm"
 	"github.com/relaygate/relaygate/core/dataplane"
 	"github.com/relaygate/relaygate/core/resources"
 )
@@ -114,8 +115,8 @@ func (s *Server) apiRollback(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.invalid_stamp")})
 		return
 	}
-	if strings.TrimSpace(body.Confirm) != "ROLLBACK" {
-		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", "ROLLBACK")})
+	if !confirm.Match(body.Confirm) {
+		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed")})
 		return
 	}
 	out, err := dataplane.RollbackCapture(s.cfg.Root, stamp)

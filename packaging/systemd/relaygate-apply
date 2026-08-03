@@ -6,7 +6,7 @@
 # Allowed subcommands (argv[1]):
 #   reload              — Envoy reload via docker (default if omitted; backward compatible)
 #   firewall-check      — render + nft -c (no ruleset change)
-#   firewall-apply      — apply nftables (Panel already confirmed YES_FLUSH_NFTABLES)
+#   firewall-apply      — apply nftables (Panel already confirmed 确认/Confirm)
 #   rollback [STAMP]    — restore backup + recreate Envoy
 #
 # No shell, no arbitrary args, no docker.sock for the Panel user.
@@ -49,9 +49,9 @@ case "$cmd" in
       echo "ERROR: firewall-apply takes no arguments" >&2
       exit 2
     fi
-    # Panel UI already required YES_FLUSH_NFTABLES; elevate with the same gate.
+    # Panel UI already required 确认/Confirm; elevate with the same gate.
     export NONINTERACTIVE=1
-    export FIREWALL_CONFIRM=YES_FLUSH_NFTABLES
+    export FIREWALL_CONFIRM=Confirm
     export APPLY_FIREWALL=1
     exec "$BIN" firewall apply
     ;;

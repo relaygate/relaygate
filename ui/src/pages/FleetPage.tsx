@@ -44,6 +44,7 @@ import {
   type FleetOverview,
   type FleetStatusOverview,
 } from "@/lib/api"
+import { matchesConfirm } from "@/lib/confirm"
 import { cn } from "@/lib/utils"
 
 type BusyKey = "join" | "leave" | null
@@ -136,7 +137,7 @@ function FleetCard({
 }
 
 export function FleetPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const standby = useStandby()
   const [busy, setBusy] = useState<BusyKey>(null)
   const [fleet, setFleet] = useState<FleetOverview | null>(null)
@@ -219,11 +220,11 @@ export function FleetPage() {
   }
 
   async function runLeave() {
-    if (leaveConfirm !== "FLEET_LEAVE" || !leaveName) return
+    if (!matchesConfirm(leaveConfirm) || !leaveName) return
     setBusy("leave")
     setLeaveHints([])
     try {
-      const res = await opsFleetLeave({ confirm: leaveConfirm, name: leaveName })
+      const res = await opsFleetLeave({ confirm: leaveConfirm.trim(), name: leaveName })
       if (res.ok) {
         setLeaveHints(res.manual_hints ?? [])
         toast.success(t("fleet.toast_leave_ok"))
@@ -266,7 +267,7 @@ export function FleetPage() {
           description={t("fleet.list_desc")}
           className="lg:col-span-2"
           actions={
-            <Button size="sm" variant="secondary" onClick={() => void loadFleet()} disabled={fleetBusy}>
+            <Button size="sm" variant="outline" onClick={() => void loadFleet()} disabled={fleetBusy}>
               {fleetBusy ? <Spinner data-icon="inline-start" /> : null}
               {t("fleet.refresh")}
             </Button>
@@ -326,7 +327,7 @@ export function FleetPage() {
             to="/apply"
             className={standby ? "pointer-events-none opacity-50" : undefined}
           >
-            <Button size="sm" disabled={standby}>
+            <Button size="sm" variant="outline" disabled={standby}>
               {t("fleet.publish_goto_apply")}
             </Button>
           </Link>
@@ -339,6 +340,7 @@ export function FleetPage() {
           actions={
             <Button
               size="sm"
+              variant="outline"
               onClick={() => void runJoin()}
               disabled={standby || anyBusy || !joinName.trim()}
             >
@@ -364,7 +366,7 @@ export function FleetPage() {
             <div className="mt-2 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-medium text-foreground">{t("fleet.join_command_label")}</p>
-                <Button size="sm" variant="secondary" onClick={() => void copyJoinCommand()}>
+                <Button size="sm" variant="outline" onClick={() => void copyJoinCommand()}>
                   {t("fleet.copy_command")}
                 </Button>
               </div>
@@ -446,14 +448,14 @@ export function FleetPage() {
           </DialogHeader>
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="leave-confirm">{t("fleet.leave_confirm")}</FieldLabel>
+              <FieldLabel htmlFor="leave-confirm">{t("common.confirm_typed_label")}</FieldLabel>
               <Input
                 id="leave-confirm"
                 value={leaveConfirm}
                 onChange={(e) => setLeaveConfirm(e.target.value)}
                 disabled={standby || busy === "leave"}
                 autoComplete="off"
-                className="font-mono"
+                placeholder={i18n.language.toLowerCase().startsWith("zh") ? "确认" : "Confirm"}
               />
             </Field>
           </FieldGroup>
@@ -464,7 +466,7 @@ export function FleetPage() {
             <Button
               variant="destructive"
               onClick={() => void runLeave()}
-              disabled={standby || busy === "leave" || leaveConfirm !== "FLEET_LEAVE"}
+              disabled={standby || busy === "leave" || !matchesConfirm(leaveConfirm)}
             >
               {busy === "leave" ? <Spinner data-icon="inline-start" /> : null}
               {t("fleet.leave_run")}

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/relaygate/relaygate/core/agent"
+	"github.com/relaygate/relaygate/core/confirm"
 	"github.com/relaygate/relaygate/core/diag"
 	"github.com/relaygate/relaygate/core/dataplane"
 	"github.com/relaygate/relaygate/core/profile"
@@ -79,9 +80,9 @@ func (s *Server) apiFleet(w http.ResponseWriter, r *http.Request) {
 func fleetProductHints() []string {
 	return []string{
 		"relaygate fleet status",
-		"relaygate fleet publish   # 确认 PUBLISH_FLEET",
+		"relaygate fleet publish   # 输入 确认 或 Confirm",
 		"relaygate fleet join <name>   # 生成一句话安装命令",
-		"relaygate fleet leave <name> # 确认 FLEET_LEAVE",
+		"relaygate fleet leave <name> # 输入 确认 或 Confirm",
 		"# 安装主控: " + agent.FormatControlInstallCommand(),
 		"# 升级（主控/节点）: " + agent.FormatUpgradeCommand(),
 		"# 节点接入: 粘贴 join 输出的一行，或以 PRIMARY_URL+AGENT_TOKEN 跑 install.sh",
@@ -118,8 +119,8 @@ func (s *Server) apiFleetPublish(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": err.Error()})
 		return
 	}
-	if strings.TrimSpace(body.Confirm) != "PUBLISH_FLEET" {
-		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", "PUBLISH_FLEET")})
+	if !confirm.Match(body.Confirm) {
+		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed")})
 		return
 	}
 	res, err := agent.Publish(s.cfg.Root)
@@ -185,8 +186,8 @@ func (s *Server) apiFleetLeave(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": err.Error()})
 		return
 	}
-	if strings.TrimSpace(body.Confirm) != "FLEET_LEAVE" {
-		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", "FLEET_LEAVE")})
+	if !confirm.Match(body.Confirm) {
+		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed")})
 		return
 	}
 	res, err := agent.LeaveNode(s.cfg.Root, body.Name)
@@ -227,9 +228,8 @@ func (s *Server) apiDrain(w http.ResponseWriter, r *http.Request) {
 			s.refuseStandbyWrite(w, r)
 			return
 		}
-		want := "DRAIN_" + strings.ToUpper(action)
-		if strings.TrimSpace(body.Confirm) != want {
-			writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", want)})
+		if !confirm.Match(body.Confirm) {
+			writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed")})
 			return
 		}
 	}
@@ -324,8 +324,8 @@ func (s *Server) apiProfileApply(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": err.Error()})
 		return
 	}
-	if strings.TrimSpace(body.Confirm) != "APPLY_PROFILE" {
-		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", "APPLY_PROFILE")})
+	if !confirm.Match(body.Confirm) {
+		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed")})
 		return
 	}
 	name := strings.TrimSpace(body.Name)

@@ -14,6 +14,20 @@
 
 ### Security
 
+## [0.1.9] - 2026-08-04
+
+### Added
+- 主控/节点一键安装与升级，以及 `fleet join` 一句话接入命令
+- 机群发布/节点拉取与本机热更新（废除 fleet-sync 产品主路径）
+- Panel 支持限流默认值编辑
+
+### Changed
+- 危险操作确认词统一为「确认」或 `Confirm`（废除 `HOT_APPLY` / `RELOAD_ENVOY` / `PUBLISH_FLEET` 等按操作区分的指令词）
+- Panel 写操作按钮按风险着色：红（破坏/断连）、橙（需留意）、灰（常规）
+- 精简运维日志框展示与应用页文案；应用/reload/rollback 标明断连风险
+- 对内主控/节点双组件重构（ops→dataplane、doctor→diag）；默认示例密码改为 `relaygate`
+- 精简 xDS/机群文档与开源贡献/安全元数据
+
 <!--
 发版时：将 Unreleased 条目移入下方新节，例如：
 

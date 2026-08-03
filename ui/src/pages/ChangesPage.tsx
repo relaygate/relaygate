@@ -35,10 +35,11 @@ import {
   rollback,
   rollbackPreview,
 } from "@/lib/api"
+import { matchesConfirm } from "@/lib/confirm"
 import type { ChangeEntry } from "@/lib/types"
 
 export function ChangesPage({ embedded = false }: { embedded?: boolean }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const standby = useStandby()
   const [entries, setEntries] = useState<ChangeEntry[]>([])
   const [selectedStamp, setSelectedStamp] = useState<string | null>(null)
@@ -92,10 +93,10 @@ export function ChangesPage({ embedded = false }: { embedded?: boolean }) {
   }
 
   async function runRollback() {
-    if (!rollbackStamp || standby) return
+    if (!rollbackStamp || standby || !matchesConfirm(rollbackConfirm)) return
     setRollbackBusy(true)
     try {
-      const res = await rollback(rollbackStamp)
+      const res = await rollback(rollbackStamp, rollbackConfirm.trim())
       setRollbackResult(res.output ?? t("changes.rollback_ok"))
       setRollbackConfirm("")
       toast.success(t("changes.rollback_ok"))
@@ -163,7 +164,7 @@ export function ChangesPage({ embedded = false }: { embedded?: boolean }) {
                       </Button>
                       <Button
                         size="sm"
-                        variant="outline"
+                        variant="destructive"
                         onClick={() => openRollback(entry.stamp)}
                         disabled={standby}
                       >
@@ -222,22 +223,27 @@ export function ChangesPage({ embedded = false }: { embedded?: boolean }) {
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>{t("changes.rollback")}</DialogTitle>
-            <DialogDescription>
-              {t("changes.rollback_to")}:{" "}
-              <code className="font-mono text-foreground">{rollbackStamp}</code>
-              <br />
-              {t("changes.rollback_body")}
+            <DialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  {t("changes.rollback_to")}:{" "}
+                  <code className="font-mono text-foreground">{rollbackStamp}</code>
+                </p>
+                <p>{t("changes.rollback_body")}</p>
+                <p className="text-destructive">{t("changes.rollback_disconnect")}</p>
+              </div>
             </DialogDescription>
           </DialogHeader>
           <DiffView value={rollbackSummary} />
           <FieldGroup>
             <Field>
-              <FieldLabel>{t("changes.rollback_confirm")}</FieldLabel>
+              <FieldLabel>{t("common.confirm_typed_label")}</FieldLabel>
               <Input
                 value={rollbackConfirm}
                 onChange={(e) => setRollbackConfirm(e.target.value)}
                 disabled={standby || rollbackBusy}
                 autoComplete="off"
+                placeholder={i18n.language.toLowerCase().startsWith("zh") ? "确认" : "Confirm"}
               />
             </Field>
           </FieldGroup>
@@ -249,7 +255,7 @@ export function ChangesPage({ embedded = false }: { embedded?: boolean }) {
             <Button
               variant="destructive"
               onClick={runRollback}
-              disabled={standby || rollbackBusy || rollbackConfirm !== "ROLLBACK"}
+              disabled={standby || rollbackBusy || !matchesConfirm(rollbackConfirm)}
             >
               {rollbackBusy ? <Spinner data-icon="inline-start" /> : null}
               {t("changes.rollback_run")}
