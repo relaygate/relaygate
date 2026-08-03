@@ -19,10 +19,11 @@ import (
 	"time"
 
 	"github.com/relaygate/relaygate/core/config"
-	"github.com/relaygate/relaygate/core/ops"
+	"github.com/relaygate/relaygate/core/dataplane"
 	"github.com/relaygate/relaygate/core/render"
 	"github.com/relaygate/relaygate/core/resources"
 	"github.com/relaygate/relaygate/core/status"
+	"github.com/relaygate/relaygate/core/xds"
 )
 
 const (
@@ -239,10 +240,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/firewall/apply", s.withAuth(s.apiFirewallApply))
 	mux.HandleFunc("/api/status/envoy", s.withAuthReadonly(s.apiEnvoyStatus))
 	mux.HandleFunc("/api/status/traffic", s.withAuthReadonly(s.apiTrafficStatus))
+	mux.HandleFunc("/api/status/xds", s.withAuthReadonly(s.apiXDSStatus))
 
 	// Ops / changes
 	mux.HandleFunc("/api/profiles", s.withAuthReadonly(s.apiProfiles))
 	mux.HandleFunc("/api/ops/doctor", s.withAuthReadonly(s.apiDoctor))
+	mux.HandleFunc("/api/ops/fleet", s.withAuthReadonly(s.apiFleet))
+	mux.HandleFunc("/api/ops/fleet/status", s.withAuthReadonly(s.apiFleetStatus))
+	mux.HandleFunc("/api/ops/fleet/publish", s.withAuth(s.apiFleetPublish))
+	mux.HandleFunc("/api/ops/fleet/join", s.withAuth(s.apiFleetJoin))
+	mux.HandleFunc("/api/ops/fleet/leave", s.withAuth(s.apiFleetLeave))
+	mux.HandleFunc("/api/agent/config", s.apiAgentConfig)
+	mux.HandleFunc("/api/agent/heartbeat", s.apiAgentHeartbeat)
 	mux.HandleFunc("/api/ops/drain", s.withAuthReadonly(s.apiDrain))
 	mux.HandleFunc("/api/ops/smoke", s.withAuthReadonly(s.apiSmoke))
 	mux.HandleFunc("/api/ops/canary", s.withAuthReadonly(s.apiCanary))
@@ -300,6 +309,9 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) ListenAndServe() error {
+	if err := StartXDSSidecar(s.cfg.Root); err != nil {
+		log.Printf("WARN: xDS sidecar: %v", err)
+	}
 	log.Printf("relaygate panel listening on http://%s (ui=%s)", s.cfg.Bind, s.cfg.UIDir)
 	return http.ListenAndServe(s.cfg.Bind, s.Handler())
 }
@@ -1070,11 +1082,6 @@ func (s *Server) apiApply(w http.ResponseWriter, r *http.Request) {
 		Confirm string `json:"confirm"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
-	const phrase = "RELOAD_ENVOY"
-	if strings.TrimSpace(body.Confirm) != phrase {
-		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", phrase)})
-		return
-	}
 	res, err := s.load()
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
@@ -1084,10 +1091,20 @@ func (s *Server) apiApply(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": err.Error()})
 		return
 	}
-	msg, err := ops.ReloadCapture(s.cfg.Root)
+	before, _, _ := resources.LoadPreviousBackupResources(s.cfg.Root)
+	diff := resources.Diff(before, res)
+	env, _ := dataplane.LoadEnv(s.cfg.Root)
+	mode := dataplane.ApplyModeForRoot(s.cfg.Root, env, diff)
+	phrase := applyConfirmPhrase(mode)
+	if strings.TrimSpace(body.Confirm) != phrase {
+		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", phrase)})
+		return
+	}
+	msg, err := dataplane.ReloadCapture(s.cfg.Root)
 	if err != nil {
-		s.lastApply = time.Now().Format(time.RFC3339) + " FAIL: " + err.Error() + "\n" + msg
-		writeJSON(w, 500, map[string]any{"error": err.Error(), "output": msg, "ok": false})
+		human := dataplane.UserFacingError(err)
+		s.lastApply = time.Now().Format(time.RFC3339) + " FAIL: " + human + "\n" + msg
+		writeJSON(w, 500, map[string]any{"error": human, "detail": err.Error(), "output": msg, "ok": false})
 		return
 	}
 	s.lastApply = time.Now().Format(time.RFC3339) + " OK\n" + msg
@@ -1113,14 +1130,28 @@ func (s *Server) apiApplyPreview(w http.ResponseWriter, r *http.Request) {
 	b.WriteString(render.Summarize(res))
 	last := s.lastApply
 	if last == "" {
-		last = s.t(r, "apply.none")
+		last = s.t(r, "dataplane.none")
 	}
+	env, _ := dataplane.LoadEnv(s.cfg.Root)
+	mode := dataplane.ApplyModeForRoot(s.cfg.Root, env, diff)
+	migrated := dataplane.BootstrapMigrated(s.cfg.Root)
 	writeJSON(w, 200, map[string]any{
-		"summary":        b.String(),
-		"last_apply":     last,
-		"needs_reload":   plan.NeedsReload,
-		"needs_firewall": plan.NeedsFirewall,
+		"summary":            b.String(),
+		"last_apply":         last,
+		"needs_reload":       plan.NeedsReload,
+		"needs_firewall":     plan.NeedsFirewall,
+		"apply_mode":         mode,
+		"confirm_phrase":     applyConfirmPhrase(mode),
+		"bootstrap_migrated": migrated,
+		"needs_hard_reload":  plan.NeedsHardReload || (plan.NeedsReload && mode == "hard"),
 	})
+}
+
+func applyConfirmPhrase(mode string) string {
+	if mode == "hot" {
+		return "HOT_APPLY"
+	}
+	return "RELOAD_ENVOY"
 }
 
 func (s *Server) apiFirewallApply(w http.ResponseWriter, r *http.Request) {
@@ -1137,10 +1168,10 @@ func (s *Server) apiFirewallApply(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", phrase)})
 		return
 	}
-	out, err := ops.FirewallApplyCapture(s.cfg.Root)
+	out, err := dataplane.FirewallApplyCapture(s.cfg.Root)
 	if err != nil {
 		if strings.Contains(err.Error(), "需要 root") {
-			out = strings.TrimSpace(out) + "\n" + s.t(r, "ops.fw_root_hint")
+			out = strings.TrimSpace(out) + "\n" + s.t(r, "dataplane.fw_root_hint")
 		}
 		s.lastApply = time.Now().Format(time.RFC3339) + " FIREWALL FAIL: " + err.Error() + "\n" + out
 		writeOpsResult(w, out, err)
@@ -1157,4 +1188,21 @@ func (s *Server) apiEnvoyStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) apiTrafficStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, s.status.Traffic())
+}
+
+func (s *Server) apiXDSStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	env, err := dataplane.LoadEnv(s.cfg.Root)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"xds_enabled": env.XDSEnabled,
+		"xds_port":    env.XDSPort,
+		"metrics":     xds.PrometheusText(env.GatewayName),
+	})
 }

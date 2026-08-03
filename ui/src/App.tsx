@@ -8,6 +8,7 @@ import { ChangesPage } from "@/pages/ChangesPage"
 import { ConfigPage } from "@/pages/ConfigPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { MonitoringPage } from "@/pages/MonitoringPage"
+import { FleetPage } from "@/pages/FleetPage"
 import { OpsPage } from "@/pages/OpsPage"
 import { OverviewPage } from "@/pages/OverviewPage"
 import { RulesPage } from "@/pages/RulesPage"
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="config" element={<ConfigPage />} />
           <Route path="apply" element={<ApplyPage />} />
           <Route path="ops" element={<OpsPage />} />
+          <Route path="fleet" element={<FleetPage />} />
           <Route path="changes" element={<ChangesPage />} />
           <Route path="monitoring" element={<MonitoringPage />} />
         </Route>

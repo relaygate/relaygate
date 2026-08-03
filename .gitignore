@@ -11,10 +11,9 @@
 # 误用顶层 data/ 时产生的运行态（含 panel.pid）；安装树 data/ 不在本仓库布局内
 /data/
 
-# 本地环境文件（模板：根 .env.example、以及 packaging/**/.env.example）
+# 本地环境文件（模板：packaging/templates/ 与 packaging/**/.env.example）
 .env
 .env.*
-!.env.example
 !**/.env.example
 
 # IDE / OS

@@ -31,7 +31,7 @@ fmt:
 
 # Dev validate writes runtime under .runtime/ (not a source-tree data/).
 validate: build
-	@test -f .env || cp .env.example .env
+	@test -f .env || cp packaging/shared/env.example .env
 	./$(BIN) setup --noninteractive
 	./$(BIN) validate
 
@@ -49,11 +49,7 @@ dist: build
 	mkdir -p "$(DIST_DIR)/ui"
 	cp -a ui/dist "$(DIST_DIR)/ui/"
 	cp -a packaging "$(DIST_DIR)/"
-	# 根级初始化模板（非运行态）
-	cp -a .env.example resources.example.yaml \
-		gateway-01.env.example gateway-02.env.example \
-		gateways.env.example \
-		install.sh "$(DIST_DIR)/"
+	cp -a install.sh "$(DIST_DIR)/"
 	chmod 755 "$(DIST_DIR)/install.sh"
 	printf '%s\n' "$(VERSION)" > "$(DIST_DIR)/RELEASE"
 	# 便于 FindRoot / 文档；不含完整源码

@@ -51,24 +51,13 @@ import type { Profile } from "@/lib/types"
 import { tf } from "@/i18n"
 import { cn } from "@/lib/utils"
 
-function profileShortLabel(
-  t: (key: string) => string,
-  name: string,
-): string {
+function profileShortLabel(t: (key: string) => string, name: string): string {
   const key = `ops.profile_label.${name}`
   const label = t(key)
   return label === key ? name.replace(/-/g, " ") : label
 }
 
-type BusyKey =
-  | "doctor"
-  | "drain"
-  | "smoke"
-  | "canary"
-  | "firewall"
-  | "preview"
-  | "profile"
-  | null
+type BusyKey = "doctor" | "drain" | "smoke" | "canary" | "firewall" | "preview" | "profile" | null
 
 function OpsCard({
   icon,
@@ -233,7 +222,6 @@ export function OpsPage() {
     setBusy("profile")
     try {
       const res = await opsProfileApply(profileName, profileConfirm)
-      // Backend already appends ops.profile_applied_body to output
       setProfileOut(res.output ?? t("error.no_output"))
       toast.success(t("ops.toast_profile_ok"))
       setProfileApplyOpen(false)

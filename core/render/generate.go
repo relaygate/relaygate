@@ -196,6 +196,7 @@ func WriteWith(envoyPath, nftPath string, r *resources.Resources, opt Options) e
 }
 
 func renderTCPCluster(server resources.Server, d resources.Defaults) map[string]any {
+	d.ApplyOutlierDefaults()
 	name := UpstreamClusterName(server.Name, "TCP")
 	tcpPort := server.TCPPort()
 	hcPort := server.HealthCheckPort()
@@ -212,7 +213,7 @@ func renderTCPCluster(server resources.Server, d resources.Defaults) map[string]
 			"port_value": hcPort,
 		}
 	}
-	return map[string]any{
+	cluster := map[string]any{
 		"name":            name,
 		"type":            "STATIC",
 		"connect_timeout": "2s",
@@ -248,6 +249,26 @@ func renderTCPCluster(server resources.Server, d resources.Defaults) map[string]
 				},
 			},
 		},
+	}
+	if od := outlierDetectionConfig(d); od != nil {
+		cluster["outlier_detection"] = od
+	}
+	return cluster
+}
+
+// outlierDetectionConfig returns Envoy outlier_detection for TCP when enabled.
+// Uses local-origin failure counting (connect failures); default off.
+func outlierDetectionConfig(d resources.Defaults) map[string]any {
+	if !d.OutlierDetection.Enabled {
+		return nil
+	}
+	return map[string]any{
+		"split_external_local_origin_errors":     true,
+		"consecutive_local_origin_failure":       d.OutlierDetection.ConsecutiveLocalOriginFailure,
+		"interval":                               d.OutlierDetection.Interval,
+		"base_ejection_time":                     d.OutlierDetection.BaseEjectionTime,
+		"max_ejection_percent":                   100,
+		"enforcing_consecutive_local_origin_failure": 100,
 	}
 }
 

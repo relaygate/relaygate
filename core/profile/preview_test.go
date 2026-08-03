@@ -10,6 +10,7 @@ import (
 )
 
 func TestPreviewDoesNotWrite(t *testing.T) {
+	config.IsolateDataDirEnv(t)
 	root := t.TempDir()
 	data := config.ResolveDataDir(root)
 	if err := os.MkdirAll(data, 0o755); err != nil {

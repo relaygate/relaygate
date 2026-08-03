@@ -1,21 +1,23 @@
 # RelayGate
 
-基于 **Envoy** 的游戏 **L4 TCP/UDP 网关**。用一份 Rules-first 的 `resources.yaml` 描述上游与转发；日常运维靠 `relaygate` CLI 与 Panel（`:9000`）。
+基于 **Envoy** 的通用 **L4 TCP/UDP 网关**。用一份 Rules-first 的 `resources.yaml` 描述上游与转发；日常运维靠 `relaygate` CLI 与 Panel（`:9000`）。
 
 ```text
-玩家（下游）→ 云 L4 LB（可选）→ 网关入口 / Listener → Envoy → 上游（游戏服）
+客户端（下游）→ 云 L4 LB（可选）→ 网关入口 / Listener → Envoy → 上游服务
 ```
 
 | 概念 | 说明 |
 |------|------|
-| **上游** `servers` | 需要代理到的游戏服（地址 + TCP/UDP 端口）；固定目标，非多成员 LB |
+| **上游** `servers` | 回源目标（地址 + TCP/UDP 端口）；固定单目标，非多成员 LB |
 | **转发** `rules` | 入口（类型 + 监听端口 + 协议）→ 某一上游；命名 `forward-{server}-{entry}-{proto}` |
 | **入口类型** `entry` | `validation`（验证）/ `production`（正式），可并行；回退 = 关正式转发 |
 | **运行态** | 默认 `/opt/relaygate/data`（可用 `RELAYGATE_DATA_DIR` 覆盖） |
 
-**已知边界：** 固定目标转发（不做跨服 LB）· UDP 无可靠主动健康检查 · 上游看到的是网关源 IP · Envoy 非抗 DDoS（大流量需云高防）· 默认 `PROXY_PROTOCOL=off`（公网直连；有云 LB 发 PROXY 时再开，见 [logging-playbook](docs/logging-playbook.md)）
+**已知边界：** 固定目标转发（不做多上游成员 LB）· UDP 无可靠主动健康检查 · 上游看到的是网关源 IP · Envoy 非抗 DDoS（大流量需云高防）· 默认 `PROXY_PROTOCOL=off`（公网直连；有云 LB 发 PROXY 时再开，见 [logging-playbook](docs/logging-playbook.md)）
 
 产品用语与 YAML 字段对照见文末 [术语](#术语运维对照)。
+
+**延伸阅读（运维）：** [能力边界与路线图](docs/envoy-capability-roadmap.md) · [热更新 xDS](docs/hot-update-xds.md) · [xDS 迁移](docs/xds-migrate.md) · [舰队运维](docs/fleet-ops.md) · [主管控与伸缩](docs/fleet-scale-control-plane.md) · [中心观测](packaging/observability/README.md)
 
 ---
 
@@ -38,15 +40,22 @@
 
 `install.sh` 只做 bootstrap：下载 release tar → 解压到 `/opt/relaygate` → 调用 CLI。Compose、Panel、防火墙由 `relaygate` 完成。
 
+RelayGate 是**单一产品**，按角色安装两个组件之一（详见 [产品表面 · 对内双组件](docs/product-surface-agent.md#0-对内双组件单一产品--非双产品线)）：
+
+| 角色 | 环境模板 | 启用什么 |
+|------|----------|----------|
+| **主控** | [`packaging/control/env.example`](packaging/control/env.example) | Panel（意图/发布/节点名册）+ 可选本机转发与中心观测 |
+| **节点** | [`packaging/node/env.example`](packaging/node/env.example) | Envoy + agent（`PRIMARY_URL` / `AGENT_TOKEN_FILE`）；`ENABLE_PANEL=0` |
+
 ### 一键安装
 
-默认安装 **最新 GitHub Release**：
+默认安装 **最新 GitHub Release**（默认按主控：`ENABLE_PANEL=1`）：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh | sudo bash
 ```
 
-需要固定版本或使用本地包时：
+需要固定版本、本地包或安装为节点时：
 
 ```bash
 # 固定 Release tag
@@ -54,6 +63,9 @@ curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.
 
 # 本地 tar.gz（跳过下载）
 sudo RELAYGATE_TAR=/path/relaygate-v0.1.0-linux-amd64.tar.gz bash install.sh
+
+# 网关节点（无 Panel）：安装后 cp node.env.example 为 .env，写入令牌后 agent run
+sudo ENABLE_PANEL=0 bash install.sh
 ```
 
 ### 安装变量
@@ -65,16 +77,18 @@ sudo RELAYGATE_TAR=/path/relaygate-v0.1.0-linux-amd64.tar.gz bash install.sh
 | `RELAYGATE_INSTALL_DIR` | `/opt/relaygate` |
 | `RELAYGATE_DATA_DIR` | `$INSTALL_DIR/data` |
 | `GATEWAY_NAME` / `GATEWAY_PUBLIC_IP` | 网关身份 |
-| `GATEWAY_SSH_PORT` | 安装/配置时指定（常见 `22` 或其他；示例值见 [`.env.example`](.env.example)） |
-| `ENABLE_PANEL` / `ENABLE_GRAFANA` | `1` |
+| `GATEWAY_SSH_PORT` | 安装/配置时指定（常见 `22` 或其他；示例值见 [`packaging/shared/env.example`](packaging/shared/env.example)） |
+| `ENABLE_PANEL` | 主控 `1`；节点 `0` |
+| `ENABLE_GRAFANA` | 主控常用 `1`；节点勿启中心栈 |
 | `PANEL_BIND` | `0.0.0.0:9000`（对外；可改 `127.0.0.1:9000`） |
 | `APPLY_FIREWALL` | `0`（安装时只校验防火墙） |
+| `PRIMARY_URL` / `AGENT_TOKEN_FILE` | 节点组件必填（见 `node.env.example`） |
 
 ### 首启检查
 
 ```bash
 relaygate setup --noninteractive   # 若安装器未跑完
-relaygate doctor
+relaygate diag
 relaygate smoke
 ```
 
@@ -92,7 +106,7 @@ relaygate smoke
 
 ## 配置正式业务
 
-真相源：`$RELAYGATE_DATA_DIR/resources.yaml`（模板见仓库 [`resources.example.yaml`](resources.example.yaml)）。可用 Panel 或直接改 YAML。
+真相源：`$RELAYGATE_DATA_DIR/resources.yaml`（模板见 [`packaging/shared/resources.example.yaml`](packaging/shared/resources.example.yaml)）。可用 Panel 或直接改 YAML。
 
 ### 推荐流程
 
@@ -116,11 +130,11 @@ relaygate smoke
 | `entry` | 中文 | 典型用途 |
 |---------|------|----------|
 | `validation` | 验证 | 旁路验收；默认可先开 |
-| `production` | 正式 | 对玩家正式放量；与验证可同时开 |
+| `production` | 正式 | 对客户端正式放量；与验证可同时开 |
 
 命名示例：`forward-server-01-validation-tcp`（listen `11001`）、`forward-server-01-production-tcp`（listen `10001`）。
 
-游戏服默认回源 TCP `7777` / UDP `7778`；上游防火墙只放行网关回源 IP。
+上游默认回源 TCP `7777` / UDP `7778`；上游防火墙只放行网关回源 IP。
 
 ### ACL 速记
 
@@ -138,7 +152,7 @@ SSH 不受 ACL 约束。改 ACL 后执行 `firewall apply`（无需 `reload` Env
 
 ```bash
 # 诊断 / 检查
-relaygate doctor
+relaygate diag
 relaygate smoke [HOST]
 relaygate canary [HOST]          # 对指定主机做验证探测
 relaygate baseline
@@ -163,7 +177,7 @@ GATEWAYS=gateway-01,gateway-02 relaygate fleet   # 默认升到最新 Release
 | 上游启停 | `relaygate server enable\|disable <server>` |
 | 启用全部正式入口 | `relaygate server enable --all-production` |
 | ACL | `relaygate acl list\|add\|remove deny\|allow CIDR` |
-| 游戏档位 profile | `relaygate profile list\|show\|apply NAME` |
+| 运维档位 profile | `relaygate profile list\|show\|apply NAME` |
 | 变更摘要 | `relaygate changes [--limit N]` |
 | Panel | `sudo relaygate panel install\|uninstall` |
 | 版本 | `relaygate version` |
@@ -215,16 +229,18 @@ http://<GATEWAY_PUBLIC_IP>:9000
 
 ## 双活维护与升级
 
+多节点主控与机群路线见 **[docs/fleet-scale-control-plane.md](docs/fleet-scale-control-plane.md)**；产品菜单/确认词见 **[docs/product-surface-agent.md](docs/product-surface-agent.md)**；日常运维见 **[docs/fleet-ops.md](docs/fleet-ops.md)**。
+
 ```text
-玩家 → 云 L4 LB
-         ├─ gateway-01（ENABLE_PANEL=1, PANEL_ROLE=primary）
-         └─ gateway-02（ENABLE_PANEL=0, PANEL_ROLE=standby）
+客户端 → 云 L4 LB
+           ├─ gateway-01 主控（control.env · ENABLE_PANEL=1）
+           └─ gateway-02 节点（node.env · ENABLE_PANEL=0 · agent run）
 ```
 
 ### 单节点安全变更
 
 ```bash
-relaygate doctor
+relaygate diag
 relaygate drain fail             # 等 DRAIN_WAIT（默认 30s，对齐 NLB 3×10s HC）
 # 控制台确认 target unhealthy 后：
 relaygate reload                 # 或 upgrade --drain
@@ -232,7 +248,7 @@ relaygate drain ok               # 若未自动恢复
 relaygate smoke
 ```
 
-`DRAIN_WAIT` 写在 `.env`（见 [`.env.example`](.env.example)）。NLB 模板：[`packaging/terraform/nlb/`](packaging/terraform/nlb/)。
+`DRAIN_WAIT` 写在 `.env`（见 [`packaging/shared/env.example`](packaging/shared/env.example)）。NLB 模板：[`packaging/terraform/nlb/`](packaging/terraform/nlb/)。
 
 ### 升级 / 回滚 / 卸载
 
@@ -248,7 +264,7 @@ sudo PURGE=1 bash install.sh --uninstall
 
 | 现象 | 先查 |
 |------|------|
-| `/ready` 非 LIVE / LB 不健康 | `relaygate doctor`；是否误摘流 `drain status` |
+| `/ready` 非 LIVE / LB 不健康 | `relaygate diag`；是否误摘流 `drain status` |
 | 转发不通 | 转发是否 `enabled`；入口类型是否开错；上游 TCP/UDP 端口；`smoke` / `canary` |
 | 改了 YAML 不生效 | 是否走了对应 Apply（`reload` vs `firewall apply`） |
 | Panel 打不开 | `PANEL_BIND`、防火墙 9000、systemd `relaygate-panel` |
@@ -270,22 +286,22 @@ sudo PURGE=1 bash install.sh --uninstall
 
 ## 术语（运维对照）
 
-RelayGate 面向 **南北向** 边缘转发（玩家 → 网关 → 游戏服），不做东西向服务网格。对外产品用语对齐 Envoy / L4 惯例；YAML / CLI 标识符保持兼容，**不改字段名**。
+RelayGate 面向 **南北向** 边缘转发（客户端 → 网关 → 上游），不做东西向服务网格。对外产品用语对齐 Envoy / L4 惯例；YAML / CLI 标识符保持兼容，**不改字段名**。
 
 ### 推荐对外用语
 
 | 中文（对外） | English | YAML / 运行标识 | 含义 |
 |--------------|---------|-----------------|------|
-| **下游** / 客户端 / 玩家 | Downstream / Client / Player | （无独立资源） | 连入网关的一侧（Envoy *downstream*） |
-| **入口** | Entry | `rules[].entry` + `listen_port` | 玩家侧接入点：类型 + 监听端口 + 协议 |
+| **下游** / 客户端 | Downstream / Client | （无独立资源） | 连入网关的一侧（Envoy *downstream*） |
+| **入口** | Entry | `rules[].entry` + `listen_port` | 客户端侧接入点：类型 + 监听端口 + 协议 |
 | **验证入口** / **正式入口** | Validation / Production entry | `validation` / `production` | 入口类型；可并行；**不是**金丝雀阶段名 |
 | **Listener（监听器）** | Listener | 生成名 `ingress-{forward名}` | Envoy 绑定的 listen；由一条转发生成 |
-| **上游**（口语可称游戏服） | Upstream | `servers[]`，名如 `server-01` | 网关回源目标；域内常对应区服/房间服实例 |
+| **上游** | Upstream | `servers[]`，名如 `server-01` | 网关回源目标（固定单地址） |
 | **转发** | Forward | `rules[]`，名如 `forward-…` | 一条「入口 → 上游」的 L4 映射 |
 | **ACL** | ACL / Access list | `acl.deny` / `acl.allow` | 谁能连上入口（nft） |
 | **限速指标** | Rate-limit metric | `rl_<forward名>` | Envoy 本地限速 stat |
 
-受众提示：对运维/平台用 **上游 / Upstream**；对玩法/发行侧可用 **游戏服** 作同义说明，避免再引入「后端节点」「Target Group」等第二套主词。
+受众提示：对运维/平台统一用 **上游 / Upstream**、**下游 / Downstream**，避免再引入「后端节点」「Target Group」等第二套主词。
 
 ### 与配置字段的映射（兼容）
 
@@ -306,13 +322,12 @@ RelayGate 面向 **南北向** 边缘转发（玩家 → 网关 → 游戏服）
 | NGINX `upstream {}`、云 LB Target Group | 概念接近 `servers`；因无跨成员 LB，不对外主推 Target Group / Pool member |
 | Ingress（K8s）/ VIP / 公网 Endpoint | VIP/公网 IP 属云 LB；本产品用 **入口 + Listener**，避免与 K8s Ingress 混淆 |
 | Route / Virtual host（偏 L7） | L4 固定转发用 **转发（Forward）**，不用 Route 作主词 |
-| 区服 / 房间服 | **域内同义**于上游实例，写在说明里即可，不作 YAML 主词 |
 
 ### 不建议混用的旧说法
 
 | 避免 | 原因 | 改用 |
 |------|------|------|
-| 把游戏服叫「下游」 | 与 Envoy *downstream*=客户端相反 | **上游** / 游戏服 |
+| 把上游叫「下游」 | 与 Envoy *downstream*=客户端相反 | **上游** |
 | 「上游节点」与「网关节点」并列且不加限定 | 「节点」易指双活 gateway-01/02 | 上游用 **上游**；机器用 **网关** |
 | 入口 / Listener / Ingress 三词互换 | Ingress 易联想到 K8s | **入口**（意图）+ **Listener**（运行态） |
 | 把 validation/production 叫金丝雀 / 灰度阶段 | 二者是并行入口类型，不是流水线阶段 | **验证入口** / **正式入口** |

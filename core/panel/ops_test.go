@@ -183,6 +183,16 @@ func TestApplyRequiresConfirm(t *testing.T) {
 	srv, token, csrf := setupPanel(t)
 	h := srv.Handler()
 
+	// Seed ADS bootstrap so XDS hot path is eligible (unmigrated → RELOAD_ENVOY).
+	envoyDir := filepath.Join(config.ResolveDataDir(srv.cfg.Root), "envoy")
+	if err := os.MkdirAll(envoyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	boot := []byte("dynamic_resources:\n  cds_config: {}\nstatic_resources:\n  clusters:\n    - name: xds_cluster\n")
+	if err := os.WriteFile(filepath.Join(envoyDir, "envoy.yaml"), boot, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	body, _ := json.Marshal(map[string]string{"confirm": "nope"})
 	req := httptest.NewRequest(http.MethodPost, "/api/apply", bytes.NewReader(body))
 	authedCSRF(req, token, csrf)
@@ -191,8 +201,8 @@ func TestApplyRequiresConfirm(t *testing.T) {
 	if rec.Code != 400 {
 		t.Fatalf("apply without confirm status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "RELOAD_ENVOY") {
-		t.Fatalf("expected confirm hint: %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "HOT_APPLY") {
+		t.Fatalf("expected HOT_APPLY confirm hint (XDS default on + migrated): %s", rec.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/api/apply", bytes.NewReader(nil))
@@ -201,6 +211,138 @@ func TestApplyRequiresConfirm(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != 400 {
 		t.Fatalf("apply empty body status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+
+func TestFleetPublishRequiresConfirm(t *testing.T) {
+	srv, token, csrf := setupPanel(t)
+	h := srv.Handler()
+
+	body, _ := json.Marshal(map[string]string{"confirm": "nope"})
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/fleet/publish", bytes.NewReader(body))
+	authedCSRF(req, token, csrf)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "PUBLISH_FLEET") {
+		t.Fatalf("body=%s", rec.Body.String())
+	}
+}
+
+func TestStandbyBlocksFleetPublish(t *testing.T) {
+	srv, token, csrf := setupPanel(t)
+	t.Setenv("PANEL_ROLE", "standby")
+	h := srv.Handler()
+
+	body, _ := json.Marshal(map[string]string{"confirm": "PUBLISH_FLEET"})
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/fleet/publish", bytes.NewReader(body))
+	authedCSRF(req, token, csrf)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("publish on standby status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFleetJoinRequiresConfirm(t *testing.T) {
+	srv, token, csrf := setupPanel(t)
+	h := srv.Handler()
+
+	body, _ := json.Marshal(map[string]string{
+		"confirm": "nope",
+		"name":    "gateway-02",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/fleet/join", bytes.NewReader(body))
+	authedCSRF(req, token, csrf)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "FLEET_JOIN") {
+		t.Fatalf("body=%s", rec.Body.String())
+	}
+}
+
+func TestStandbyBlocksFleetJoin(t *testing.T) {
+	srv, token, csrf := setupPanel(t)
+	t.Setenv("PANEL_ROLE", "standby")
+	h := srv.Handler()
+
+	body, _ := json.Marshal(map[string]string{
+		"confirm": "FLEET_JOIN",
+		"name":    "gateway-02",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/fleet/join", bytes.NewReader(body))
+	authedCSRF(req, token, csrf)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("join on standby status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFleetLeaveRequiresConfirm(t *testing.T) {
+	srv, token, csrf := setupPanel(t)
+	h := srv.Handler()
+
+	body, _ := json.Marshal(map[string]any{
+		"confirm": "nope",
+		"name":    "gateway-02",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/fleet/leave", bytes.NewReader(body))
+	authedCSRF(req, token, csrf)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "FLEET_LEAVE") {
+		t.Fatalf("body=%s", rec.Body.String())
+	}
+}
+
+func TestStandbyBlocksFleetLeave(t *testing.T) {
+	srv, token, csrf := setupPanel(t)
+	t.Setenv("PANEL_ROLE", "standby")
+	h := srv.Handler()
+
+	body, _ := json.Marshal(map[string]any{
+		"confirm": "FLEET_LEAVE",
+		"name":    "gateway-02",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/fleet/leave", bytes.NewReader(body))
+	authedCSRF(req, token, csrf)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("leave on standby status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFleetStatusEndpoint(t *testing.T) {
+	srv, token, _ := setupPanel(t)
+	h := srv.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ops/fleet/status", nil)
+	authed(req, token)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := body["nodes"]; !ok {
+		t.Fatalf("missing nodes: %s", rec.Body.String())
+	}
+	if _, ok := body["published_version"]; !ok {
+		t.Fatalf("missing published_version: %s", rec.Body.String())
 	}
 }
 

@@ -21,10 +21,12 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { useStandby } from "@/context/SessionContext"
-import { ApiError, applyConfig, applyFirewall, getApplyPreview } from "@/lib/api"
+import { ApiError, applyConfig, applyFirewall, getApplyPreview, opsFleetPublish } from "@/lib/api"
 
 const FW_CONFIRM = "YES_FLUSH_NFTABLES"
 const RELOAD_CONFIRM = "RELOAD_ENVOY"
+const HOT_CONFIRM = "HOT_APPLY"
+const PUBLISH_CONFIRM = "PUBLISH_FLEET"
 
 export function ApplyPage() {
   const { t } = useTranslation()
@@ -33,15 +35,20 @@ export function ApplyPage() {
   const [lastApply, setLastApply] = useState("")
   const [needsReload, setNeedsReload] = useState(false)
   const [needsFirewall, setNeedsFirewall] = useState(false)
+  const [applyMode, setApplyMode] = useState<"hot" | "hard" | "none" | undefined>()
+  const [bootstrapMigrated, setBootstrapMigrated] = useState<boolean | undefined>()
   const [result, setResult] = useState("")
   const [error, setError] = useState(false)
   const [loading, setLoading] = useState(true)
   const [applyingConfig, setApplyingConfig] = useState(false)
   const [applyingFirewall, setApplyingFirewall] = useState(false)
+  const [publishing, setPublishing] = useState(false)
   const [fwOpen, setFwOpen] = useState(false)
   const [fwConfirm, setFwConfirm] = useState("")
   const [reloadOpen, setReloadOpen] = useState(false)
   const [reloadConfirm, setReloadConfirm] = useState("")
+  const [publishOpen, setPublishOpen] = useState(false)
+  const [publishConfirm, setPublishConfirm] = useState("")
 
   async function loadPreview() {
     try {
@@ -50,6 +57,8 @@ export function ApplyPage() {
       setLastApply(preview.last_apply)
       setNeedsReload(preview.needs_reload)
       setNeedsFirewall(preview.needs_firewall)
+      setApplyMode(preview.apply_mode)
+      setBootstrapMigrated(preview.bootstrap_migrated)
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : t("apply.toast_load_fail"))
     }
@@ -59,12 +68,18 @@ export function ApplyPage() {
     loadPreview().finally(() => setLoading(false))
   }, [])
 
+  const configConfirmPhrase = applyMode === "hot" ? HOT_CONFIRM : RELOAD_CONFIRM
+  const configConfirmLabel =
+    applyMode === "hot" ? t("apply.hot_confirm_label") : t("apply.reload_confirm_label")
+  const configConfirmBody =
+    applyMode === "hot" ? t("apply.hot_confirm_body") : t("apply.reload_confirm_body")
+
   async function handleApplyConfig() {
-    if (standby || !needsReload || reloadConfirm !== RELOAD_CONFIRM) return
+    if (standby || !needsReload || reloadConfirm !== configConfirmPhrase) return
     setApplyingConfig(true)
     setError(false)
     try {
-      const res = await applyConfig(RELOAD_CONFIRM)
+      const res = await applyConfig(configConfirmPhrase)
       const out = res.output ?? t("apply.toast_config_ok")
       setResult(out)
       toast.success(t("apply.toast_config_ok"))
@@ -107,15 +122,45 @@ export function ApplyPage() {
     }
   }
 
+  async function handlePublish() {
+    if (standby || publishConfirm !== PUBLISH_CONFIRM) return
+    setPublishing(true)
+    setError(false)
+    try {
+      const res = await opsFleetPublish(PUBLISH_CONFIRM)
+      if (!res.ok) {
+        throw new ApiError(res.error || t("apply.toast_publish_fail"), 500, res)
+      }
+      const out = res.output ?? t("apply.toast_publish_ok")
+      setResult(out)
+      toast.success(t("apply.toast_publish_ok"))
+      setPublishOpen(false)
+      setPublishConfirm("")
+    } catch (err) {
+      setError(true)
+      const msg = err instanceof ApiError ? err.message : t("apply.toast_publish_fail")
+      setResult(msg)
+      toast.error(msg)
+    } finally {
+      setPublishing(false)
+    }
+  }
+
   const configPrimary = needsReload && !needsFirewall
   const firewallPrimary = needsFirewall && !needsReload
   const mixed = needsReload && needsFirewall
-  const busy = applyingConfig || applyingFirewall
+  const busy = applyingConfig || applyingFirewall || publishing
 
   const summaryBadges = (
     <>
       {needsReload ? <Badge variant="default">{t("apply.tag_config")}</Badge> : null}
       {needsFirewall ? <Badge variant="default">{t("apply.tag_firewall")}</Badge> : null}
+      {needsReload && applyMode === "hot" ? (
+        <Badge variant="secondary">{t("apply.tag_hot")}</Badge>
+      ) : null}
+      {needsReload && applyMode === "hard" ? (
+        <Badge variant="destructive">{t("apply.tag_hard")}</Badge>
+      ) : null}
       {!needsReload && !needsFirewall ? (
         <Badge variant="secondary">{t("apply.tag_none")}</Badge>
       ) : null}
@@ -152,6 +197,18 @@ export function ApplyPage() {
             >
               {t("apply.submit_firewall")}
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPublishConfirm("")
+                setPublishOpen(true)
+              }}
+              disabled={standby || busy}
+              title={t("apply.submit_publish")}
+            >
+              {publishing ? <Spinner data-icon="inline-start" /> : null}
+              {t("apply.submit_publish")}
+            </Button>
           </div>
         }
       />
@@ -161,6 +218,14 @@ export function ApplyPage() {
         <AlertTitle>{t("apply.risk_title")}</AlertTitle>
         <AlertDescription>{t("apply.risk_body")}</AlertDescription>
       </Alert>
+
+      {bootstrapMigrated === false ? (
+        <Alert>
+          <TriangleAlertIcon />
+          <AlertTitle>{t("apply.migrate_title")}</AlertTitle>
+          <AlertDescription>{t("apply.migrate_body")}</AlertDescription>
+        </Alert>
+      ) : null}
 
       <Section title={t("apply.summary")} actions={summaryBadges}>
         <DiffView
@@ -222,11 +287,11 @@ export function ApplyPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{t("apply.reload_confirm_title")}</DialogTitle>
-            <DialogDescription>{t("apply.reload_confirm_body")}</DialogDescription>
+            <DialogDescription>{configConfirmBody}</DialogDescription>
           </DialogHeader>
           <FieldGroup>
             <Field>
-              <FieldLabel>{t("apply.reload_confirm_label")}</FieldLabel>
+              <FieldLabel>{configConfirmLabel}</FieldLabel>
               <Input
                 value={reloadConfirm}
                 onChange={(e) => setReloadConfirm(e.target.value)}
@@ -243,7 +308,7 @@ export function ApplyPage() {
             <Button
               variant="destructive"
               onClick={handleApplyConfig}
-              disabled={standby || applyingConfig || reloadConfirm !== RELOAD_CONFIRM}
+              disabled={standby || applyingConfig || reloadConfirm !== configConfirmPhrase}
             >
               {applyingConfig ? <Spinner data-icon="inline-start" /> : null}
               {t("apply.submit_config")}
@@ -289,6 +354,47 @@ export function ApplyPage() {
             >
               {applyingFirewall ? <Spinner data-icon="inline-start" /> : null}
               {t("apply.submit_firewall")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={publishOpen}
+        onOpenChange={(open) => {
+          if (!publishing) {
+            setPublishOpen(open)
+            if (!open) setPublishConfirm("")
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("apply.publish_confirm_title")}</DialogTitle>
+            <DialogDescription>{t("apply.publish_confirm_body")}</DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel>{t("apply.publish_confirm_label")}</FieldLabel>
+              <Input
+                value={publishConfirm}
+                onChange={(e) => setPublishConfirm(e.target.value)}
+                disabled={standby || publishing}
+                autoComplete="off"
+                className="font-mono"
+              />
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPublishOpen(false)} disabled={publishing}>
+              {t("ops.cancel")}
+            </Button>
+            <Button
+              onClick={() => void handlePublish()}
+              disabled={standby || publishing || publishConfirm !== PUBLISH_CONFIRM}
+            >
+              {publishing ? <Spinner data-icon="inline-start" /> : null}
+              {t("apply.submit_publish")}
             </Button>
           </DialogFooter>
         </DialogContent>

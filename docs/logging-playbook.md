@@ -20,7 +20,7 @@ Envoy → ${RELAYGATE_DATA_DIR}/envoy/logs/tcp-access.json
 
 ## 启用（P0）
 
-1. `.env`（示例见仓库 `.env.example` / `gateway-01.env.example`）：
+1. `.env`（示例见 `packaging/shared/env.example` / `control.env.example`）：
 
 ```bash
 COMPOSE_PROFILES=with-grafana,with-loki,with-logs

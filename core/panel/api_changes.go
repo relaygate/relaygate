@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/relaygate/relaygate/core/ops"
+	"github.com/relaygate/relaygate/core/dataplane"
 	"github.com/relaygate/relaygate/core/resources"
 )
 
@@ -118,7 +118,7 @@ func (s *Server) apiRollback(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", "ROLLBACK")})
 		return
 	}
-	out, err := ops.RollbackCapture(s.cfg.Root, stamp)
+	out, err := dataplane.RollbackCapture(s.cfg.Root, stamp)
 	s.appendAudit("rollback", stamp)
 	writeOpsResult(w, out, err)
 }

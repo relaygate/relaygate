@@ -32,6 +32,7 @@ func writeMinimalUI(t *testing.T, uiDir string, withFavicon bool) {
 
 func setupPanel(t *testing.T) (*Server, string, string) {
 	t.Helper()
+	config.IsolateDataDirEnv(t)
 	root := t.TempDir()
 	cfgDir := config.ResolveDataDir(root)
 	uiDir := filepath.Join(root, "ui", "dist")
@@ -81,6 +82,7 @@ func setupPanelWithGrafana(t *testing.T) (*Server, string, string) {
 	ts := httptest.NewServer(upstream)
 	t.Cleanup(ts.Close)
 
+	config.IsolateDataDirEnv(t)
 	root := t.TempDir()
 	cfgDir := config.ResolveDataDir(root)
 	uiDir := filepath.Join(root, "ui", "dist")

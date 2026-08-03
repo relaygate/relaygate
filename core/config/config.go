@@ -23,7 +23,12 @@ const (
 	DefaultPanelBind  = "0.0.0.0:9000"
 
 	PackagingDirName = "packaging"
-	ComposeFileRel   = "packaging/compose.yaml"
+	// SharedDirName holds role-agnostic templates (resources, default env).
+	SharedDirName = "shared"
+	ComposeFileRel  = "packaging/compose.yaml"
+	TemplatesDirRel = "packaging/shared" // legacy name: shared templates root
+	ControlEnvRel   = "packaging/control/env.example"
+	NodeEnvRel      = "packaging/node/env.example"
 
 	// InstallDataDirName is the runtime directory name under an install prefix.
 	InstallDataDirName = "data"
@@ -35,6 +40,9 @@ const (
 	DefaultDrainWaitSec = 30
 	// RecommendedDrainWaitSec is the minimum advised DRAIN_WAIT under NLB / dual-active.
 	RecommendedDrainWaitSec = DefaultDrainWaitSec
+
+	// DefaultXDSEnabled is the .env fallback when XDS_ENABLED is unset (1 = HotApply path).
+	DefaultXDSEnabled = "1"
 )
 
 // Getenv returns the trimmed env value or fallback when unset/blank.
@@ -115,7 +123,7 @@ func FindRoot() (string, error) {
 		return "", err
 	}
 	markers := []string{
-		"resources.example.yaml",
+		filepath.Join(TemplatesDirRel, "resources.example.yaml"),
 		filepath.Join(PackagingDirName, "compose.yaml"),
 		"go.mod",
 	}
@@ -132,7 +140,7 @@ func FindRoot() (string, error) {
 		}
 		dir = parent
 	}
-	return "", fmt.Errorf("cannot locate product root (resources.example.yaml, packaging/compose.yaml, or go.mod)")
+	return "", fmt.Errorf("cannot locate product root (%s/resources.example.yaml, packaging/compose.yaml, or go.mod)", TemplatesDirRel)
 }
 
 // LoadDotEnv loads KEY=VALUE pairs from path into the process environment
@@ -197,7 +205,11 @@ type Env struct {
 	TCPPort                  string
 	UDPPort                  string
 	Timeout                  string
-	Raw                      map[string]string
+	// XDSEnabled gates HotApply (docs/hot-update-xds.md). Default on; set 0 for legacy drain+restart.
+	XDSEnabled bool
+	// XDSPort is the loopback ADS listen port when xDS is enabled (default 18000).
+	XDSPort string
+	Raw     map[string]string
 }
 
 // LoadEnv loads root/.env (if present) then reads known keys.
@@ -254,8 +266,25 @@ func LoadEnv(root string) (Env, error) {
 		TCPPort:                  Getenv("TCP_PORT", "11001"),
 		UDPPort:                  Getenv("UDP_PORT", "11001"),
 		Timeout:                  Getenv("TIMEOUT", "3"),
+		XDSEnabled:               XDSEnabledFromEnv(),
+		XDSPort:                  Getenv("XDS_PORT", "18000"),
 		Raw:                      raw,
 	}, nil
+}
+
+// XDSEnabledFromEnv reads XDS_ENABLED with DefaultXDSEnabled when unset.
+func XDSEnabledFromEnv() bool {
+	return envFlagEnabled(Getenv("XDS_ENABLED", DefaultXDSEnabled))
+}
+
+// envFlagEnabled treats 1/true/yes/on as enabled; empty and all other values are off.
+func envFlagEnabled(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func (e Env) EnvoyContainer() string {

@@ -44,12 +44,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p .runtime
-          cp resources.example.yaml .runtime/resources.yaml
-          cp gateway-01.env.example .env
+          cp packaging/shared/resources.example.yaml .runtime/resources.yaml
+          cp packaging/control/env.example .env
           echo "RELAYGATE_DATA_DIR=$PWD/.runtime" >> .env
           ./bin/relaygate validate
           grep -q 'gateway: gateway-01' .runtime/prometheus/prometheus.yml
-          cp gateway-02.env.example .env
+          cp packaging/node/env.example .env
           echo "RELAYGATE_DATA_DIR=$PWD/.runtime" >> .env
           ./bin/relaygate validate
           grep -q 'gateway: gateway-02' .runtime/prometheus/prometheus.yml

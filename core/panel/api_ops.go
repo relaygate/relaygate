@@ -3,10 +3,12 @@ package panel
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"strings"
 
-	"github.com/relaygate/relaygate/core/doctor"
-	"github.com/relaygate/relaygate/core/ops"
+	"github.com/relaygate/relaygate/core/agent"
+	"github.com/relaygate/relaygate/core/diag"
+	"github.com/relaygate/relaygate/core/dataplane"
 	"github.com/relaygate/relaygate/core/profile"
 )
 
@@ -52,8 +54,156 @@ func (s *Server) apiDoctor(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	out, err := doctor.RunCapture(doctor.Options{Root: s.cfg.Root})
+	out, err := diag.RunCapture(diag.Options{Root: s.cfg.Root})
 	writeOpsResult(w, out, err)
+}
+
+func (s *Server) apiFleet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	reg, err := agent.LoadRegistry(s.cfg.Root)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	meta, _ := agent.CurrentMeta(s.cfg.Root)
+	writeJSON(w, 200, map[string]any{
+		"nodes":            reg.Nodes,
+		"published":        meta,
+		"registry":         agent.NodesPath(s.cfg.Root),
+		"hints":            fleetProductHints(),
+	})
+}
+
+func fleetProductHints() []string {
+	return []string{
+		"relaygate fleet status",
+		"relaygate fleet publish   # 确认 PUBLISH_FLEET",
+		"relaygate fleet join <name>  # 确认 FLEET_JOIN",
+		"relaygate fleet leave <name> # 确认 FLEET_LEAVE",
+		"# 节点：relaygate agent run（PRIMARY_URL + AGENT_TOKEN_FILE）",
+	}
+}
+
+func (s *Server) apiFleetStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	published, nodes, err := agent.BuildStatus(s.cfg.Root)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"error": err.Error()})
+		return
+	}
+	meta, _ := agent.CurrentMeta(s.cfg.Root)
+	writeJSON(w, 200, map[string]any{
+		"published_version": published,
+		"published":         meta,
+		"nodes":             nodes,
+	})
+}
+
+func (s *Server) apiFleetPublish(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var body struct {
+		Confirm string `json:"confirm"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		return
+	}
+	if strings.TrimSpace(body.Confirm) != "PUBLISH_FLEET" {
+		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", "PUBLISH_FLEET")})
+		return
+	}
+	res, err := agent.Publish(s.cfg.Root)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	s.appendAudit("fleet.publish", res.Version)
+	writeJSON(w, 200, map[string]any{
+		"ok":      true,
+		"version": res.Version,
+		"path":    res.Path,
+		"output":  "已发布配置版本 " + res.Version + "。网关节点将自行拉取并对齐。",
+	})
+}
+
+func (s *Server) apiFleetJoin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var body struct {
+		Confirm    string `json:"confirm"`
+		Name       string `json:"name"`
+		PrimaryURL string `json:"primary_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		return
+	}
+	if strings.TrimSpace(body.Confirm) != "FLEET_JOIN" {
+		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", "FLEET_JOIN")})
+		return
+	}
+	primary := strings.TrimSpace(body.PrimaryURL)
+	if primary == "" {
+		primary = strings.TrimSpace(os.Getenv("PRIMARY_URL"))
+	}
+	res, err := agent.JoinNode(s.cfg.Root, body.Name, primary)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	s.appendAudit("fleet.join", res.Name)
+	writeJSON(w, 200, map[string]any{
+		"ok":               true,
+		"name":             res.Name,
+		"token":            res.Token,
+		"token_file_hint":  res.TokenFileHint,
+		"bootstrap_hint":   res.BootstrapHint,
+		"primary_url_hint": res.PrimaryURLHint,
+		"manual_hints": []string{
+			"请在云控制台/Terraform 将新节点注册到负载均衡目标组（本产品不调用云 API）。",
+		},
+	})
+}
+
+func (s *Server) apiFleetLeave(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var body struct {
+		Confirm string `json:"confirm"`
+		Name    string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		return
+	}
+	if strings.TrimSpace(body.Confirm) != "FLEET_LEAVE" {
+		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", "FLEET_LEAVE")})
+		return
+	}
+	res, err := agent.LeaveNode(s.cfg.Root, body.Name)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	s.appendAudit("fleet.leave", res.Name)
+	writeJSON(w, 200, map[string]any{
+		"ok":           true,
+		"name":         res.Name,
+		"manual_hints": res.ManualHints,
+	})
 }
 
 func (s *Server) apiDrain(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +237,7 @@ func (s *Server) apiDrain(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	out, err := ops.DrainCapture(s.cfg.Root, action)
+	out, err := dataplane.DrainCapture(s.cfg.Root, action)
 	s.appendAudit("drain."+action, strings.TrimSpace(out))
 	writeOpsResult(w, out, err)
 }
@@ -105,7 +255,7 @@ func (s *Server) apiSmoke(w http.ResponseWriter, r *http.Request) {
 	if host == "" {
 		host = "127.0.0.1"
 	}
-	out, err := ops.SmokeCapture(s.cfg.Root, host)
+	out, err := dataplane.SmokeCapture(s.cfg.Root, host)
 	writeOpsResult(w, out, err)
 }
 
@@ -122,7 +272,7 @@ func (s *Server) apiCanary(w http.ResponseWriter, r *http.Request) {
 	if host == "" {
 		host = "127.0.0.1"
 	}
-	out, err := ops.CanaryCapture(s.cfg.Root, host)
+	out, err := dataplane.CanaryCapture(s.cfg.Root, host)
 	writeOpsResult(w, out, err)
 }
 
@@ -131,9 +281,9 @@ func (s *Server) apiFirewallCheck(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	out, err := ops.FirewallCapture(s.cfg.Root, false)
+	out, err := dataplane.FirewallCapture(s.cfg.Root, false)
 	if err != nil && strings.Contains(err.Error(), "需要 root") {
-		out = strings.TrimSpace(out) + "\n" + s.t(r, "ops.fw_root_hint")
+		out = strings.TrimSpace(out) + "\n" + s.t(r, "dataplane.fw_root_hint")
 		writeOpsResult(w, out, err)
 		return
 	}
@@ -188,7 +338,7 @@ func (s *Server) apiProfileApply(w http.ResponseWriter, r *http.Request) {
 		writeOpsResult(w, err.Error(), err)
 		return
 	}
-	out := sum.String() + s.t(r, "ops.profile_applied_body")
+	out := sum.String() + s.t(r, "dataplane.profile_applied_body")
 	s.appendAudit("profile.apply", name)
 	writeOpsResult(w, out, nil)
 }

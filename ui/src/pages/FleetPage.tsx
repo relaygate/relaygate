@@ -1,0 +1,483 @@
+import { useEffect, useState, type ReactNode } from "react"
+import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
+import {
+  NetworkIcon,
+  UserPlusIcon,
+  UserMinusIcon,
+  MegaphoneIcon,
+} from "lucide-react"
+import { Link } from "react-router-dom"
+
+import { EmptyState } from "@/components/layout/EmptyState"
+import { Page, PageHeader } from "@/components/layout/PageParts"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Spinner } from "@/components/ui/spinner"
+import { useStandby } from "@/context/SessionContext"
+import {
+  ApiError,
+  apiErrorDetail,
+  getFleetOverview,
+  getFleetStatus,
+  opsFleetJoin,
+  opsFleetLeave,
+  type FleetNode,
+  type FleetNodeStatus,
+  type FleetOverview,
+  type FleetStatusOverview,
+} from "@/lib/api"
+import { cn } from "@/lib/utils"
+
+type BusyKey = "join" | "leave" | null
+
+function fleetStatusLabel(t: (key: string) => string, status: FleetNodeStatus["status"]): string {
+  switch (status) {
+    case "aligned":
+      return t("fleet.status_aligned")
+    case "drifted":
+      return t("fleet.status_drifted")
+    case "offline":
+      return t("fleet.status_offline")
+    case "unauthorized":
+      return t("fleet.status_unauthorized")
+    default:
+      return t("fleet.status_unknown")
+  }
+}
+
+function fleetStatusClass(status: FleetNodeStatus["status"]): string {
+  switch (status) {
+    case "aligned":
+      return "text-emerald-600 dark:text-emerald-400"
+    case "drifted":
+      return "text-amber-600 dark:text-amber-400"
+    case "offline":
+    case "unauthorized":
+      return "text-destructive"
+    default:
+      return "text-muted-foreground"
+  }
+}
+
+function FleetCard({
+  icon,
+  title,
+  description,
+  actions,
+  children,
+  className,
+}: {
+  icon: ReactNode
+  title: string
+  description?: string
+  actions?: ReactNode
+  children?: ReactNode
+  className?: string
+}) {
+  return (
+    <section
+      className={cn(
+        "flex flex-col gap-3 rounded-md border border-border/60 bg-card/40 p-3.5",
+        className,
+      )}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-muted/40 text-muted-foreground">
+            {icon}
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-[13px] font-semibold tracking-wide text-foreground">{title}</h2>
+            {description ? (
+              <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+            ) : null}
+          </div>
+        </div>
+        {actions ? (
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">{actions}</div>
+        ) : null}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+export function FleetPage() {
+  const { t } = useTranslation()
+  const standby = useStandby()
+  const [busy, setBusy] = useState<BusyKey>(null)
+  const [fleet, setFleet] = useState<FleetOverview | null>(null)
+  const [status, setStatus] = useState<FleetStatusOverview | null>(null)
+  const [fleetBusy, setFleetBusy] = useState(false)
+
+  const [joinName, setJoinName] = useState("gateway-02")
+  const [joinConfirm, setJoinConfirm] = useState("")
+  const [joinOpen, setJoinOpen] = useState(false)
+  const [joinHint, setJoinHint] = useState("")
+  const [joinToken, setJoinToken] = useState("")
+
+  const [leaveName, setLeaveName] = useState("")
+  const [leaveConfirm, setLeaveConfirm] = useState("")
+  const [leaveOpen, setLeaveOpen] = useState(false)
+  const [leaveHints, setLeaveHints] = useState<string[]>([])
+
+  async function loadFleet() {
+    setFleetBusy(true)
+    try {
+      const overview = await getFleetOverview()
+      setFleet(overview)
+      try {
+        setStatus(await getFleetStatus())
+      } catch {
+        setStatus(null)
+      }
+      if (!leaveName && overview.nodes.length > 0) {
+        setLeaveName(overview.nodes[0].name)
+      }
+    } catch (err) {
+      setFleet({ nodes: [], hints: [], published: null })
+      setStatus(null)
+      toast.error(err instanceof ApiError ? err.message : t("common.toast_load_fail"))
+    } finally {
+      setFleetBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadFleet()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once
+  }, [])
+
+  async function runJoin() {
+    if (joinConfirm !== "FLEET_JOIN") return
+    setBusy("join")
+    setJoinHint("")
+    setJoinToken("")
+    try {
+      const res = await opsFleetJoin({ confirm: joinConfirm, name: joinName })
+      if (res.ok) {
+        setJoinHint(res.bootstrap_hint ?? "")
+        setJoinToken(res.token ?? "")
+        toast.success(t("fleet.toast_join_ok"))
+        setJoinOpen(false)
+        setJoinConfirm("")
+        await loadFleet()
+      } else {
+        toast.error(apiErrorDetail(res, t("fleet.toast_join_err")))
+      }
+    } catch (err) {
+      toast.error(apiErrorDetail(err, t("fleet.toast_join_err")))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function runLeave() {
+    if (leaveConfirm !== "FLEET_LEAVE" || !leaveName) return
+    setBusy("leave")
+    setLeaveHints([])
+    try {
+      const res = await opsFleetLeave({ confirm: leaveConfirm, name: leaveName })
+      if (res.ok) {
+        setLeaveHints(res.manual_hints ?? [])
+        toast.success(t("fleet.toast_leave_ok"))
+        setLeaveOpen(false)
+        setLeaveConfirm("")
+        await loadFleet()
+      } else {
+        toast.error(apiErrorDetail(res, t("fleet.toast_leave_err")))
+      }
+    } catch (err) {
+      toast.error(apiErrorDetail(err, t("fleet.toast_leave_err")))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const anyBusy = busy !== null
+  const statusByName: Record<string, FleetNodeStatus> = {}
+  for (const n of status?.nodes ?? []) {
+    statusByName[n.name] = n
+  }
+
+  return (
+    <Page>
+      <PageHeader title={t("fleet.title")} description={t("fleet.desc")} />
+
+      {standby ? (
+        <Alert>
+          <AlertTitle>{t("fleet.standby_title")}</AlertTitle>
+          <AlertDescription>{t("fleet.standby_body")}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <FleetCard
+          icon={<NetworkIcon className="size-4" />}
+          title={t("fleet.list_title")}
+          description={t("fleet.list_desc")}
+          className="lg:col-span-2"
+          actions={
+            <Button size="sm" variant="secondary" onClick={() => void loadFleet()} disabled={fleetBusy}>
+              {fleetBusy ? <Spinner data-icon="inline-start" /> : null}
+              {t("fleet.refresh")}
+            </Button>
+          }
+        >
+          {fleet && fleet.nodes.length === 0 ? (
+            <EmptyState
+              compact
+              icon={NetworkIcon}
+              title={t("fleet.empty")}
+              description={t("fleet.empty_hint")}
+            />
+          ) : fleet && fleet.nodes.length > 0 ? (
+            <div className="overflow-x-auto rounded-md border border-border/50">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-muted/30 text-muted-foreground">
+                  <tr>
+                    <th className="px-2 py-1.5 font-medium">{t("fleet.col_name")}</th>
+                    <th className="px-2 py-1.5 font-medium">{t("fleet.col_role")}</th>
+                    <th className="px-2 py-1.5 font-medium">{t("fleet.col_align")}</th>
+                    <th className="px-2 py-1.5 font-medium">{t("fleet.col_version")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fleet.nodes.map((node: FleetNode) => {
+                    const st = statusByName[node.name]
+                    return (
+                      <tr key={node.name} className="border-t border-border/40">
+                        <td className="px-2 py-1.5 font-mono">{node.name}</td>
+                        <td className="px-2 py-1.5 font-mono">{node.role || "—"}</td>
+                        <td className={cn("px-2 py-1.5 font-medium", fleetStatusClass(st?.status ?? "unknown"))}>
+                          {fleetStatusLabel(t, st?.status ?? "unknown")}
+                        </td>
+                        <td className="px-2 py-1.5 font-mono text-muted-foreground">
+                          {st?.applied_version || node.applied_version || "—"}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState compact icon={NetworkIcon} title={t("common.loading")} />
+          )}
+        </FleetCard>
+
+        <FleetCard
+          icon={<MegaphoneIcon className="size-4" />}
+          title={t("fleet.publish_title")}
+          description={t("fleet.publish_desc")}
+        >
+          <p className="text-xs font-mono text-muted-foreground">
+            {t("fleet.publish_current")}: {status?.published_version || fleet?.published?.version || t("fleet.publish_none")}
+          </p>
+          <Link
+            to="/apply"
+            className={standby ? "pointer-events-none opacity-50" : undefined}
+          >
+            <Button size="sm" disabled={standby}>
+              {t("fleet.publish_goto_apply")}
+            </Button>
+          </Link>
+        </FleetCard>
+
+        <FleetCard
+          icon={<UserPlusIcon className="size-4" />}
+          title={t("fleet.join_title")}
+          description={t("fleet.join_desc")}
+          actions={
+            <Button
+              size="sm"
+              onClick={() => {
+                setJoinConfirm("")
+                setJoinOpen(true)
+              }}
+              disabled={standby || anyBusy || !joinName.trim()}
+            >
+              {busy === "join" ? <Spinner data-icon="inline-start" /> : null}
+              {t("fleet.join_run")}
+            </Button>
+          }
+        >
+          <Field>
+            <FieldLabel htmlFor="join-name">{t("fleet.field_name")}</FieldLabel>
+            <Input
+              id="join-name"
+              className="font-mono text-xs"
+              value={joinName}
+              onChange={(e) => setJoinName(e.target.value)}
+              disabled={anyBusy}
+              autoComplete="off"
+            />
+          </Field>
+          {joinHint ? (
+            <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-md border border-border/50 bg-muted/20 p-2 text-[11px] font-mono">
+              {joinHint}
+              {joinToken ? `\nTOKEN=${joinToken}` : ""}
+            </pre>
+          ) : null}
+        </FleetCard>
+
+        <FleetCard
+          icon={<UserMinusIcon className="size-4" />}
+          title={t("fleet.leave_title")}
+          description={t("fleet.leave_desc")}
+          actions={
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => {
+                setLeaveConfirm("")
+                setLeaveOpen(true)
+              }}
+              disabled={standby || anyBusy || !leaveName}
+            >
+              {busy === "leave" ? <Spinner data-icon="inline-start" /> : null}
+              {t("fleet.leave_run")}
+            </Button>
+          }
+        >
+          <Field>
+            <FieldLabel>{t("fleet.field_name")}</FieldLabel>
+            {fleet && fleet.nodes.length > 0 ? (
+              <Select value={leaveName} onValueChange={(v) => setLeaveName(v ?? "")} disabled={anyBusy}>
+                <SelectTrigger className="h-8 font-mono text-xs" size="sm">
+                  <SelectValue placeholder={t("fleet.leave_select")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {fleet.nodes.map((n) => (
+                    <SelectItem key={n.name} value={n.name}>
+                      {n.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                className="font-mono text-xs"
+                value={leaveName}
+                onChange={(e) => setLeaveName(e.target.value)}
+                disabled={anyBusy}
+                autoComplete="off"
+              />
+            )}
+          </Field>
+          {leaveHints.length > 0 ? (
+            <div className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-800 dark:text-amber-200">
+              <p className="mb-1 font-medium">{t("fleet.manual_nlb")}</p>
+              {leaveHints.map((h) => (
+                <p key={h}>{h}</p>
+              ))}
+            </div>
+          ) : null}
+        </FleetCard>
+      </div>
+
+      <Dialog
+        open={joinOpen}
+        onOpenChange={(open) => {
+          if (!open && busy !== "join") {
+            setJoinOpen(false)
+            setJoinConfirm("")
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("fleet.join_run")}</DialogTitle>
+            <DialogDescription>{t("fleet.join_confirm_body")}</DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="join-confirm">{t("fleet.join_confirm")}</FieldLabel>
+              <Input
+                id="join-confirm"
+                value={joinConfirm}
+                onChange={(e) => setJoinConfirm(e.target.value)}
+                disabled={standby || busy === "join"}
+                autoComplete="off"
+                className="font-mono"
+              />
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setJoinOpen(false)} disabled={busy === "join"}>
+              {t("ops.cancel")}
+            </Button>
+            <Button
+              onClick={() => void runJoin()}
+              disabled={standby || busy === "join" || joinConfirm !== "FLEET_JOIN"}
+            >
+              {busy === "join" ? <Spinner data-icon="inline-start" /> : null}
+              {t("fleet.join_run")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={leaveOpen}
+        onOpenChange={(open) => {
+          if (!open && busy !== "leave") {
+            setLeaveOpen(false)
+            setLeaveConfirm("")
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("fleet.leave_run")}</DialogTitle>
+            <DialogDescription>{t("fleet.leave_confirm_body")}</DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="leave-confirm">{t("fleet.leave_confirm")}</FieldLabel>
+              <Input
+                id="leave-confirm"
+                value={leaveConfirm}
+                onChange={(e) => setLeaveConfirm(e.target.value)}
+                disabled={standby || busy === "leave"}
+                autoComplete="off"
+                className="font-mono"
+              />
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setLeaveOpen(false)} disabled={busy === "leave"}>
+              {t("ops.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void runLeave()}
+              disabled={standby || busy === "leave" || leaveConfirm !== "FLEET_LEAVE"}
+            >
+              {busy === "leave" ? <Spinner data-icon="inline-start" /> : null}
+              {t("fleet.leave_run")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Page>
+  )
+}

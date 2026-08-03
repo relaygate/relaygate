@@ -7,15 +7,19 @@ import (
 	"os"
 	"strings"
 
+	"bufio"
+
+	"github.com/relaygate/relaygate/core/agent"
 	"github.com/relaygate/relaygate/core/config"
-	"github.com/relaygate/relaygate/core/doctor"
+	"github.com/relaygate/relaygate/core/diag"
 	"github.com/relaygate/relaygate/core/render"
 	"github.com/relaygate/relaygate/core/host"
-	"github.com/relaygate/relaygate/core/ops"
+	"github.com/relaygate/relaygate/core/dataplane"
 	"github.com/relaygate/relaygate/core/panel"
 	"github.com/relaygate/relaygate/core/profile"
 	"github.com/relaygate/relaygate/core/resources"
 	"github.com/relaygate/relaygate/core/setup"
+	"github.com/relaygate/relaygate/core/xds"
 )
 
 // Version is injected from main via -ldflags or default.
@@ -31,19 +35,24 @@ func Run(args []string) int {
 	case "render":
 		return runRender(args[1:])
 	case "validate":
-		return exitErr(ops.Validate(mustRoot()))
+		return exitErr(dataplane.Validate(mustRoot()))
 	case "apply":
-		return exitErr(ops.Apply(mustRoot()))
+		return exitErr(dataplane.Apply(mustRoot()))
 	case "reload":
-		fmt.Fprintln(os.Stderr, "警告: reload 会重启 Envoy 并断开本网关上全部现有连接（drain 只摘新流，不保留长连接）。双活请先 drain 本节点。")
-		return exitErr(ops.Reload(mustRoot()))
+		opts := dataplane.ReloadOptions{}
+		rest := parseReloadArgs(args[1:], &opts)
+		if !opts.ForceHard {
+			fmt.Fprintln(os.Stderr, "警告: reload 可能重启 Envoy 并断开连接；XDS_ENABLED=1 且可热更新时将走 HotApply（无 drain）。双活请先 drain 本节点。")
+		}
+		_ = rest
+		return exitErr(reloadWithOpts(opts))
 	case "rollback":
 		stamp := ""
 		if len(args) > 1 {
 			stamp = args[1]
 		}
 		fmt.Fprintln(os.Stderr, "警告: rollback 会 force-recreate Envoy，断开本网关上全部现有连接。")
-		return exitErr(ops.Rollback(mustRoot(), stamp))
+		return exitErr(dataplane.Rollback(mustRoot(), stamp))
 	case "drain":
 		return runDrain(args[1:])
 	case "smoke":
@@ -51,13 +60,13 @@ func Run(args []string) int {
 		if len(args) > 1 {
 			hostArg = args[1]
 		}
-		return exitErr(ops.Smoke(mustRoot(), hostArg))
+		return exitErr(dataplane.Smoke(mustRoot(), hostArg))
 	case "canary":
 		hostArg := ""
 		if len(args) > 1 {
 			hostArg = args[1]
 		}
-		return exitErr(ops.Canary(mustRoot(), hostArg))
+		return exitErr(dataplane.Canary(mustRoot(), hostArg))
 	case "firewall":
 		return runFirewall(args[1:])
 	case "acl":
@@ -71,15 +80,20 @@ func Run(args []string) int {
 		if len(args) > 1 {
 			out = args[1]
 		}
-		return exitErr(ops.Baseline(mustRoot(), out))
+		return exitErr(dataplane.Baseline(mustRoot(), out))
 	case "fleet":
-		return exitErr(ops.Fleet(mustRoot(), os.Getenv("GATEWAYS")))
+		return runFleet(args[1:])
+	case "agent":
+		return runAgent(args[1:])
+	case "xds":
+		// 非产品主命令：高级调试；节点请用 agent run
+		return runXDS(args[1:])
 	case "upgrade":
 		return runUpgrade(args[1:])
 	case "setup":
 		return runSetup(args[1:])
-	case "doctor":
-		return runDoctor(args[1:])
+	case "diag":
+		return runDiag(args[1:])
 	case "server":
 		return runServer(args[1:])
 	case "panel":
@@ -130,9 +144,9 @@ func runDrain(args []string) int {
 	switch args[0] {
 	case "fail", "drain":
 		fmt.Fprintln(os.Stderr, "警告: drain fail 会使 LB/NLB 停止向本节点分配新连接；单节点生产请确认维护窗口。已有长连接通常仍保留。")
-		return exitErr(ops.Drain(mustRoot(), args[0]))
+		return exitErr(dataplane.Drain(mustRoot(), args[0]))
 	case "ok", "undrain", "status":
-		return exitErr(ops.Drain(mustRoot(), args[0]))
+		return exitErr(dataplane.Drain(mustRoot(), args[0]))
 	default:
 		fmt.Fprintln(os.Stderr, "usage: relaygate drain fail|ok|status")
 		return 2
@@ -161,7 +175,7 @@ func runUpgrade(args []string) int {
 	} else {
 		fmt.Fprintln(os.Stderr, "提示: 未加 --drain；双活生产建议 upgrade --drain，或先手动 drain fail。")
 	}
-	return exitErr(ops.Upgrade(mustRoot(), ops.UpgradeOptions{Drain: *drain}))
+	return exitErr(dataplane.Upgrade(mustRoot(), dataplane.UpgradeOptions{Drain: *drain}))
 }
 
 func runFirewall(args []string) int {
@@ -191,7 +205,7 @@ func runFirewall(args []string) int {
 		apply = true
 	}
 	_ = rest
-	return exitErr(ops.Firewall(mustRoot(), apply))
+	return exitErr(dataplane.Firewall(mustRoot(), apply))
 }
 
 func runACL(args []string) int {
@@ -272,7 +286,7 @@ func runChanges(args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	return exitErr(ops.ListChanges(mustRoot(), *limit, os.Stdout))
+	return exitErr(dataplane.ListChanges(mustRoot(), *limit, os.Stdout))
 }
 
 func runProfile(args []string) int {
@@ -362,17 +376,17 @@ func runSetup(args []string) int {
 	}))
 }
 
-func runDoctor(args []string) int {
+func runDiag(args []string) int {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	strict := fs.Bool("strict-ports", false, "端口占用视为失败")
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: relaygate doctor [--strict-ports]")
+		fmt.Fprintln(fs.Output(), "usage: relaygate diag [--strict-ports]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	return exitErr(doctor.Run(doctor.Options{
+	return exitErr(diag.Run(diag.Options{
 		Root:        mustRoot(),
 		StrictPorts: *strict,
 	}))
@@ -399,7 +413,7 @@ func runRender(args []string) int {
 		return 2
 	}
 	if *withObs {
-		if err := ops.RenderObservability(root); err != nil {
+		if err := dataplane.RenderObservability(root); err != nil {
 			return exitErr(err)
 		}
 	}
@@ -592,11 +606,11 @@ func grafanaURLFromEnv() string {
 }
 
 func usage(out *os.File) {
-	fmt.Fprintln(out, `RelayGate — Envoy 游戏网关
+	fmt.Fprintln(out, `RelayGate — Envoy L4 网关
 
 首启:
   relaygate setup [--noninteractive] [--sysctl] [--upgrade] [--reset-defaults]
-  relaygate doctor [--strict-ports]
+  relaygate diag [--strict-ports]
 
 配置:
   relaygate render [--check-only] [--observability]
@@ -610,8 +624,9 @@ func usage(out *os.File) {
 
 数据面:
   relaygate apply                 # 校验 + compose up（首次/全量）
-  relaygate reload                # resources/Envoy：backup + drain + 重启（会断现有连接）
-  relaygate rollback [STAMP]      # 回滚并 force-recreate Envoy（会断现有连接）
+  relaygate reload                # 按热/硬分流应用（已迁移且可热更 → Hot；否则 Hard）
+  relaygate reload --hard         # 强制摘流 + 重启 Envoy（迁移/镜像/硬变更）
+  relaygate rollback [STAMP]      # 回滚并重建 Envoy（会断现有连接）
   relaygate drain fail|ok|status
   relaygate upgrade [--drain]     # 二进制/packaging：委托 install.sh --upgrade
 
@@ -619,20 +634,258 @@ func usage(out *os.File) {
   relaygate smoke [HOST]
   relaygate canary [HOST]
   relaygate baseline
-  relaygate doctor                # 含 admin/drain/DRAIN_WAIT/NLB 清单
+  relaygate diag                # 含 admin/drain/xDS bootstrap/NLB 清单
 
 防火墙 / Panel:
   relaygate firewall [check|apply]   # ACL/nftables-only；默认 check
   relaygate panel                    # 前台运行管理面
   relaygate panel install|uninstall  # systemd（需 root）
 
-多机:
-  relaygate fleet                 # inventory 分批：drain → install.sh --upgrade → smoke
+机群（主控）:
+  relaygate fleet status
+  relaygate fleet publish              # 确认 PUBLISH_FLEET
+  relaygate fleet join <name>          # 确认 FLEET_JOIN
+  relaygate fleet leave <name>         # 确认 FLEET_LEAVE
+
+节点代理:
+  relaygate agent run                  # 心跳 + 拉取（可内嵌本机 ADS）
+  relaygate agent pull                 # 拉一次并落盘
+
+文档:
+  docs/product-surface-agent.md · docs/fleet-ops.md
+  docs/hot-update-xds.md · docs/fleet-scale-control-plane.md
 
 变更分流:
   ACL / nftables-only     → firewall apply
-  resources / Envoy 配置  → reload
+  resources / Envoy 配置  → reload（本机）或 fleet publish（机群）
   二进制 / packaging      → upgrade [--drain] 或 install.sh --upgrade
 
   relaygate version`)
+}
+
+func runFleet(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: relaygate fleet status|publish|join|leave")
+		return 2
+	}
+	root := mustRoot()
+	switch args[0] {
+	case "status":
+		published, nodes, err := agent.BuildStatus(root)
+		if err != nil {
+			return exitErr(err)
+		}
+		if published == "" {
+			fmt.Println("当前发布版本:（尚无）")
+		} else {
+			fmt.Println("当前发布版本:", published)
+		}
+		if len(nodes) == 0 {
+			fmt.Println("节点名册为空。可用 fleet join <name> 接入。")
+			return 0
+		}
+		for _, n := range nodes {
+			fmt.Printf("  %-16s role=%-7s status=%-12s applied=%s heartbeat=%s\n",
+				n.Name, n.Role, n.Status, n.AppliedVersion, n.LastHeartbeat)
+		}
+		return 0
+	case "publish":
+		if err := requireConfirm("PUBLISH_FLEET", "将当前业务配置发布为机群新版本；各网关节点将自行拉取并在本机热更新。"); err != nil {
+			return exitErr(err)
+		}
+		res, err := agent.Publish(root)
+		if err != nil {
+			return exitErr(err)
+		}
+		fmt.Printf("已发布版本 %s\n", res.Version)
+		return 0
+	case "join":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: relaygate fleet join <name>")
+			return 2
+		}
+		if err := requireConfirm("FLEET_JOIN", "将创建节点身份与一次性加入凭证；请在目标主机完成节点组件安装。"); err != nil {
+			return exitErr(err)
+		}
+		res, err := agent.JoinNode(root, args[1], os.Getenv("PRIMARY_URL"))
+		if err != nil {
+			return exitErr(err)
+		}
+		fmt.Printf("已接入节点 %s\n令牌文件: %s\n\n%s\n", res.Name, res.TokenFileHint, res.BootstrapHint)
+		fmt.Printf("TOKEN=%s\n", res.Token)
+		return 0
+	case "leave":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: relaygate fleet leave <name>")
+			return 2
+		}
+		if err := requireConfirm("FLEET_LEAVE", "将从机群名册移除该节点并吊销其代理凭证。"); err != nil {
+			return exitErr(err)
+		}
+		res, err := agent.LeaveNode(root, args[1])
+		if err != nil {
+			return exitErr(err)
+		}
+		fmt.Printf("已退役节点 %s\n", res.Name)
+		for _, h := range res.ManualHints {
+			fmt.Println("-", h)
+		}
+		return 0
+	case "help", "-h", "--help":
+		fmt.Fprintln(os.Stderr, "usage: relaygate fleet status|publish|join|leave")
+		return 0
+	default:
+		fmt.Fprintf(os.Stderr, "未知 fleet 子命令: %s\n", args[0])
+		fmt.Fprintln(os.Stderr, "usage: relaygate fleet status|publish|join|leave")
+		return 2
+	}
+}
+
+func runAgent(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: relaygate agent run|pull")
+		return 2
+	}
+	root := mustRoot()
+	switch args[0] {
+	case "pull":
+		client, err := agent.LoadClientFromEnv()
+		if err != nil {
+			return exitErr(err)
+		}
+		ver, err := client.PullOnce(root)
+		if err != nil {
+			return exitErr(err)
+		}
+		fmt.Printf("已拉取并落盘版本 %s\n", ver)
+		fmt.Println("提示: 本机热更新请执行 relaygate reload（或由 agent run 的 AfterPull 触发）。")
+		return 0
+	case "run":
+		env, err := dataplane.LoadEnv(root)
+		if err != nil {
+			return exitErr(err)
+		}
+		after := func(r, _ string) error {
+			if !env.XDSEnabled {
+				fmt.Println("XDS_ENABLED=0：已落盘，跳过自动热更新；请手动 reload --hard")
+				return nil
+			}
+			xds.SetDiskPublishHandler(func(nodeID string) (string, error) {
+				e, err := dataplane.LoadEnv(r)
+				if err != nil {
+					return "", err
+				}
+				srv := xds.Global().Server()
+				if srv == nil {
+					return "", fmt.Errorf("本机控制面未运行")
+				}
+				return dataplane.PublishSnapshotFromDisk(r, e, nodeID, srv.Publisher)
+			})
+			if xds.Global().Server() == nil {
+				if err := dataplane.PublishInitialSnapshot(r, env); err != nil {
+					fmt.Fprintf(os.Stderr, "启动本机控制面: %v（仍保留已拉取配置）\n", err)
+					return nil
+				}
+			}
+			return dataplane.HotApplyTo(r, env, os.Stdout, os.Stderr)
+		}
+		return exitErr(agent.Run(agent.RunOptions{Root: root, AfterPull: after}))
+	case "help", "-h", "--help":
+		fmt.Fprintln(os.Stderr, "usage: relaygate agent run|pull")
+		return 0
+	default:
+		fmt.Fprintf(os.Stderr, "未知 agent 子命令: %s\n", args[0])
+		return 2
+	}
+}
+
+func requireConfirm(phrase, risk string) error {
+	if v := strings.TrimSpace(os.Getenv("RELAYGATE_CONFIRM")); v == phrase {
+		return nil
+	}
+	fmt.Fprintln(os.Stderr, risk)
+	fmt.Fprintf(os.Stderr, "请输入 %s 确认（非交互可设 RELAYGATE_CONFIRM=%s）: ", phrase, phrase)
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("需要确认词 %s", phrase)
+	}
+	if strings.TrimSpace(line) != phrase {
+		return fmt.Errorf("确认词不匹配，已取消")
+	}
+	return nil
+}
+
+func reloadWithOpts(opts dataplane.ReloadOptions) error {
+	root := mustRoot()
+	if opts.ForceHard {
+		env, err := dataplane.LoadEnv(root)
+		if err != nil {
+			return err
+		}
+		return dataplane.HardReloadTo(root, env, os.Stdout, os.Stderr)
+	}
+	return dataplane.ReloadTo(root, os.Stdout, os.Stderr, opts)
+}
+
+func parseReloadArgs(args []string, opts *dataplane.ReloadOptions) []string {
+	var rest []string
+	for _, a := range args {
+		if a == "--hard" {
+			opts.ForceHard = true
+			continue
+		}
+		rest = append(rest, a)
+	}
+	return rest
+}
+
+func runXDS(args []string) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: relaygate xds serve|apply")
+		return 2
+	}
+	root := mustRoot()
+	switch args[0] {
+	case "serve":
+		env, err := dataplane.LoadEnv(root)
+		if err != nil {
+			return exitErr(err)
+		}
+		if !env.XDSEnabled {
+			fmt.Fprintln(os.Stderr, "XDS_ENABLED=0：瘦 xDS agent 需开启 XDS_ENABLED=1")
+			return 1
+		}
+		xds.SetDiskPublishHandler(func(nodeID string) (string, error) {
+			e, err := dataplane.LoadEnv(root)
+			if err != nil {
+				return "", err
+			}
+			srv := xds.Global().Server()
+			if srv == nil {
+				return "", fmt.Errorf("xds: ADS not running")
+			}
+			return dataplane.PublishSnapshotFromDisk(root, e, nodeID, srv.Publisher)
+		})
+		if err := dataplane.PublishInitialSnapshot(root, env); err != nil {
+			return exitErr(err)
+		}
+		fmt.Printf("xDS ADS on 127.0.0.1:%s (node=%s); Ctrl+C 退出\n", env.XDSPort, env.GatewayName)
+		select {} // block until signal — thin agent resident
+	case "apply":
+		env, err := dataplane.LoadEnv(root)
+		if err != nil {
+			return exitErr(err)
+		}
+		if !env.XDSEnabled {
+			fmt.Fprintln(os.Stderr, "XDS_ENABLED=0：请设置 XDS_ENABLED=1 或 relaygate reload --hard")
+			return 1
+		}
+		return exitErr(dataplane.HotApplyTo(root, env, os.Stdout, os.Stderr))
+	case "help", "-h", "--help":
+		fmt.Fprintln(os.Stderr, "usage: relaygate xds serve|apply")
+		return 0
+	default:
+		fmt.Fprintf(os.Stderr, "未知 xds 子命令: %s\n", args[0])
+		return 2
+	}
 }

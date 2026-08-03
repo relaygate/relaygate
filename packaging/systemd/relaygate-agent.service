@@ -1,0 +1,15 @@
+[Unit]
+Description=RelayGate node agent (pull + local hot apply)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/relaygate
+EnvironmentFile=-/opt/relaygate/.env
+ExecStart=/opt/relaygate/bin/relaygate agent run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

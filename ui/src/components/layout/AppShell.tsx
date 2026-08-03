@@ -11,6 +11,7 @@ import {
   LogOutIcon,
   MoonIcon,
   MonitorIcon,
+  NetworkIcon,
   PlayIcon,
   ServerIcon,
   ShieldIcon,
@@ -69,6 +70,7 @@ const navItems = [
   { to: "/acl", labelKey: "nav.acl", icon: ShieldIcon },
   { to: "/config", labelKey: "nav.config", icon: FileCodeIcon },
   { to: "/apply", labelKey: "nav.apply", icon: PlayIcon },
+  { to: "/fleet", labelKey: "nav.fleet", icon: NetworkIcon },
   { to: "/ops", labelKey: "nav.ops", icon: WrenchIcon },
   { to: "/changes", labelKey: "nav.changes", icon: FileClockIcon },
 ] as const

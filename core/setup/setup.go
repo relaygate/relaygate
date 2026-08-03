@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/relaygate/relaygate/core/config"
-	"github.com/relaygate/relaygate/core/ops"
+	"github.com/relaygate/relaygate/core/dataplane"
 )
 
 var gatewayNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
@@ -76,11 +76,11 @@ func Run(opt Options) error {
 	if err := ensureSecrets(opt); err != nil {
 		return err
 	}
-	if err := ops.SeedDefaults(opt.Root, opt.ResetDefaults); err != nil {
+	if err := dataplane.SeedDefaults(opt.Root, opt.ResetDefaults); err != nil {
 		return err
 	}
 	if opt.ApplySysctl {
-		_ = ops.ApplySysctl(opt.Root, opt.GatewayName)
+		_ = dataplane.ApplySysctl(opt.Root, opt.GatewayName)
 	}
 	fmt.Println("==> setup 完成")
 	fmt.Printf("产品根: %s\n", opt.Root)
@@ -179,6 +179,7 @@ COMPOSE_PROFILES=%s
 ENVOY_IMAGE=envoyproxy/envoy:v1.39.0
 ENVOY_ADMIN_PORT=9901
 ENVOY_CONCURRENCY=0
+XDS_ENABLED=1
 IMAGE_TAG=%s
 PANEL_BIND=0.0.0.0:9000
 GRAFANA_ADMIN_USER=admin
@@ -296,7 +297,7 @@ func patchExistingEnv(path string, opt Options, profiles, grafanaURL, dataDir st
 func secureEnvFile(path string) error {
 	_ = os.Chmod(path, 0o640)
 	if exec.Command("getent", "group", "relaygate").Run() == nil {
-		_ = ops.RunCmd(filepath.Dir(path), "chown", "root:relaygate", path)
+		_ = dataplane.RunCmd(filepath.Dir(path), "chown", "root:relaygate", path)
 	}
 	return nil
 }
@@ -310,11 +311,11 @@ func ensureSecrets(opt Options) error {
 	if parent := filepath.Dir(opt.SecretsDir); parent != "" && parent != "/" && parent != "." {
 		_ = os.Chmod(parent, 0o750)
 		if exec.Command("getent", "group", "relaygate").Run() == nil {
-			_ = ops.RunCmd(filepath.Dir(opt.SecretsDir), "chown", "root:relaygate", parent)
+			_ = dataplane.RunCmd(filepath.Dir(opt.SecretsDir), "chown", "root:relaygate", parent)
 		}
 	}
 	if exec.Command("getent", "group", "relaygate").Run() == nil {
-		_ = ops.RunCmd(filepath.Dir(opt.SecretsDir), "chown", "root:relaygate", opt.SecretsDir)
+		_ = dataplane.RunCmd(filepath.Dir(opt.SecretsDir), "chown", "root:relaygate", opt.SecretsDir)
 	}
 	for _, name := range []string{"panel_admin_password", "grafana_admin_password"} {
 		p := filepath.Join(opt.SecretsDir, name)
@@ -325,7 +326,7 @@ func ensureSecrets(opt Options) error {
 			if name == "grafana_admin_password" {
 				_ = os.Chmod(p, 0o640)
 			} else if exec.Command("getent", "group", "relaygate").Run() == nil {
-				_ = ops.RunCmd(filepath.Dir(p), "chown", "root:relaygate", p)
+				_ = dataplane.RunCmd(filepath.Dir(p), "chown", "root:relaygate", p)
 				_ = os.Chmod(p, 0o640)
 			}
 			continue
@@ -339,7 +340,7 @@ func ensureSecrets(opt Options) error {
 		}
 		_ = os.Chmod(p, 0o640)
 		if name == "panel_admin_password" && exec.Command("getent", "group", "relaygate").Run() == nil {
-			_ = ops.RunCmd(filepath.Dir(p), "chown", "root:relaygate", p)
+			_ = dataplane.RunCmd(filepath.Dir(p), "chown", "root:relaygate", p)
 		}
 	}
 	fmt.Printf("==> 密钥保存在 %s（不会打印明文）\n", opt.SecretsDir)

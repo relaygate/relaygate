@@ -1,5 +1,5 @@
 {
-  "error.standby": "备用节点只读，请到主节点操作（从节点建议 ENABLE_PANEL=0）",
+  "error.standby": "当前为只读节点（standby），禁止写操作。请到 Management Primary 执行。",
   "error.grafana_unavailable": "Grafana 暂不可用：%s",
   "error.no_output": "（无输出）",
   "error.drain_action": "操作须为 status、fail 或 ok",

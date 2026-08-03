@@ -12,16 +12,19 @@ import (
 
 // ChangeSummary describes what changed between two Resources snapshots.
 type ChangeSummary struct {
-	ServersAdded   []string
-	ServersRemoved []string
-	ServersChanged []string
-	RulesAdded     []string
-	RulesRemoved   []string
-	RulesToggled   []string
-	PortChanges    []string
+	ServersAdded    []string
+	ServersRemoved  []string
+	ServersChanged  []string
+	RulesAdded      []string
+	RulesRemoved    []string
+	RulesToggled    []string
+	PortChanges     []string
 	DefaultsChanged []string
-	ACLChanged     []string
-	Note           string
+	ACLChanged      []string
+	// MetaChanged lists bootstrap-affecting meta field deltas (admin_*, envoy_image).
+	// Populated only when Diff has a non-nil before snapshot.
+	MetaChanged []string
+	Note        string
 }
 
 func (c ChangeSummary) Empty() bool {
@@ -29,23 +32,40 @@ func (c ChangeSummary) Empty() bool {
 		len(c.ServersChanged) == 0 && len(c.RulesAdded) == 0 &&
 		len(c.RulesRemoved) == 0 && len(c.RulesToggled) == 0 &&
 		len(c.PortChanges) == 0 && len(c.DefaultsChanged) == 0 &&
-		len(c.ACLChanged) == 0
+		len(c.ACLChanged) == 0 && len(c.MetaChanged) == 0
 }
 
 // ApplySurface classifies which execution surfaces a ChangeSummary needs.
 // Intent stays one resources.yaml; Envoy reload vs nft apply stay separate.
+//
+// Hot/Hard (xDS roadmap, docs/hot-update-xds.md):
+//   - CanHotApply: Envoy-affecting change that is eligible for CDS/LDS HotApply
+//     when XDS_ENABLED=1 (servers / rules / Envoy defaults; not bootstrap meta).
+//   - NeedsHardReload: bootstrap / image / admin identity — must drain+restart.
+//
+// With XDS_ENABLED=0, ops still always HardReload regardless of CanHotApply.
 type ApplySurface struct {
-	NeedsReload   bool // servers / rules / Envoy defaults → Panel「应用配置」(reload)
-	NeedsFirewall bool // ACL / nftables defaults / enabled listen ports →「应用防火墙」
+	NeedsReload     bool // servers / rules / Envoy defaults / hard meta → Panel「应用配置」
+	NeedsFirewall   bool // ACL / nftables defaults / enabled listen ports →「应用防火墙」
+	CanHotApply     bool // NeedsReload && !NeedsHardReload (informational until HotApply lands)
+	NeedsHardReload bool // meta.admin_* / meta.envoy_image (bootstrap); forces hard path
 }
 
-// Classify returns whether this diff needs Envoy reload and/or nftables apply.
-// Both may be true (e.g. new listen port). Empty diffs yield both false.
+// Classify returns whether this diff needs Envoy reload and/or nftables dataplane.
+// Both may be true (e.g. new listen port). Empty diffs yield all false.
 func (c ChangeSummary) Classify() ApplySurface {
+	hard := c.needsHardReload()
+	reload := c.needsReload() || hard
 	return ApplySurface{
-		NeedsReload:   c.needsReload(),
-		NeedsFirewall: c.needsFirewall(),
+		NeedsReload:     reload,
+		NeedsFirewall:   c.needsFirewall(),
+		NeedsHardReload: hard,
+		CanHotApply:     reload && !hard,
 	}
+}
+
+func (c ChangeSummary) needsHardReload() bool {
+	return len(c.MetaChanged) > 0
 }
 
 func (c ChangeSummary) needsReload() bool {
@@ -131,6 +151,7 @@ func (c ChangeSummary) String() string {
 	writeList(&b, "  ~ port", c.PortChanges)
 	writeList(&b, "  ~ defaults", c.DefaultsChanged)
 	writeList(&b, "  ~ acl", c.ACLChanged)
+	writeList(&b, "  ~ meta", c.MetaChanged)
 	return b.String()
 }
 
@@ -234,6 +255,7 @@ func Diff(before, after *Resources) ChangeSummary {
 
 	c.DefaultsChanged = diffDefaults(before.Defaults, after.Defaults)
 	c.ACLChanged = diffACL(before.ACL, after.ACL)
+	c.MetaChanged = diffMetaHardReload(before.Meta, after.Meta)
 
 	sort.Strings(c.ServersAdded)
 	sort.Strings(c.ServersRemoved)
@@ -244,7 +266,24 @@ func Diff(before, after *Resources) ChangeSummary {
 	sort.Strings(c.PortChanges)
 	sort.Strings(c.DefaultsChanged)
 	sort.Strings(c.ACLChanged)
+	sort.Strings(c.MetaChanged)
 	return c
+}
+
+// diffMetaHardReload lists meta fields that force HardReload (bootstrap / image).
+// gateway_name / game_name are labels only and do not flip NeedsHardReload.
+func diffMetaHardReload(before, after Meta) []string {
+	var parts []string
+	add := func(field string, a, b any) {
+		as, bs := fmt.Sprint(a), fmt.Sprint(b)
+		if as != bs {
+			parts = append(parts, fmt.Sprintf("%s %s→%s", field, as, bs))
+		}
+	}
+	add("admin_port", before.AdminPort, after.AdminPort)
+	add("admin_address", before.AdminAddress, after.AdminAddress)
+	add("envoy_image", before.EnvoyImage, after.EnvoyImage)
+	return parts
 }
 
 func diffDefaults(before, after Defaults) []string {
@@ -267,6 +306,10 @@ func diffDefaults(before, after Defaults) []string {
 	add("health.interval", before.HealthCheck.Interval, after.HealthCheck.Interval)
 	add("health.unhealthy_threshold", before.HealthCheck.UnhealthyThreshold, after.HealthCheck.UnhealthyThreshold)
 	add("health.healthy_threshold", before.HealthCheck.HealthyThreshold, after.HealthCheck.HealthyThreshold)
+	add("outlier.enabled", before.OutlierDetection.Enabled, after.OutlierDetection.Enabled)
+	add("outlier.consecutive_local_origin_failure", before.OutlierDetection.ConsecutiveLocalOriginFailure, after.OutlierDetection.ConsecutiveLocalOriginFailure)
+	add("outlier.interval", before.OutlierDetection.Interval, after.OutlierDetection.Interval)
+	add("outlier.base_ejection_time", before.OutlierDetection.BaseEjectionTime, after.OutlierDetection.BaseEjectionTime)
 	add("nftables.tcp_new_conn_per_ip", before.Nftables.TCPNewConnPerIP, after.Nftables.TCPNewConnPerIP)
 	add("nftables.udp_pps_per_ip", before.Nftables.UDPPPSPerIP, after.Nftables.UDPPPSPerIP)
 	add("nftables.tcp_burst", before.Nftables.TCPBurst, after.Nftables.TCPBurst)

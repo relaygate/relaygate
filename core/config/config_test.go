@@ -7,6 +7,7 @@ import (
 )
 
 func TestResolveDataDirSourceTree(t *testing.T) {
+	IsolateDataDirEnv(t)
 	root := t.TempDir()
 	mustMk(t, filepath.Join(root, "core", "cmd", "relaygate"))
 	got := ResolveDataDir(root)
@@ -16,6 +17,7 @@ func TestResolveDataDirSourceTree(t *testing.T) {
 }
 
 func TestResolveDataDirInstallTree(t *testing.T) {
+	IsolateDataDirEnv(t)
 	root := t.TempDir()
 	got := ResolveDataDir(root)
 	if got != filepath.Join(root, InstallDataDirName) {

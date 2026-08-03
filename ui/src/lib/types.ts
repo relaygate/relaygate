@@ -83,6 +83,10 @@ export interface ApplyPreview {
   last_apply: string
   needs_reload: boolean
   needs_firewall: boolean
+  apply_mode?: "hot" | "hard" | "none"
+  confirm_phrase?: string
+  bootstrap_migrated?: boolean
+  needs_hard_reload?: boolean
 }
 
 export interface ChangeEntry {

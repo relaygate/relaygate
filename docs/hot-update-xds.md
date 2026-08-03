@@ -1,9 +1,9 @@
 # RelayGate 热更新（xDS）工程方案
 
-> 状态：设计稿（可开工）  
-> 源码基准：`/root/relaygate`  
+> 状态：设计稿（可开工）；**产品边界与 [envoy-capability-roadmap.md](envoy-capability-roadmap.md) 已拍板对齐（2026-08-03）**  
+> 源码基准：`/data/relaygate`  
 > 生产对照：`/opt/relaygate`（仅行为对照，非改动目标）  
-> 日期：2026-08-02
+> 日期：2026-08-02（边界对齐 2026-08-03）
 
 ---
 
@@ -35,6 +35,8 @@
 
 - **不以 hot_restart 为主路径**（见 §2.2）。
 - 不引入独立远程 Istiod/全局控制面；每台网关 **本机 loopback ADS** 即可。
+- **默认不拆 EDS**：单上游地址继续 CDS 内联 `load_assignment`；多成员上游非产品目标（见能力路线图 D-E1/D-E5）。
+- **默认不做** RDS / SDS / L7 业务路由；日常 defaults（超时、限速、连接上限、HC，以及 P1 薄 outlier）随 CDS/LDS 重写即可。
 
 ---
 
@@ -48,6 +50,15 @@
 
 依赖：引入 [`envoyproxy/go-control-plane`](https://github.com/envoyproxy/go-control-plane)（与镜像 `envoyproxy/envoy:v1.39.0` 对齐的 API 版本）。
 
+#### 舰队 / 多节点（跨机意图分发）
+
+跨机配置同步、伸缩与角色划分见 **[fleet-scale-control-plane.md](fleet-scale-control-plane.md)**（已拍板）。要点：
+
+- **Secondary 不跑完整 Panel** UI/API；本机 ADS 用 **瘦 xDS / Agent**（常驻）或 Apply 时 **短时 ADS**。
+- 每节点 Envoy **仍只连本机** `127.0.0.1` ADS；不把 Envoy 指到远程 Primary / Istiod。
+- 机群稳态意图分发以 **Agent 拉取** 为主，SSH 仅 bootstrap/应急（[专章 · 2026-08-03](fleet-scale-control-plane.md#fleet-control-plane-strategy)）。
+- Management Primary 为唯一可写管理面与中心观测；本文其余章节以单机工程方案为主。
+
 ### 2.2 为何不用 / 何时用 hot restart
 
 | | xDS CDS/LDS（主） | hot_restart（备） |
@@ -55,7 +66,7 @@
 | 已建立连接 | 进程不变，无关连接保留 | 父子进程 + 共享内存交棒；Docker/`host` 网络下 **IPC、drain、epoch 编排复杂**，易踩坑 |
 | 实现落点 | 复用现有 `render` 产物 → Snapshot；Panel 已是常驻进程 | 需改 compose command、`--restart-epoch`、parent/child、失败回退 |
 | 适用 | 日常 resources 变更（上游/规则/限速） | Envoy **二进制**小版本热替换（可选后期）；**不**作为 Apply 日常路径 |
-| 与现注释一致 | `core/ops/reload.go` 已写明 Prefer xDS | 保留为备选备注即可 |
+| 与现注释一致 | `core/dataplane/reload.go` 已写明 Prefer xDS | 保留为备选备注即可 |
 
 **结论**：日常 Apply → xDS；进程/bootstrap/镜像 → 现有 hard reload（可双活 drain）。
 
@@ -108,8 +119,8 @@
 | 模型 | `core/resources/resources.go` | `Resources{Meta,Gateway,Defaults,ACL,Servers,Rules}`；校验端口/协议/上游引用 |
 | Diff / 分流 | `core/resources/diff.go` | `ChangeSummary.Classify()` → `NeedsReload` / `NeedsFirewall` |
 | 渲染 | `core/render/generate.go` | **整份** Envoy YAML：`admin` + `static_resources.{listeners,clusters}`；命名 `upstream-{server}-{proto}` / `ingress-{rule}` |
-| Apply 全量部署 | `core/ops/apply.go` | seed → backup → validate → compose up（首次/全量，非热更新对象） |
-| Reload | `core/ops/reload.go` | backup → render → validate → **drain** → `docker restart` 或 `compose up --force-recreate` → ready → undrain |
+| Apply 全量部署 | `core/dataplane/dataplane.go` | seed → backup → validate → compose up（首次/全量，非热更新对象） |
+| Reload | `core/dataplane/reload.go` | backup → render → validate → **drain** → `docker restart` 或 `compose up --force-recreate` → ready → undrain |
 | Panel | `core/panel/server.go` `apiApply` | 二次确认 `RELOAD_ENVOY` → `ops.ReloadCapture` |
 | Preview | `apiApplyPreview` | 返回 `needs_reload` / `needs_firewall` |
 | UI | `ui/src/pages/ApplyPage.tsx` + i18n | 风险文案已中性（「现有连接」）；确认语 `RELOAD_ENVOY` |
@@ -135,16 +146,16 @@
 | `core/xds/snapshot.go` | `Resources` → go-control-plane `cache.Snapshot`（CDS+LDS） | 1 |
 | `core/render/bootstrap.go`（新） | 最小 bootstrap YAML | 1 |
 | `core/render/generate.go` | 拆分 static→dynamic；保留 `Write` 兼容路径或改为「bootstrap + 旁路 dump」 | 1 |
-| `core/ops/hot_apply.go`（新） | `HotApplyTo`：backup→validate→publish→ACK；失败回滚 snapshot | 1 |
-| `core/ops/reload.go` | 入口分流：`Reload` → Hot 优先，不可热则 Hard；保留 `HardReloadTo` | 1–2 |
-| `core/resources/diff.go` | `ApplySurface` 增加 `NeedsHardReload` / `CanHotApply` | 1 |
+| `core/dataplane/hot_apply.go`（新） | `HotApplyTo`：backup→validate→publish→ACK；失败回滚 snapshot | 1 |
+| `core/dataplane/reload.go` | 入口分流：`Reload` → Hot 优先，不可热则 Hard；保留 `HardReloadTo` | 1–2 |
+| `core/resources/diff.go` | `ApplySurface` 增加 `NeedsHardReload` / `CanHotApply` | 0（已落地） |
 | `core/panel/server.go` | preview 返回 `apply_mode`；apply 按模式选确认语 | 2 |
 | `core/cli/cli.go` | `reload` 默认热更新；`reload --hard` 强制旧路径 | 1 |
 | `packaging/compose.yaml` | **无需改 command 即可收 xDS**（仍 `-c bootstrap`）；可选挂载不变 | 1* |
-| `.env` / `core/ops/env.go` | `XDS_PORT`、`XDS_ENABLED`（迁移开关） | 1 |
+| `.env` / `core/config` | `XDS_PORT`、`XDS_ENABLED`（**默认开**；`0` 或 `--hard` 回退） | 1（Hot 分流）/ 0（Hard） |
 | `core/host/panel.go` / systemd | 确保 Panel 先于 Envoy 就绪，或 Envoy 容忍 xDS 短暂不可达 | 1 |
 | `ui/.../ApplyPage.tsx` + i18n | 热更新确认 `HOT_APPLY`；hard 仍 `RELOAD_ENVOY`；风险分级 | 2 |
-| `core/ops/validate.go` | 校验「bootstrap+动态合并」或 protobuf 等价配置 | 1 |
+| `core/dataplane/validate.go` | 校验「bootstrap+动态合并」或 protobuf 等价配置 | 1 |
 | 测试 | `core/xds/*_test.go`、`render` golden、集成：长连接不断 | 1–2 |
 
 \*Phase 1 前置：生产 Envoy 必须换成 **bootstrap 形态**的 `envoy.yaml`（一次 hard recreate 迁移窗口）；之后日常不再 recreate。
@@ -163,22 +174,23 @@ Phase 1 务实做法：`ops.HotApply` 与 Panel 共用 `xds.Server` 单例接口
 
 ## 4. 分阶段落地计划
 
-### Phase 0 — 方案冻结与分流骨架（0.5–1 人天）
+### Phase 0 — 方案冻结与分流骨架（0.5–1 人天）✅
 
 **改动**
 
 - 本文件合入评审。
-- `ApplySurface` 扩展字段（可先只加类型与单测，**不改** `ReloadTo` 行为）：
+- `ApplySurface` 扩展字段 + 单测：
   - `CanHotApply bool`
-  - `NeedsHardReload bool`（meta.admin_*、envoy_image、或显式 bootstrap 相关）
-- Feature flag：`XDS_ENABLED=0`（默认关）时行为与现网完全一致。
+  - `NeedsHardReload bool`（`meta.admin_*` / `envoy_image` via `MetaChanged`）
+- Feature flag：`XDS_ENABLED` **默认 `1`**（`LoadEnv` / 新 `.env` 模板）。显式 `XDS_ENABLED=0` 时 `ReloadTo` → `HardReloadTo`（drain+restart），与升级前现网一致。
+- `HardReloadTo` 保留；UI 确认语本阶段不改。
 
 **验收**
 
-- 全量单测绿；`XDS_ENABLED=0` 时 Panel Apply / `reload` 仍 drain+restart。
+- 相关包单测绿；`XDS_ENABLED=0` 时 Panel Apply / `reload` 仍 drain+restart。
 - 无生产 compose/envoy 行为变化。
 
-**回滚**：删 flag 相关代码或保持默认关。  
+**回滚**：设 `XDS_ENABLED=0` 或 `reload --hard`。  
 **风险**：极低。
 
 ---
@@ -243,7 +255,7 @@ curl -sS 127.0.0.1:9901/ready | grep LIVE
 
 - Prometheus：`relaygate_xds_snapshot_version`、`xds_ack_latency`、`hot_apply_total{result=}`。
 - 混沌：xDS 短暂不可用、推重复 version、快速连续 Apply。
-- （可选）EDS 拆分：多 endpoint 时再拆；当前单 IP STATIC 可继续 CDS 内联 `load_assignment`。
+- **不做 EDS 拆分（已拍板）**：单 IP STATIC 继续 CDS 内联 `load_assignment`；若未来另开「多成员上游」产品需求再评估。
 - 文档更新 README「Apply 分流」表。
 
 ---
@@ -385,7 +397,7 @@ Phase 1 可暂不改 UI 确认语（仍 `RELOAD_ENVOY` 但后端已热更新）�
 2. `core/resources`：`CanHotApply` / `NeedsHardReload` + 单测
 3. `core/render`：`RenderBootstrap` + 动态资源导出（单测 golden）
 4. `core/xds`：可启动的 ADS + 内存 Snapshot（unit test 用 cache）
-5. `core/ops/hot_apply.go` + `Reload` 在 `XDS_ENABLED=1` 时分流；默认 `0` **行为零变化**
+5. `core/dataplane/hot_apply.go` + `Reload` 在 `XDS_ENABLED=1` 时分流；默认 `0` **行为零变化**
 6. 简短 `docs/xds-migrate.md`：生产一次迁移步骤（双活 drain → 写 bootstrap → 启 Panel xDS → hard 一次 → 验证 → 此后 HotApply）
 
 **不要**在第一 PR 强改默认 UI 确认语；不要删除 `HardReloadTo`。
@@ -452,12 +464,13 @@ journalctl -u relaygate-panel -n 50 --no-pager
 
 ---
 
-## 9. 决策摘要（供评审勾选）
+## 9. 决策摘要（已与能力路线图对齐）
 
 1. **主路径 = 本机 ADS（CDS+LDS）**；hot restart 不作日常 Apply。  
-2. **控制面 = Panel 内嵌**；CLI 连不上则 Phase 1 fallback hard。  
-3. **默认 flag 关闭合并**；迁移后开 `XDS_ENABLED=1`。  
+2. **控制面 = Panel 内嵌**（Secondary 用瘦 xDS/agent）；CLI 连不上则 fallback hard。  
+3. **迁移后** `XDS_ENABLED=1`；未迁移节点走 Hard。  
 4. **HotApply 不 drain**；HardReload 保持 drain。  
-5. **第一阶段验收焦点**：加/改无关上游、加转发端口 → PID 不变 + 长连接存活。  
+5. **验收焦点**：加/改无关上游、加转发端口 → PID 不变 + 长连接存活。  
+6. **默认无 EDS / RDS / SDS**；能力边界见 [envoy-capability-roadmap.md](envoy-capability-roadmap.md) §6。  
 
-评审通过后即可按 §6 第一个 PR 开工。
+工程实现按本文 Phase 推进；开哪些 Envoy 产品特性以能力路线图为准。

@@ -491,8 +491,7 @@ Place_Product() {
     mkdir -p "$INSTALL_DIR/ui"
     cp -a "${PACKAGE_ROOT}/ui/dist" "$INSTALL_DIR/ui/"
     cp -a "${PACKAGE_ROOT}/packaging" "$INSTALL_DIR/"
-    for f in .env.example resources.example.yaml gateway-01.env.example gateway-02.env.example \
-      gateways.env.example install.sh RELEASE go.mod; do
+    for f in install.sh RELEASE go.mod; do
       [[ -e "${PACKAGE_ROOT}/$f" ]] && cp -a "${PACKAGE_ROOT}/$f" "$INSTALL_DIR/$f"
     done
   fi

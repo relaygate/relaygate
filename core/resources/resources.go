@@ -52,7 +52,18 @@ type Defaults struct {
 	TCPLocalRateLimitPerSec int         `yaml:"tcp_local_rate_limit_per_sec"`
 	TCPLocalRateLimitBurst  int         `yaml:"tcp_local_rate_limit_burst"`
 	HealthCheck             HealthCheck `yaml:"health_check"`
-	Nftables                NftablesDefaults `yaml:"nftables"`
+	// OutlierDetection is thin L4 passive ejection (default off). Single-endpoint clusters
+	// eject the only host on failure — keep thresholds conservative.
+	OutlierDetection OutlierDetection `yaml:"outlier_detection"`
+	Nftables         NftablesDefaults `yaml:"nftables"`
+}
+
+// OutlierDetection maps to Envoy cluster outlier_detection (TCP-oriented fields only).
+type OutlierDetection struct {
+	Enabled                         bool   `yaml:"enabled"`
+	ConsecutiveLocalOriginFailure   int    `yaml:"consecutive_local_origin_failure"`
+	Interval                        string `yaml:"interval"`
+	BaseEjectionTime                string `yaml:"base_ejection_time"`
 }
 
 // NftablesDefaults drives host nftables per-IP rate limits (same intent as packaging/firewall).
@@ -79,6 +90,23 @@ func (d *Defaults) ApplyNftablesDefaults() {
 	}
 }
 
+// ApplyOutlierDefaults fills conservative values when outlier_detection.enabled is true.
+// Does not enable outlier when omitted/false.
+func (d *Defaults) ApplyOutlierDefaults() {
+	if !d.OutlierDetection.Enabled {
+		return
+	}
+	if d.OutlierDetection.ConsecutiveLocalOriginFailure <= 0 {
+		d.OutlierDetection.ConsecutiveLocalOriginFailure = 5
+	}
+	if strings.TrimSpace(d.OutlierDetection.Interval) == "" {
+		d.OutlierDetection.Interval = "10s"
+	}
+	if strings.TrimSpace(d.OutlierDetection.BaseEjectionTime) == "" {
+		d.OutlierDetection.BaseEjectionTime = "30s"
+	}
+}
+
 type HealthCheck struct {
 	Timeout            string `yaml:"timeout"`
 	Interval           string `yaml:"interval"`
@@ -92,7 +120,7 @@ type ProtoPort struct {
 	Port int `yaml:"port" json:"port"`
 }
 
-// Server is an upstream (game server): alias, address, optional TCP/UDP ports, and enabled.
+// Server is an upstream: alias, address, optional TCP/UDP ports, and enabled.
 // Product display name: Upstream; YAML key remains "servers".
 // Stage/listen/rollout live on Rule only. Health check (internal) uses TCP port when TCP is set;
 // UDP-only servers are not health-checked.

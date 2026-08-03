@@ -1,5 +1,5 @@
 // Package host implements host-level install tasks (systemd Panel, users, sudoers).
-// It is separate from core/panel (HTTP management UI) and core/ops (data-plane workflows).
+// It is separate from core/panel (HTTP management UI) and core/dataplane (local dataplane workflows).
 package host
 
 import (
@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/relaygate/relaygate/core/config"
-	"github.com/relaygate/relaygate/core/ops"
+	"github.com/relaygate/relaygate/core/dataplane"
 )
 
 // PanelInstallOptions configures systemd panel installation.
@@ -46,7 +46,7 @@ func PanelInstall(root string, opt PanelInstallOptions) error {
 		opt.EnableNow = true
 	}
 
-	if !ops.IsRoot() && !opt.DryRun {
+	if !dataplane.IsRoot() && !opt.DryRun {
 		return fmt.Errorf("请以 root 运行（或 DRY_RUN=1）")
 	}
 	if _, err := os.Stat(opt.InstallDir); err != nil {
@@ -115,7 +115,7 @@ func panelRun(opt PanelInstallOptions) func(name string, args ...string) error {
 			fmt.Printf("[dry-run] %s %s\n", name, strings.Join(args, " "))
 			return nil
 		}
-		return ops.RunCmd(opt.InstallDir, name, args...)
+		return dataplane.RunCmd(opt.InstallDir, name, args...)
 	}
 }
 
@@ -169,37 +169,37 @@ func fixPanelPermissions(opt PanelInstallOptions, dataDir string) error {
 		if err := os.MkdirAll(d.path, d.mode); err != nil {
 			return err
 		}
-		_ = ops.RunCmd(opt.InstallDir, "chown", d.uid+":"+d.gid, d.path)
+		_ = dataplane.RunCmd(opt.InstallDir, "chown", d.uid+":"+d.gid, d.path)
 		// 显式 chmod：调用方 umask 077 时 MkdirAll(mode) 会被收窄
 		_ = os.Chmod(d.path, d.mode)
 	}
 	bin := filepath.Join(opt.InstallDir, "bin", "relaygate")
-	_ = ops.RunCmd(opt.InstallDir, "chown", "root:root", bin)
+	_ = dataplane.RunCmd(opt.InstallDir, "chown", "root:root", bin)
 	_ = os.Chmod(bin, 0o755)
 	envFile := filepath.Join(opt.InstallDir, ".env")
 	if _, err := os.Stat(envFile); err == nil {
 		// Panel / doctor 以 User=relaygate 读 .env；勿用 0600 root:root
-		_ = ops.RunCmd(opt.InstallDir, "chown", "root:relaygate", envFile)
+		_ = dataplane.RunCmd(opt.InstallDir, "chown", "root:relaygate", envFile)
 		_ = os.Chmod(envFile, 0o640)
 	}
 	res := filepath.Join(dataDir, "resources.yaml")
 	if _, err := os.Stat(res); err == nil {
-		_ = ops.RunCmd(opt.InstallDir, "chown", "root:relaygate", res)
+		_ = dataplane.RunCmd(opt.InstallDir, "chown", "root:relaygate", res)
 		_ = os.Chmod(res, 0o660)
 	}
 	inv := filepath.Join(dataDir, "inventory", "gateways.env")
 	if _, err := os.Stat(inv); err == nil {
-		_ = ops.RunCmd(opt.InstallDir, "chown", "root:relaygate", inv)
+		_ = dataplane.RunCmd(opt.InstallDir, "chown", "root:relaygate", inv)
 		_ = os.Chmod(inv, 0o640)
 	}
 	panelPW := filepath.Join(opt.SecretsDir, "panel_admin_password")
 	if _, err := os.Stat(panelPW); err == nil {
-		_ = ops.RunCmd(opt.InstallDir, "chown", "root:relaygate", panelPW)
+		_ = dataplane.RunCmd(opt.InstallDir, "chown", "root:relaygate", panelPW)
 		_ = os.Chmod(panelPW, 0o640)
 	}
 	grafPW := filepath.Join(opt.SecretsDir, "grafana_admin_password")
 	if _, err := os.Stat(grafPW); err == nil {
-		_ = ops.RunCmd(opt.InstallDir, "chown", "root:root", grafPW)
+		_ = dataplane.RunCmd(opt.InstallDir, "chown", "root:root", grafPW)
 		// 0640：Grafana 容器 gid=0 可读；勿用 0600（容器内读失败）
 		_ = os.Chmod(grafPW, 0o640)
 	}
@@ -231,7 +231,7 @@ func installHelperAndSudoers(opt PanelInstallOptions, helperSrc, sudoersSrc stri
 	if err := os.WriteFile(helperPath, []byte(content), 0o755); err != nil {
 		return err
 	}
-	_ = ops.RunCmd(opt.InstallDir, "chown", "root:root", helperPath)
+	_ = dataplane.RunCmd(opt.InstallDir, "chown", "root:root", helperPath)
 
 	sb, err := os.ReadFile(sudoersSrc)
 	if err != nil {
@@ -240,9 +240,9 @@ func installHelperAndSudoers(opt PanelInstallOptions, helperSrc, sudoersSrc stri
 	if err := os.WriteFile(sudoersDst, sb, 0o440); err != nil {
 		return err
 	}
-	_ = ops.RunCmd(opt.InstallDir, "chown", "root:root", sudoersDst)
-	if ops.LookPath("visudo") {
-		if err := ops.RunCmd(opt.InstallDir, "visudo", "-cf", sudoersDst); err != nil {
+	_ = dataplane.RunCmd(opt.InstallDir, "chown", "root:root", sudoersDst)
+	if dataplane.LookPath("visudo") {
+		if err := dataplane.RunCmd(opt.InstallDir, "visudo", "-cf", sudoersDst); err != nil {
 			return fmt.Errorf("sudoers 校验失败: %s", sudoersDst)
 		}
 	}
@@ -266,7 +266,7 @@ func renderUnit(opt PanelInstallOptions, src, dest string) error {
 	if err := os.WriteFile(dest, []byte(content), 0o644); err != nil {
 		return err
 	}
-	return ops.RunCmd(opt.InstallDir, "chown", "root:root", dest)
+	return dataplane.RunCmd(opt.InstallDir, "chown", "root:root", dest)
 }
 
 func writePanelEnv(opt PanelInstallOptions, dataDir string) error {
@@ -300,7 +300,7 @@ func writePanelEnv(opt PanelInstallOptions, dataDir string) error {
 	if err := os.MkdirAll("/etc/relaygate", 0o750); err != nil {
 		return err
 	}
-	_ = ops.RunCmd(opt.InstallDir, "chown", "root:relaygate", "/etc/relaygate")
+	_ = dataplane.RunCmd(opt.InstallDir, "chown", "root:relaygate", "/etc/relaygate")
 	// 显式 chmod：调用方 umask 077 时 MkdirAll(0750) 会变成 0700，Panel 用户无法进入
 	_ = os.Chmod("/etc/relaygate", 0o750)
 	helperPath := "/usr/local/libexec/relaygate/apply"
@@ -320,7 +320,7 @@ PROMETHEUS_URL=http://127.0.0.1:9090
 	if err := os.WriteFile(panelEnv, []byte(body), 0o640); err != nil {
 		return err
 	}
-	_ = ops.RunCmd(opt.InstallDir, "chown", "root:relaygate", panelEnv)
+	_ = dataplane.RunCmd(opt.InstallDir, "chown", "root:relaygate", panelEnv)
 	return os.Chmod(panelEnv, 0o640)
 }
 
@@ -332,7 +332,7 @@ func PanelUninstall(purge, dryRun bool) error {
 	if os.Getenv("DRY_RUN") == "1" {
 		dryRun = true
 	}
-	if !ops.IsRoot() && !dryRun {
+	if !dataplane.IsRoot() && !dryRun {
 		return fmt.Errorf("请以 root 运行（或 DRY_RUN=1）")
 	}
 	run := func(name string, args ...string) error {
