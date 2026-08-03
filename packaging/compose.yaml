@@ -1,4 +1,4 @@
-# RelayGate: Envoy 数据面 + 可观测性（Docker Compose）
+# RelayGate: Envoy 转发 + 可观测性（Docker Compose）
 # Panel 默认以宿主二进制 + systemd 运行（见 packaging/systemd/、install.sh），
 # 不在本文件中定义 panel 服务，也不挂载 docker.sock。
 # 每台网关共用本模板，靠 .env 中的 GATEWAY_NAME 等变量区分实例。
@@ -11,7 +11,7 @@
 #   从节点示例：COMPOSE_PROFILES=with-logs 且 LOKI_HOST=中心私网 IP
 # provisioning / dashboard JSON 来自本目录 ./grafana/provisioning（版本化）；
 # RELAYGATE_DATA_DIR（.env 中由 setup 写入绝对路径）承载渲染产物与 backups；不挂 Grafana 配置。
-# 从节点可留空 Grafana/Loki profiles，仅跑数据面 + 本地 Prometheus（remote_write 到中心）+ 可选日志采集。
+# 从节点可留空 Grafana/Loki profiles，仅跑 Envoy + 本地 Prometheus（remote_write 到中心）+ 可选日志采集。
 
 name: ${COMPOSE_PROJECT_NAME:-relaygate}
 

@@ -7,7 +7,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "Envoy 数据面不可用 ({{ $labels.gateway }})"
+          summary: "Envoy 不可用 ({{ $labels.gateway }})"
           description: "{{ $labels.gateway }} Envoy Prometheus 抓取失败超过 1 分钟。"
 
       - alert: NodeExporterDown

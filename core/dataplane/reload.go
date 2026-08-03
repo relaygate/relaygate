@@ -15,16 +15,13 @@ import (
 // Reload renders config, drains, restarts Envoy, waits for ready.
 // When RELAYGATE_PRIVILEGED_HELPER is set and not root, re-execs via sudo.
 //
-// Connection impact when XDS_ENABLED=0 or NeedsHardReload: docker restart /
-// --force-recreate terminates ALL existing L4 TCP/UDP flows on this gateway.
-// Drain only flips /healthcheck so NLB stops new targets; it does NOT preserve
-// established connections.
+// Connection impact on HardReload (NeedsHardReload, --hard, or XDS off): docker
+// restart / --force-recreate terminates ALL existing L4 TCP/UDP flows on this
+// gateway. Drain only flips /healthcheck so NLB stops new targets; it does NOT
+// preserve established connections.
 //
-// Hot-update roadmap: see docs/hot-update-xds.md
-//  1. Short-term ops: dual-active + drain one node + reload + undrain (fleet/NLB).
-//  2. When XDS_ENABLED=1 and Classify().CanHotApply: HotApply (CDS/LDS, no drain).
-//  3. HardReloadTo (drain+restart) remains for bootstrap/image/NeedsHardReload
-//     and as the default path while the flag is off.
+// Default path (XDS on): CanHotApply → HotApply (CDS/LDS, no drain).
+// HardReloadTo remains for bootstrap/image/NeedsHardReload and escape hatches.
 func Reload(root string) error {
 	return ReloadTo(root, os.Stdout, os.Stderr, ReloadOptions{})
 }
@@ -35,8 +32,8 @@ type ReloadOptions struct {
 }
 
 // ReloadTo is like Reload but writes progress to the given writers (Panel capture).
-// With XDS_ENABLED=1 (default), HotApply is preferred for CanHotApply diffs unless
-// ForceHard is set or bootstrap is not migrated (falls back to HardReloadTo).
+// HotApply is preferred for CanHotApply diffs unless ForceHard is set or
+// bootstrap is not yet ADS (falls back to HardReloadTo).
 func ReloadTo(root string, stdout, stderr io.Writer, opts ReloadOptions) error {
 	if handled, err := maybePrivilegedReexec(stdout, stderr, "reload"); handled {
 		return err
@@ -65,11 +62,11 @@ func ReloadTo(root string, stdout, stderr io.Writer, opts ReloadOptions) error {
 		}
 		migrated := render.IsBootstrapMigrated(paths.EnvoyYAML)
 		if plan.CanHotApply && !plan.NeedsHardReload && migrated {
-			logf(stdout, "XDS_ENABLED=1: HotApply (no drain)")
+			logf(stdout, "HotApply (no drain)")
 			return HotApplyTo(root, env, stdout, stderr)
 		}
 		if plan.CanHotApply && !plan.NeedsHardReload && !migrated {
-			logf(stdout, "XDS_ENABLED=1 但 bootstrap 未迁移（无 dynamic_resources）：改走 HardReload；见 docs/xds-migrate.md")
+			logf(stdout, "bootstrap 尚无 dynamic_resources：改走 HardReload")
 		} else if plan.NeedsHardReload {
 			logf(stdout, "NeedsHardReload (meta/bootstrap): falling back to HardReload")
 		}
@@ -81,7 +78,7 @@ func ReloadTo(root string, stdout, stderr io.Writer, opts ReloadOptions) error {
 // HardReloadTo is the classic drain → docker restart / force-recreate → ready path.
 // Kept as the permanent fallback for bootstrap/meta/image changes and when xDS is off.
 func HardReloadTo(root string, env Env, stdout, stderr io.Writer) error {
-	logf(stdout, "WARN: 应用配置将重启 Envoy（docker restart / force-recreate），会断开本网关上全部现有连接；热更新路径未选用或不可用")
+	logf(stdout, "WARN: 将重启本机 Envoy，会断开本网关上全部现有连接")
 
 	totalStart := time.Now()
 	stage := func(name string, fn func() error) error {

@@ -1,6 +1,6 @@
-# FPS / 高 UDP 吞吐：放宽 nft UDP PPS，缩短 UDP idle，略提高 TCP 本地限速
+# UDP 高吞吐：放宽 nft UDP PPS，缩短 UDP idle，略提高 TCP 本地限速
 name: fps-udp-heavy
-description: 适合 FPS 等高 UDP 包率场景；仍需云高防挡大流量洪泛
+description: 适合高 UDP 包率场景；仍需云高防挡大流量洪泛
 
 defaults:
   backend_tcp_port: 7777

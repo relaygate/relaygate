@@ -41,7 +41,7 @@ table inet relaygate {
     ip protocol icmp accept
     ip6 nexthdr ipv6-icmp accept
 
-    # SSH 运维入口（必须保留；不受游戏 ACL 约束）
+    # SSH 运维入口（必须保留；不受业务 ACL 约束）
     tcp dport $SSH_PORT ct state new limit rate 10/second burst 20 packets accept comment "allow-ops-ssh"
 
     # Panel 管理面（INPUT；默认 PANEL_BIND=0.0.0.0:9000 对外监听，与此放行配套）

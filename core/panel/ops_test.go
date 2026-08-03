@@ -247,23 +247,51 @@ func TestStandbyBlocksFleetPublish(t *testing.T) {
 	}
 }
 
-func TestFleetJoinRequiresConfirm(t *testing.T) {
+func TestFleetJoinIssuesCommand(t *testing.T) {
 	srv, token, csrf := setupPanel(t)
 	h := srv.Handler()
 
+	// GET must hit the join handler (405), not SPA fallback.
+	getReq := httptest.NewRequest(http.MethodGet, "/api/ops/fleet/join", nil)
+	authed(getReq, token)
+	getRec := httptest.NewRecorder()
+	h.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET join status=%d body=%s", getRec.Code, getRec.Body.String())
+	}
+
 	body, _ := json.Marshal(map[string]string{
-		"confirm": "nope",
-		"name":    "gateway-02",
+		"name": "gateway-02",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/ops/fleet/join", bytes.NewReader(body))
 	authedCSRF(req, token, csrf)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != 400 {
+	if rec.Code != 200 {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "FLEET_JOIN") {
-		t.Fatalf("body=%s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "join_command") {
+		t.Fatalf("expected join_command in body=%s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "AGENT_TOKEN=") {
+		t.Fatalf("expected AGENT_TOKEN in join command body=%s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "PANEL_ADMIN_PASSWORD") {
+		t.Fatalf("must not embed panel password: %s", rec.Body.String())
+	}
+}
+
+func TestUnknownAPIPathNotSPAMethodNotAllowed(t *testing.T) {
+	srv, token, csrf := setupPanel(t)
+	h := srv.Handler()
+
+	// Unregistered /api/* must be 404, not SPA's misleading 405.
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/fleet-sync", bytes.NewReader([]byte(`{}`)))
+	authedCSRF(req, token, csrf)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown API, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -273,8 +301,7 @@ func TestStandbyBlocksFleetJoin(t *testing.T) {
 	h := srv.Handler()
 
 	body, _ := json.Marshal(map[string]string{
-		"confirm": "FLEET_JOIN",
-		"name":    "gateway-02",
+		"name": "gateway-02",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/ops/fleet/join", bytes.NewReader(body))
 	authedCSRF(req, token, csrf)

@@ -1,6 +1,6 @@
-# MOBA / 偏 TCP 稳定：适中连接与空闲超时，保守 UDP PPS
+# TCP 稳连：适中连接与空闲超时，保守 UDP PPS
 name: moba-tcp-stable
-description: 适合 MOBA/偏 TCP 长连接；熔断与本地限速更稳
+description: 适合偏 TCP 长连接；熔断与本地限速更稳
 
 defaults:
   backend_tcp_port: 7777

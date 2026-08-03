@@ -69,8 +69,9 @@ func FleetCLIHints(root string) []string {
 	return []string{
 		"relaygate fleet status",
 		"relaygate fleet publish   # 确认 PUBLISH_FLEET",
-		"relaygate fleet join gateway-02  # 确认 FLEET_JOIN",
+		"relaygate fleet join gateway-02   # 生成一句话安装命令",
 		"relaygate fleet leave gateway-02 # 确认 FLEET_LEAVE",
-		"# 节点：PRIMARY_URL=… AGENT_TOKEN_FILE=… relaygate agent run",
+		"# 节点：粘贴 join 输出的一行命令（PRIMARY_URL + AGENT_TOKEN）",
+		"# 升级: curl …/install.sh | sudo bash -s -- --upgrade -y",
 	}
 }

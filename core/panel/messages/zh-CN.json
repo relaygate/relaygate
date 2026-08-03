@@ -1,5 +1,5 @@
 {
-  "error.standby": "当前为只读节点（standby），禁止写操作。请到 Management Primary 执行。",
+  "error.standby": "当前为只读节点，禁止写操作。请到主控执行。",
   "error.grafana_unavailable": "Grafana 暂不可用：%s",
   "error.no_output": "（无输出）",
   "error.drain_action": "操作须为 status、fail 或 ok",
@@ -12,6 +12,6 @@
   "apply.none": "尚无",
   "changes.no_summary": "（无变更摘要文件，仍可回滚该时间戳）",
   "changes.no_diff": "无差异",
-  "ops.fw_root_hint": "防火墙操作需要 privileged helper。请检查：\n1) /usr/local/libexec/relaygate/apply 已安装\n2) /etc/sudoers.d/relaygate-panel 允许 relaygate 无密码执行该 helper\n3) Panel unit 未设置 NoNewPrivileges（及隐含项）\n然后：systemctl restart relaygate-panel\n",
-  "ops.profile_applied_body": "\n默认配置已写入。请先应用配置；若改了 nftables 档位，另需执行防火墙应用。\n"
+  "ops.fw_root_hint": "防火墙助手未就绪。请确认安装包已安装提权助手，并允许 Panel 无密码调用，然后重启 Panel 服务。",
+  "ops.profile_applied_body": "\n默认配置已写入。请先应用配置；若改了防火墙档位，另需执行防火墙应用。\n"
 }

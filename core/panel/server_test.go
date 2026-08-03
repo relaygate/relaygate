@@ -603,6 +603,14 @@ func TestSPAFallback(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "RelayGate SPA") {
 		t.Fatalf("expected index.html body: %s", rec.Body.String())
 	}
+
+	// Non-API POST still gets method not allowed from SPA.
+	post := httptest.NewRequest(http.MethodPost, "/servers", nil)
+	postRec := httptest.NewRecorder()
+	h.ServeHTTP(postRec, post)
+	if postRec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("SPA POST status=%d body=%s", postRec.Code, postRec.Body.String())
+	}
 }
 
 func TestAPILoginLogoutSession(t *testing.T) {
@@ -709,7 +717,7 @@ func TestStandbyRejectsWrites(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("standby api status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "standby") && !strings.Contains(rec.Body.String(), "备用") {
+	if !strings.Contains(rec.Body.String(), "只读") && !strings.Contains(rec.Body.String(), "主控") {
 		t.Fatalf("expected standby message: %s", rec.Body.String())
 	}
 

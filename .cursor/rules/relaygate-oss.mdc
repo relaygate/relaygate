@@ -1,0 +1,56 @@
+---
+description: RelayGate 开源仓库卫生、许可证、文档分层、发布与机密约束（始终生效）
+alwaysApply: true
+---
+
+# RelayGate 开源实践
+
+本仓库为开源项目（GitHub `relaygate/relaygate`，MIT）。
+
+- **产品术语 / 运维文案 / 确认词** → **`relaygate-product.mdc`**（勿在此复制全文；勿与之冲突）。
+- **改 CONTRIBUTING / SECURITY / `.github` / CHANGELOG 等元数据时的细则** → **`relaygate-contributing.mdc`**（按 globs 生效）。
+
+## Agent MUST
+
+1. **许可证**：保持根目录 `LICENSE` 为 MIT，且与 `README.md`「License」节一致；勿擅自换许可证或删版权头。
+2. **第三方依赖**：Go 依赖以 `go.mod` / `go.sum` 为准；新增依赖须可复现锁定；勿把私有/未声明许可证的代码拷进树。需要单独声明时再补 `NOTICE`（无则勿造空文件）。
+3. **README 完备性**（改产品表面、安装、角色边界时核对）：快速开始 / 安装、主控 vs 节点边界、已知限制（非目标）、链到 `CONTRIBUTING.md` / `SECURITY.md` / `CODE_OF_CONDUCT.md` / `LICENSE`。
+4. **文档分层**：
+   - 用户/运维：根 `README.md`、`packaging/**/README.md`、安装与日常命令。
+   - 设计/开发：`docs/`（控制面、xDS、路线图等）— 给贡献者与深度运维。
+5. **运行时文案**：CLI / Panel / toast / 错误主文案 **禁止**要求用户打开仓库内 `docs/*.md` 路径；可写操作步骤或已安装帮助概念。开发注释、Go doc、仓库 README **可以**链到 `docs/`。
+6. **发布产物**：`make dist` / Release tar **只含**二进制、`packaging/`、`ui/dist`、`install.sh` 等安装树（与现 Makefile 一致）；**不要**打进完整源码树或整本 `docs/`。
+7. **版本**：对外版本 = GitHub Release tag `vX.Y.Z`（semver）；破坏性变更在发行说明 / `CHANGELOG.md` 标明。本地 `RELEASE` / ldflags 仅构建元数据，**勿**手改冒充已发布版本。
+8. **机密与示例**：示例与文档只用占位（默认密码 `relaygate`、路径占位、RFC `203.0.113.x`、`server-01` / `gateway-01` / `example.com`）；生产务必改密。
+9. **兼容**：YAML / CLI 已有标识符优先稳定；破坏性变更须迁移说明或兼容期。公开 HTTP/API / 机群协议变更须写清旧客户端影响与升级顺序（主控↔节点，见设计文档）。
+10. **范围对齐产品**：社区沟通与文档中的 scope / non-goals 与 `relaygate-product.mdc` 一致（通用 L4 网关；非游戏/单客户专用；勿游戏化）。
+
+## Agent MUST NOT
+
+- **提交或写入仓库**：`.env` / `.env.*`（允许 `**/.env.example`）、密钥、token、证书私钥、`.runtime/`、顶层 `/data/`、`bin/`、`dist/`、`ui/dist/`、本地二进制、`*.log`、Terraform state（`*.tfstate*`）。
+- **在示例、截图说明、Issue 正文模板默认值里放真实密钥或生产地址**。
+- **在用户可见运行时文案里推销**「请阅读仓库 `docs/xxx.md`」。
+- **把完整 `docs/` 或源码树打进 release artifact**。
+- **默默破坏兼容**（改标识符语义、默认行为、机群协议）而不更新 README / CHANGELOG / PR 说明。
+- **在公开 Issue 贴未修复漏洞细节**（走 `SECURITY.md`）。
+- **新能力对外命名/文案游戏化**（细则见 product 规则）；工程内部包名可保留。
+
+## 仓库卫生检查清单（改元数据或发版相关时）
+
+| 项 | 路径 / 期望 |
+|----|-------------|
+| LICENSE | `LICENSE` = MIT；README License 节一致 |
+| README | 快速开始、主控/节点、已知限制；链 CONTRIBUTING / SECURITY / CoC |
+| 贡献 / 安全 / 行为 | `CONTRIBUTING.md`、`SECURITY.md`、`CODE_OF_CONDUCT.md` 存在且链接有效 |
+| 变更记录 | `CHANGELOG.md`（发版或破坏性变更时更新；Keep a Changelog 风格即可） |
+| CI | `.github/workflows/ci.yml`：`gofmt` / `vet` / `test` / `build`（及现有 validate 烟测） |
+| Release | `.github/workflows/release.yml`：`v*` tag；产物与源码树分离 |
+| gitignore | `.gitignore` 覆盖运行态与密钥类；勿削弱对 `.env` / `.runtime` / `bin` / `dist` 的忽略 |
+| Issue / PR 模板 | `.github/ISSUE_TEMPLATE/*`、`.github/PULL_REQUEST_TEMPLATE.md` |
+| 可复现构建 | 文档写明最低依赖（Go 版本见 `go.mod`、Node 用于 Panel、Docker 按 CI）；优先 `make build` / `make test` / `make dist` |
+
+## 社区与范围（摘要）
+
+- **目标**：可安装、可贡献的通用 L4 网关（Envoy + 主控/节点）。
+- **非目标**（与 README「已知边界」及 product 一致）：多上游成员 LB、抗 DDoS、游戏专用语义等；勿在 Issue/PR 中把项目表述成某客户或游戏产品。
+- Issue：缺陷/需求；设计讨论优先 Discussion（若启用）或 Issue 标 `design`；安全只走 SECURITY 渠道。

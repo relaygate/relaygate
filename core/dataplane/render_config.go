@@ -33,7 +33,7 @@ func RenderConfig(root string, checkOnly bool) error {
 		if err := render.WriteBootstrap(envoyOut, nftOut, res, bootOpt, opt); err != nil {
 			return err
 		}
-		fmt.Printf("已写入 bootstrap %s (xDS mode)\n", envoyOut)
+		fmt.Printf("已写入 bootstrap %s\n", envoyOut)
 		fmt.Printf("已写入 %s\n", nftOut)
 		return nil
 	}

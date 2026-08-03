@@ -26,7 +26,7 @@ const (
 	// SharedDirName holds role-agnostic templates (resources, default env).
 	SharedDirName = "shared"
 	ComposeFileRel  = "packaging/compose.yaml"
-	TemplatesDirRel = "packaging/shared" // legacy name: shared templates root
+	TemplatesDirRel = "packaging/shared"
 	ControlEnvRel   = "packaging/control/env.example"
 	NodeEnvRel      = "packaging/node/env.example"
 
@@ -205,9 +205,9 @@ type Env struct {
 	TCPPort                  string
 	UDPPort                  string
 	Timeout                  string
-	// XDSEnabled gates HotApply (docs/hot-update-xds.md). Default on; set 0 for legacy drain+restart.
+	// XDSEnabled gates HotApply. Default on; unset/1 = on. Escape hatch: XDS_ENABLED=0 → HardReload.
 	XDSEnabled bool
-	// XDSPort is the loopback ADS listen port when xDS is enabled (default 18000).
+	// XDSPort is the loopback ADS listen port (default 18000).
 	XDSPort string
 	Raw     map[string]string
 }

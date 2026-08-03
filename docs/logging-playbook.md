@@ -18,7 +18,7 @@ Envoy → ${RELAYGATE_DATA_DIR}/envoy/logs/tcp-access.json
 | 从节点 / 边缘 | `with-logs` | 仅 Fluent Bit；`LOKI_HOST=<中心私网>` |
 | 专用可观测主机 | 见 `packaging/observability` + profile `with-loki` | 边缘推中心 |
 
-## 启用（P0）
+## 启用
 
 1. `.env`（示例见 `packaging/shared/env.example` / `control.env.example`）：
 
@@ -28,7 +28,7 @@ COMPOSE_PROFILES=with-grafana,with-loki,with-logs
 # LOKI_HOST=127.0.0.1
 # LOKI_PORT=3100
 # LOKI_RETENTION_PERIOD=168h   # 对照 packaging/loki/loki-config.yml retention_period
-# LOG_SAMPLE_RATE=1.0         # P2：正常会话采样；异常 flags/短会话始终全量
+# LOG_SAMPLE_RATE=1.0         # 正常会话采样；异常 flags/短会话始终全量
 # LOG_SHORT_SESSION_MS=2000
 ```
 
@@ -64,33 +64,29 @@ Grafana provisioning 已含 Loki datasource（`uid: loki`）与看板 **TCP Sess
 
 ## 真实客户端 IP 与排障关联
 
-### 目标拆解
-
-| 目标 | 要什么 | 本仓库现状 / 做法 |
+| 目标 | 要什么 | 做法 |
 |------|--------|-------------------|
-| **真实客户端 IP** | TCP access 的 `downstream`（及 nft 限速/ACL 所见源 IP）= 玩家公网 IP | 字段已是 `%DOWNSTREAM_REMOTE_ADDRESS%`；值取决于链路（见下） |
+| **真实客户端 IP** | TCP access 的 `downstream`（及 nft 限速/ACL 所见源 IP）= 客户端公网 IP | 字段已是 `%DOWNSTREAM_REMOTE_ADDRESS%`；值取决于链路（见下） |
 | **排障关联** | 同一会话能对齐到网关、转发、时间窗、指标 | label `gateway` + JSON `rule`/`conn_id`/`ts`；Prometheus 同 `gateway` 时间对齐 |
 
 ### `downstream` 实际是什么
 
 ```text
-【产品主路径】公网直连暴露（PROXY_PROTOCOL=off，默认）：
-  玩家 ──TCP──▶ Envoy → downstream = 玩家 IP（TCP peer）
+公网直连（PROXY_PROTOCOL=off，默认）：
+  客户端 ──TCP──▶ Envoy → downstream = 客户端 IP（TCP peer）
   多上游 = 网关 rules 转发，前面没有云 LB → 不需要、也不应开 PROXY
 
 NLB 仅 preserve、不发 PROXY：
-  玩家 → NLB ──源 IP 保留──▶ Envoy → 保持 off → downstream = 玩家 IP
+  客户端 → NLB ──源 IP 保留──▶ Envoy → 保持 off → downstream = 客户端 IP
 
 NLB 发 PROXY v2（PROXY_PROTOCOL=v2，端口仅对 LB）：
-  玩家 → NLB ──PROXY──▶ Envoy → downstream = 头内客户端 IP
+  客户端 → NLB ──PROXY──▶ Envoy → downstream = 头内客户端 IP
 
 兼容模式 v2-compat（有头用头、无头用 peer）：
-  仅当入口已锁 LB 网段；【禁止】公网直连开 compat（可伪造 PROXY 头）
+  仅当入口已锁 LB 网段；禁止公网直连开 compat（可伪造 PROXY 头）
 ```
 
-### 能否「自判断」？
-
-**安装时无法可靠自动判断**前面有没有云 LB（不要用「上游数量」推断）。产品策略：
+安装时无法可靠自动判断前面有没有云 LB（不要用「上游数量」推断）：
 
 | 做法 | 说明 |
 |------|------|
@@ -110,7 +106,7 @@ NLB 发 PROXY v2（PROXY_PROTOCOL=v2，端口仅对 LB）：
 
 Envoy 兼容语义：无 PROXY 头 → 放行并用 TCP peer；有头 → 用头内 IP。
 
-**安全边界（大字）：**
+**安全边界：**
 
 - **公网直连暴露端口 → 必须 `off`。** 即使 compat 能「连上」，攻击者仍可发送伪造 PROXY 头，骗过 access log；若把 `downstream` 用于 ACL/封禁则更危险。
 - **`v2` / `v2-compat` 仅当转发口只对 LB 网段开放时使用。** Envoy 不按 CIDR 校验谁能发 PROXY 头。
@@ -146,10 +142,10 @@ Envoy 兼容语义：无 PROXY 头 → 放行并用 TCP peer；有头 → 用头
 
 注意：`conn_id` 仅在同一 Envoy 进程生命周期内有意义；reload 后会重新编号。
 
-### 做不到（明确边界）
+### 明确边界
 
-- **游戏服（上游）仍见网关出口 IP**（README 已知边界）。要让上游见玩家 IP 需 TPROXY/SNAT 回程等更大改动，不在本方案范围。  
-- **UDP access NDJSON** 仍未默认开启（见下节）；UDP 直连时源 IP 已是 peer。  
+- **上游仍见网关出口 IP**（README 已知边界）。要让上游见客户端 IP 需 TPROXY/SNAT 等更大改动，非本产品范围。  
+- **UDP access NDJSON** 默认未开（见下节）；UDP 直连时源 IP 已是 peer。  
 - `conn_id` **不是**跨网关 / 跨 reload 的全局 trace id。  
 - **不会**根据上游数量或公网暴露自动开启 PROXY。
 
@@ -175,7 +171,7 @@ Explore 深链（经 Panel 反代）：`/grafana/explore?...`（运维在 Grafan
 4. **看板**：Grafana → RelayGate → **TCP Session Logs**（异常 / 短会话 / **conn_id** / rule TopN）。  
 5. **容量**：根分区与 `DataDir/envoy/logs`；logrotate；`LOKI_RETENTION` / `LOG_SAMPLE_RATE`。
 
-## 多机（P1）
+## 多机
 
 从节点 `.env`：
 
@@ -188,14 +184,11 @@ LOKI_PORT=3100
 
 中心需能从边缘访问 `LOKI_HOST:3100`（VPN / 私网安全组）。边缘只跑 Fluent Bit，不落中心以外的第二份 Loki（除非刻意冷备）。
 
-## UDP access 结论（P1）
+## UDP access
 
-当前 Envoy UDP proxy **未**配置与 TCP 同级的 FileAccessLog NDJSON。UDP 会话指标已由 Prometheus（`envoy_udp_*`）覆盖；若补 UDP access：
+当前 Envoy UDP proxy **未**配置与 TCP 同级的 FileAccessLog NDJSON。UDP 会话指标已由 Prometheus（`envoy_udp_*`）覆盖。默认不上 UDP access；故障优先看指标 + nft / 抓包。
 
-- **成本**：需改 `core/render` UDP listener，并评估 PPS 下的日志量（通常远高于 TCP 连接日志）。  
-- **建议**：默认不上 UDP access；故障优先看指标 + nft / 抓包。若业务强依赖按 IP 审计 UDP，再以独立文件 + 更高采样率接入同一 `job` 或 `job=envoy-udp-access`。
-
-## 采样与保留（P2）
+## 采样与保留
 
 | 变量 | 默认 | 含义 |
 |------|------|------|

@@ -3,7 +3,6 @@ package panel
 import (
 	"encoding/json"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/relaygate/relaygate/core/agent"
@@ -81,9 +80,11 @@ func fleetProductHints() []string {
 	return []string{
 		"relaygate fleet status",
 		"relaygate fleet publish   # 确认 PUBLISH_FLEET",
-		"relaygate fleet join <name>  # 确认 FLEET_JOIN",
+		"relaygate fleet join <name>   # 生成一句话安装命令",
 		"relaygate fleet leave <name> # 确认 FLEET_LEAVE",
-		"# 节点：relaygate agent run（PRIMARY_URL + AGENT_TOKEN_FILE）",
+		"# 安装主控: " + agent.FormatControlInstallCommand(),
+		"# 升级（主控/节点）: " + agent.FormatUpgradeCommand(),
+		"# 节点接入: 粘贴 join 输出的一行，或以 PRIMARY_URL+AGENT_TOKEN 跑 install.sh",
 	}
 }
 
@@ -141,7 +142,6 @@ func (s *Server) apiFleetJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Confirm    string `json:"confirm"`
 		Name       string `json:"name"`
 		PrimaryURL string `json:"primary_url"`
 	}
@@ -149,14 +149,8 @@ func (s *Server) apiFleetJoin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": err.Error()})
 		return
 	}
-	if strings.TrimSpace(body.Confirm) != "FLEET_JOIN" {
-		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed", "FLEET_JOIN")})
-		return
-	}
-	primary := strings.TrimSpace(body.PrimaryURL)
-	if primary == "" {
-		primary = strings.TrimSpace(os.Getenv("PRIMARY_URL"))
-	}
+	// Join 只写名册与一次性令牌，不发布版本、不热更新/硬重启既有节点，故无需确认词。
+	primary := agent.ResolvePrimaryURL(body.PrimaryURL)
 	res, err := agent.JoinNode(s.cfg.Root, body.Name, primary)
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
@@ -169,9 +163,11 @@ func (s *Server) apiFleetJoin(w http.ResponseWriter, r *http.Request) {
 		"token":            res.Token,
 		"token_file_hint":  res.TokenFileHint,
 		"bootstrap_hint":   res.BootstrapHint,
+		"join_command":     res.JoinCommand,
 		"primary_url_hint": res.PrimaryURLHint,
 		"manual_hints": []string{
-			"请在云控制台/Terraform 将新节点注册到负载均衡目标组（本产品不调用云 API）。",
+			"在目标主机以 root 执行 join_command 一行即可安装并连接主控。",
+			"若前置了可选云 L4 入口：请在云控制台/Terraform 将新节点注册到目标组（本产品不调用云 API）。公网直连网关可跳过。",
 		},
 	})
 }

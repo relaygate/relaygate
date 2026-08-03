@@ -1,6 +1,6 @@
 # 默认安全档：与 resources.example 对齐，偏保守
 name: default-safe
-description: 通用安全默认档；新环境或不确定游戏类型时使用
+description: 通用安全默认档；新环境或不明确业务类型时使用
 
 defaults:
   backend_tcp_port: 7777

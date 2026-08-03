@@ -1,10 +1,11 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useState, type ReactNode } from "react"
 import { Link } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import {
   ActivityIcon,
   ArrowLeftRightIcon,
+  GaugeIcon,
   InboxIcon,
   ShieldCheckIcon,
   SlidersHorizontalIcon,
@@ -38,6 +39,7 @@ import { useStandby } from "@/context/SessionContext"
 import {
   ApiError,
   apiErrorDetail,
+  getConfigResources,
   getProfiles,
   opsCanary,
   opsDoctor,
@@ -46,9 +48,16 @@ import {
   opsProfileApply,
   opsProfilePreview,
   opsSmoke,
+  putConfigResources,
 } from "@/lib/api"
 import type { Profile } from "@/lib/types"
 import { tf } from "@/i18n"
+import {
+  parseRateLimitDefaults,
+  patchRateLimitDefaults,
+  validateRateLimitDefaults,
+  type RateLimitDefaults,
+} from "@/lib/resourcesDefaults"
 import { cn } from "@/lib/utils"
 
 function profileShortLabel(t: (key: string) => string, name: string): string {
@@ -57,7 +66,16 @@ function profileShortLabel(t: (key: string) => string, name: string): string {
   return label === key ? name.replace(/-/g, " ") : label
 }
 
-type BusyKey = "doctor" | "drain" | "smoke" | "canary" | "firewall" | "preview" | "profile" | null
+type BusyKey =
+  | "doctor"
+  | "drain"
+  | "smoke"
+  | "canary"
+  | "firewall"
+  | "preview"
+  | "profile"
+  | "ratelimit"
+  | null
 
 function OpsCard({
   icon,
@@ -118,6 +136,19 @@ export function OpsPage() {
   const [profileOut, setProfileOut] = useState("")
   const [profileConfirm, setProfileConfirm] = useState("")
   const [profileApplyOpen, setProfileApplyOpen] = useState(false)
+  const [rl, setRl] = useState<RateLimitDefaults | null>(null)
+  const [rlEtag, setRlEtag] = useState("")
+  const [rlMtime, setRlMtime] = useState("")
+  const [rlDirty, setRlDirty] = useState(false)
+  const [rlLoading, setRlLoading] = useState(true)
+
+  const loadRateLimits = useCallback(async () => {
+    const data = await getConfigResources()
+    setRl(parseRateLimitDefaults(data.content))
+    setRlEtag(data.etag)
+    setRlMtime(data.mtime)
+    setRlDirty(false)
+  }, [])
 
   useEffect(() => {
     getProfiles()
@@ -131,6 +162,14 @@ export function OpsPage() {
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load once
   }, [])
+
+  useEffect(() => {
+    loadRateLimits()
+      .catch((err) => {
+        toast.error(err instanceof ApiError ? err.message : t("ops.ratelimit_toast_load_fail"))
+      })
+      .finally(() => setRlLoading(false))
+  }, [loadRateLimits, t])
 
   async function runDoctor() {
     setBusy("doctor")
@@ -226,10 +265,49 @@ export function OpsPage() {
       toast.success(t("ops.toast_profile_ok"))
       setProfileApplyOpen(false)
       setProfileConfirm("")
+      await loadRateLimits().catch(() => {})
     } catch (err) {
       const msg = apiErrorDetail(err, t("ops.toast_profile_err"))
       setProfileOut(msg)
       toast.error(msg)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  function patchRl<K extends keyof RateLimitDefaults>(key: K, value: RateLimitDefaults[K]) {
+    setRl((prev) => (prev ? { ...prev, [key]: value } : prev))
+    setRlDirty(true)
+  }
+
+  async function saveRateLimits() {
+    if (standby || !rl || !rlDirty) return
+    const bad = validateRateLimitDefaults(rl)
+    if (bad) {
+      toast.error(t("ops.ratelimit_toast_invalid"))
+      return
+    }
+    setBusy("ratelimit")
+    try {
+      const current = await getConfigResources()
+      const content = patchRateLimitDefaults(current.content, rl)
+      const res = await putConfigResources({
+        content,
+        etag: current.etag || rlEtag,
+        mtime: current.mtime || rlMtime,
+      })
+      setRlEtag(res.etag)
+      setRlMtime(res.mtime)
+      setRlDirty(false)
+      setRl(parseRateLimitDefaults(content))
+      toast.success(t("ops.ratelimit_toast_save_ok"))
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        toast.error(t("ops.ratelimit_toast_conflict"))
+        await loadRateLimits().catch(() => {})
+        return
+      }
+      toast.error(err instanceof ApiError ? err.message : t("ops.ratelimit_toast_save_fail"))
     } finally {
       setBusy(null)
     }
@@ -382,6 +460,138 @@ export function OpsPage() {
               />
             }
           />
+        </OpsCard>
+
+        <OpsCard
+          icon={<GaugeIcon className="size-4" />}
+          title={t("ops.ratelimit")}
+          description={t("ops.ratelimit_desc")}
+          className="lg:col-span-2"
+          actions={
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setRlLoading(true)
+                  loadRateLimits()
+                    .catch((err) => {
+                      toast.error(
+                        err instanceof ApiError ? err.message : t("ops.ratelimit_toast_load_fail"),
+                      )
+                    })
+                    .finally(() => setRlLoading(false))
+                }}
+                disabled={anyBusy || rlLoading}
+              >
+                {t("ops.ratelimit_reload")}
+              </Button>
+              <Button
+                size="sm"
+                onClick={saveRateLimits}
+                disabled={standby || anyBusy || rlLoading || !rl || !rlDirty}
+              >
+                {busy === "ratelimit" ? <Spinner data-icon="inline-start" /> : null}
+                {t("ops.ratelimit_save")}
+              </Button>
+            </>
+          }
+        >
+          {rlLoading || !rl ? (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="h-14 animate-pulse rounded-md bg-muted" />
+              <div className="h-14 animate-pulse rounded-md bg-muted" />
+              <div className="h-14 animate-pulse rounded-md bg-muted" />
+            </div>
+          ) : (
+            <FieldGroup className="gap-3">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <Field>
+                  <FieldLabel htmlFor="rl-tcp-rate">{t("ops.ratelimit_tcp_rate")}</FieldLabel>
+                  <Input
+                    id="rl-tcp-rate"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={rl.tcpLocalRateLimitPerSec}
+                    disabled={standby || anyBusy}
+                    className="font-mono text-xs"
+                    onChange={(e) =>
+                      patchRl("tcpLocalRateLimitPerSec", Number.parseInt(e.target.value, 10) || 0)
+                    }
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="rl-tcp-burst">{t("ops.ratelimit_tcp_burst")}</FieldLabel>
+                  <Input
+                    id="rl-tcp-burst"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={rl.tcpLocalRateLimitBurst}
+                    disabled={standby || anyBusy}
+                    className="font-mono text-xs"
+                    onChange={(e) =>
+                      patchRl("tcpLocalRateLimitBurst", Number.parseInt(e.target.value, 10) || 0)
+                    }
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="rl-nft-tcp">{t("ops.ratelimit_nft_tcp")}</FieldLabel>
+                  <Input
+                    id="rl-nft-tcp"
+                    value={rl.nftTcpNewConnPerIp}
+                    disabled={standby || anyBusy}
+                    className="font-mono text-xs"
+                    placeholder="30/second"
+                    onChange={(e) => patchRl("nftTcpNewConnPerIp", e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="rl-nft-udp">{t("ops.ratelimit_nft_udp")}</FieldLabel>
+                  <Input
+                    id="rl-nft-udp"
+                    value={rl.nftUdpPpsPerIp}
+                    disabled={standby || anyBusy}
+                    className="font-mono text-xs"
+                    placeholder="500/second"
+                    onChange={(e) => patchRl("nftUdpPpsPerIp", e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="rl-nft-tcp-burst">{t("ops.ratelimit_nft_tcp_burst")}</FieldLabel>
+                  <Input
+                    id="rl-nft-tcp-burst"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={rl.nftTcpBurst}
+                    disabled={standby || anyBusy}
+                    className="font-mono text-xs"
+                    onChange={(e) =>
+                      patchRl("nftTcpBurst", Number.parseInt(e.target.value, 10) || 0)
+                    }
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="rl-nft-udp-burst">{t("ops.ratelimit_nft_udp_burst")}</FieldLabel>
+                  <Input
+                    id="rl-nft-udp-burst"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={rl.nftUdpBurst}
+                    disabled={standby || anyBusy}
+                    className="font-mono text-xs"
+                    onChange={(e) =>
+                      patchRl("nftUdpBurst", Number.parseInt(e.target.value, 10) || 0)
+                    }
+                  />
+                </Field>
+              </div>
+              <p className="text-xs text-muted-foreground">{t("ops.ratelimit_save_hint")}</p>
+            </FieldGroup>
+          )}
         </OpsCard>
 
         <OpsCard

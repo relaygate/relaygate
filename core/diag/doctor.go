@@ -196,23 +196,23 @@ func Run(opt Options) error {
 		}
 		check("xds port", func() error {
 			if !portListening(xdsPort) {
-				return fmt.Errorf("已开启热更新，但本机控制面端口未监听。请先启动 Panel，或在 Secondary 上执行 relaygate xds serve")
+				return fmt.Errorf("本机热更新服务未监听。请先启动 Panel（主控）或 agent run（节点）")
 			}
-			fmt.Printf("本机 xDS 控制面已监听（loopback :%d）\n", xdsPort)
+			fmt.Printf("本机热更新服务已监听（loopback :%d）\n", xdsPort)
 			return nil
 		})
 		check("xds bootstrap", func() error {
 			envoyYAML := config.ResolvePaths(opt.Root).EnvoyYAML
 			if !dataplane.BootstrapMigrated(opt.Root) {
-				return fmt.Errorf("磁盘 Envoy 配置尚未迁移到热更新模式（缺少 ADS bootstrap）。请按 docs/xds-migrate.md 执行一次 reload --hard，再重试 doctor")
+				return fmt.Errorf("磁盘 Envoy 配置仍是全量静态模式。请执行一次 reload --hard，再重试 doctor")
 			}
-			fmt.Printf("磁盘 bootstrap 已迁移（%s 含 dynamic_resources）\n", envoyYAML)
+			fmt.Printf("磁盘 bootstrap 正常（%s 含 dynamic_resources）\n", envoyYAML)
 			return nil
 		})
 		check("xds envoy", func() error {
 			readyURL := env.AdminURL("/ready")
 			if !dataplane.HTTPGetOK(readyURL) {
-				fmt.Println("WARN: Envoy 未 ready，跳过运行态 xDS 核对（启动后应再跑 doctor）")
+				fmt.Println("WARN: Envoy 未 ready，跳过运行态热更新核对（启动后应再跑 doctor）")
 				return nil
 			}
 			statsURL := env.AdminURL("/stats")
@@ -221,9 +221,9 @@ func Run(opt Options) error {
 				return fmt.Errorf("无法读取 Envoy 统计以核对热更新状态。请确认 Envoy 已运行后重试")
 			}
 			if !strings.Contains(body, "cluster.xds_cluster.") {
-				return fmt.Errorf("Envoy 未见本机控制面集群统计，可能仍在跑旧的全量静态配置。请按 docs/xds-migrate.md 执行一次 reload --hard")
+				return fmt.Errorf("Envoy 未见本机热更新集群统计，可能仍在跑全量静态配置。请执行一次 reload --hard")
 			}
-			fmt.Println("Envoy 已接入本机 xDS 控制面（见 cluster.xds_cluster 统计）")
+			fmt.Println("Envoy 已接入本机热更新服务")
 			if n, ok := parseDoctorStat(body, "cluster_manager.cds.update_rejected"); ok && n > 0 {
 				fmt.Printf("WARN: CDS 曾被拒绝 %d 次（历史累计）；若刚热更新失败请查 Envoy 日志或改用硬重启应用\n", n)
 			}

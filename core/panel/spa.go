@@ -16,14 +16,16 @@ func (s *Server) spaHandler() http.HandlerFunc {
 	fileServer := http.FileServer(http.Dir(uiDir))
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
 		// Never let SPA swallow API or grafana paths (defensive).
+		// Check before method gate: otherwise an unregistered POST /api/... looks like
+		// "method not allowed" (405) instead of a missing route (404).
 		p := r.URL.Path
 		if strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/grafana") || strings.HasPrefix(p, "/public/") {
 			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		if _, err := os.Stat(indexPath); err != nil {

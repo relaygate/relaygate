@@ -19,8 +19,8 @@ func TestUserFacingErrorACK(t *testing.T) {
 
 func TestUserFacingErrorStandby(t *testing.T) {
 	t.Parallel()
-	got := UserFacingError(errors.New("standby 节点只读，禁止写操作；请到 Management Primary 操作"))
-	if !strings.Contains(got, "Management Primary") {
+	got := UserFacingError(errors.New("standby 节点只读，禁止写操作"))
+	if !strings.Contains(got, "主控") {
 		t.Fatalf("got %q", got)
 	}
 }

@@ -29,17 +29,17 @@
 
 单机开发：`relaygate render --observability` 从 `packaging/prometheus/prometheus.yml.tpl` 渲染 **本机** `DataDir/prometheus/prometheus.yml`（仅 scrape 127.0.0.1）。
 
-## xDS / HotApply 指标
+## 热更新指标
 
-Panel 只读接口 `GET /api/status/xds` 返回进程内计数器文本（`relaygate_xds_snapshot_version`、`relaygate_xds_ack_wait_ms`、`relaygate_hot_apply_total`）。中心 Prometheus 若需长期留存，可在 Primary 增加 textfile collector 或后续专用 exporter；边缘以 Envoy `envoy_*` 与会话指标为主。
+Panel `GET /api/status/xds` 返回本机热更新计数器。边缘以 Envoy `envoy_*` 与会话指标为主。
 
 ## 扩容 checklist
 
-加一台 Secondary 数据面后：
+加一台网关节点后：
 
-1. 在 `packaging/shared/gateways.env.example` 风格 inventory 增加 `HOST_gateway_NN` 等字段  
-2. 在本文件 `prometheus.yml` 增加对应 `targets` 与 `gateway` label  
-3. 主控执行 `relaygate fleet publish`；节点 `relaygate agent run` 拉取对齐  
+1. 用主控 `fleet join` 接入节点并启动 agent  
+2. 在本目录 `prometheus.yml` 增加对应 `targets` 与 `gateway` label  
+3. 主控 `relaygate fleet publish`；节点自行拉取对齐  
 4. Grafana 看板按 `gateway` 变量过滤（已有 `gateway-overview`）
 
-详见 [docs/fleet-scale-control-plane.md](../../docs/fleet-scale-control-plane.md) §P1 监控并网。
+机群说明见 [docs/fleet-ops.md](../../docs/fleet-ops.md)。

@@ -36,19 +36,12 @@ func (c ChangeSummary) Empty() bool {
 }
 
 // ApplySurface classifies which execution surfaces a ChangeSummary needs.
-// Intent stays one resources.yaml; Envoy reload vs nft apply stay separate.
-//
-// Hot/Hard (xDS roadmap, docs/hot-update-xds.md):
-//   - CanHotApply: Envoy-affecting change that is eligible for CDS/LDS HotApply
-//     when XDS_ENABLED=1 (servers / rules / Envoy defaults; not bootstrap meta).
-//   - NeedsHardReload: bootstrap / image / admin identity — must drain+restart.
-//
-// With XDS_ENABLED=0, ops still always HardReload regardless of CanHotApply.
+// Envoy reload vs nft apply stay separate. With XDS_ENABLED=0, ops always HardReload.
 type ApplySurface struct {
-	NeedsReload     bool // servers / rules / Envoy defaults / hard meta → Panel「应用配置」
-	NeedsFirewall   bool // ACL / nftables defaults / enabled listen ports →「应用防火墙」
-	CanHotApply     bool // NeedsReload && !NeedsHardReload (informational until HotApply lands)
-	NeedsHardReload bool // meta.admin_* / meta.envoy_image (bootstrap); forces hard path
+	NeedsReload     bool // servers / rules / Envoy defaults / hard meta
+	NeedsFirewall   bool // ACL / nftables defaults / enabled listen ports
+	CanHotApply     bool // NeedsReload && !NeedsHardReload
+	NeedsHardReload bool // meta.admin_* / meta.envoy_image (bootstrap)
 }
 
 // Classify returns whether this diff needs Envoy reload and/or nftables dataplane.

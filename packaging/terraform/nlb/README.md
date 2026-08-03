@@ -18,7 +18,7 @@ AWS credentials: environment variables, shared config, or CI OIDC. Do **not** pu
 
 - UDP target groups use TCP health checks on Envoy admin/`/ready` port (AWS requirement).
 - Drain a gateway before maintenance: `relaygate drain fail` so `/ready` fails and NLB removes the target.
-- Game servers must allowlist **both** gateway source IPs.
+- Upstream services must allowlist **both** gateway source IPs.
 
 ## Client IP（真实客户端 IP）
 
@@ -26,7 +26,7 @@ AWS credentials: environment variables, shared config, or CI OIDC. Do **not** pu
 
 | 路径 | 配置 |
 |------|------|
-| **直连暴露**（无本 NLB / 玩家打到网关） | 网关 `PROXY_PROTOCOL=off`；勿开 TG PROXY |
+| **直连暴露**（无本 NLB / 客户端直连网关） | 网关 `PROXY_PROTOCOL=off`；勿开 TG PROXY |
 | NLB + **preserve client IP**、不发 PROXY | 两边 PROXY 保持 **off** |
 | NLB + **PROXY v2**（关 preserve / PrivateLink 等） | TF `enable_proxy_protocol_v2=true` **且** 网关 `PROXY_PROTOCOL=v2`；转发口 **仅对 LB** |
 | 迁移混跑 | 网关 `PROXY_PROTOCOL=v2-compat`（或 `v2`+`ALLOW_WITHOUT=1`）；**入口仍必须只信 LB，公网禁止 compat** |

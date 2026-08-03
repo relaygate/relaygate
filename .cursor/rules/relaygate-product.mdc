@@ -1,0 +1,52 @@
+---
+description: RelayGate 产品定位、面向运维文案、敏感操作二次确认（始终生效）
+alwaysApply: true
+---
+
+# RelayGate 产品规则
+
+本项目是基于 Envoy 的 **通用 L4 网关**（南北向转发、多节点机群、xDS 热更新），**不是**某款游戏或某一客户的专用产品。
+
+开源仓库卫生、发布产物与文档分层见 **`relaygate-oss.mdc`**；贡献/DCO/Issue 模板细则见 **`relaygate-contributing.mdc`**。
+
+**对内双组件（单一产品，非双产品线）**：主控（control）= Panel + 意图/发布/节点名册 + 可选本机转发；节点（node）= agent + 本机热更新 + Envoy（无完整 Panel）。
+
+## 产品定位
+
+- 文档、UI、CLI、注释、示例、提交说明中，**不要**使用游戏或真实业务向表述。
+- 术语对齐 Envoy / L4：**下游 / Downstream**、**上游 / Upstream**、**入口 / Listener**、**转发 / Forward**、**网关 / Gateway**。
+- 示例用 RFC 文档地址与占位名：`203.0.113.x`、`server-01`、`gateway-01`、`example.com`；勿写真实厂商、客户名或业务隐喻。
+- 新文案 / 字段 / i18n key **禁止**以 `game` / `player` /「玩家」/「游戏服」等作产品主词。
+- 写作用左列：客户端/下游（非玩家）；上游服务（非区服/房间服）；业务/项目名（非 `game_*`）；网关/机群（非备服/开服等黑话）。
+- YAML 已有标识符（如 `game_name`、`backend_*`）可兼容保留；展示层用中性词；勿擅自全仓重命名。新能力一律中性命名。
+- 机群稳态：节点 **Agent 拉取**配置版本 → 本机落盘 → 本机热更新；SSH 不进正式菜单。
+
+## 用户文案
+
+UI、i18n、Panel、确认框、EmptyState、toast、CLI 帮助等**面向运维用户**：用业务/运维语言，不用开发黑话。
+
+- 主文案说清：**要做什么 / 为什么失败 / 下一步怎么做**。
+- 错误提示须可行动；勿单独甩 `exit status 1`、`ENOENT`、404、stack 等。技术细节放折叠区、日志或「高级/命令参考」。
+- 避免作主文案：API 路径、HTTP 状态码、JSON、goroutine、包名、裸露路径（如 `DataDir`）、Promise/null 等。
+
+```text
+❌ GET /api/v1/fleet 404，ENOENT
+✅ 未找到该舰队配置。请确认名称后重试，或到舰队列表查看已有配置。
+```
+
+## 敏感操作确认
+
+写操作 / 危险操作须用户**显式二次确认**（输入确认词或等价开关），**禁止**一键静默执行。
+
+- 确认框文案：风险说明 + 下一步（面向运维）；确认词可保留英文大写。
+- **standby / 只读角色禁止写操作**；须引导到主控。
+- CLI：危险操作须交互确认，或显式开关（如 `relaygate reload --hard`、`FIREWALL_CONFIRM=…`）；避免默认真销毁。
+- 确认词**沿用产品约定**（以代码 / i18n 为准）；新危险操作须新增独立确认词，勿复用。可 grep `confirm` / 下列词核对现状：
+  - 配置：`HOT_APPLY`（热更新）、`RELOAD_ENVOY`（硬重启）、`YES_FLUSH_NFTABLES`（防火墙）
+  - 机群 / 运维：`PUBLISH_FLEET`、`FLEET_LEAVE`、`APPLY_PROFILE`、`DRAIN_FAIL` / `DRAIN_OK`（接入 `fleet join` 无需确认词，主 UX 为一句话安装命令）
+  - **已废除**作主确认词：`FLEET_SYNC`、`SCALE_EXPAND`、`SCALE_SHRINK`
+
+```text
+❌ 将把本地变更同步到全部网关节点。请输入 FLEET_SYNC 确认。
+✅ 将当前业务配置发布为机群新版本；各网关节点将自行拉取并在本机热更新。请输入 PUBLISH_FLEET 确认。
+```

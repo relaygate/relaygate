@@ -2,8 +2,6 @@ package setup
 
 import (
 	"bufio"
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"net"
 	"os"
@@ -17,6 +15,10 @@ import (
 	"github.com/relaygate/relaygate/core/config"
 	"github.com/relaygate/relaygate/core/dataplane"
 )
+
+// defaultAdminPassword is written when panel/grafana secret files are first created.
+// Weak by design for local/bootstrap; change in production.
+const defaultAdminPassword = "relaygate"
 
 var gatewayNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 
@@ -94,7 +96,7 @@ func collectSettings(opt Options) (Options, error) {
 		opt.SSHPort = detectSSHPort()
 	}
 	detectedIP := ""
-	if opt.PublicIP == "" && !opt.NonInteractive {
+	if opt.PublicIP == "" {
 		out, _ := exec.Command("curl", "-4fsS", "--max-time", "5", "https://api.ipify.org").CombinedOutput()
 		detectedIP = strings.TrimSpace(string(out))
 	}
@@ -110,8 +112,12 @@ func collectSettings(opt Options) (Options, error) {
 	if !gatewayNameRe.MatchString(opt.GatewayName) {
 		return opt, fmt.Errorf("网关名称格式无效")
 	}
+	// 非交互一键安装：未填公网 IP 时使用探测结果，避免主控/节点安装被打断。
+	if opt.PublicIP == "" && opt.NonInteractive {
+		opt.PublicIP = detectedIP
+	}
 	if ip := net.ParseIP(opt.PublicIP); ip == nil || ip.To4() == nil {
-		return opt, fmt.Errorf("必须提供有效的 GATEWAY_PUBLIC_IP")
+		return opt, fmt.Errorf("必须提供有效的 GATEWAY_PUBLIC_IP（可 export 后重试，或检查出网探测）")
 	}
 	if opt.EnablePanel == "" {
 		if opt.NonInteractive {
@@ -124,7 +130,12 @@ func collectSettings(opt Options) (Options, error) {
 	}
 	if opt.EnableGrafana == "" {
 		if opt.NonInteractive {
-			opt.EnableGrafana = "1"
+			// 节点组件默认不启中心 Grafana
+			if opt.EnablePanel == "0" {
+				opt.EnableGrafana = "0"
+			} else {
+				opt.EnableGrafana = "1"
+			}
 		} else if confirm("启用仅本机监听的 Grafana？") {
 			opt.EnableGrafana = "1"
 		} else {
@@ -167,11 +178,31 @@ func writeEnv(opt Options) error {
 		return patchExistingEnv(envPath, opt, profiles, grafanaURL, dataDir)
 	}
 
+	panelRole := "primary"
+	if opt.EnablePanel == "0" {
+		panelRole = "standby"
+		if profiles == "" {
+			profiles = "with-logs"
+		}
+	}
+	primaryURL := strings.TrimSpace(os.Getenv("PRIMARY_URL"))
+	agentTokFile := strings.TrimSpace(os.Getenv("AGENT_TOKEN_FILE"))
+	if agentTokFile == "" && strings.TrimSpace(os.Getenv("AGENT_TOKEN")) != "" {
+		agentTokFile = filepath.Join(opt.SecretsDir, "agent.token")
+	}
+	nodeExtras := ""
+	if primaryURL != "" {
+		nodeExtras += fmt.Sprintf("PRIMARY_URL=%s\n", primaryURL)
+	}
+	if agentTokFile != "" {
+		nodeExtras += fmt.Sprintf("AGENT_TOKEN_FILE=%s\n", agentTokFile)
+	}
+
 	fmt.Printf("==> 生成 %s\n", envPath)
 	body := fmt.Sprintf(`GATEWAY_NAME=%s
 GATEWAY_PUBLIC_IP=%s
 GATEWAY_SSH_PORT=%s
-PANEL_ROLE=primary
+PANEL_ROLE=%s
 ENABLE_PANEL=%s
 ENABLE_GRAFANA=%s
 COMPOSE_PROJECT_NAME=relaygate-%s
@@ -189,10 +220,10 @@ GRAFANA_ANONYMOUS=true
 PROMETHEUS_RETENTION=15d
 RELAYGATE_SECRETS_DIR=%s
 RELAYGATE_DATA_DIR=%s
-# 公网直连暴露默认 off；前面有云 LB 发 PROXY 时再改 v2（见 docs/logging-playbook.md）
+%s# 公网直连暴露默认 off；前面有云 LB 发 PROXY 时再改 v2
 PROXY_PROTOCOL=off
-`, opt.GatewayName, opt.PublicIP, opt.SSHPort, opt.EnablePanel, opt.EnableGrafana, opt.GatewayName,
-		profiles, opt.ImageTag, grafanaURL, opt.SecretsDir, dataDir)
+`, opt.GatewayName, opt.PublicIP, opt.SSHPort, panelRole, opt.EnablePanel, opt.EnableGrafana, opt.GatewayName,
+		profiles, opt.ImageTag, grafanaURL, opt.SecretsDir, dataDir, nodeExtras)
 	if err := os.WriteFile(envPath, []byte(body), 0o640); err != nil {
 		return err
 	}
@@ -331,11 +362,7 @@ func ensureSecrets(opt Options) error {
 			}
 			continue
 		}
-		pw, err := randomPassword()
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(p, []byte(pw+"\n"), 0o640); err != nil {
+		if err := os.WriteFile(p, []byte(defaultAdminPassword+"\n"), 0o640); err != nil {
 			return err
 		}
 		_ = os.Chmod(p, 0o640)
@@ -343,18 +370,8 @@ func ensureSecrets(opt Options) error {
 			_ = dataplane.RunCmd(filepath.Dir(p), "chown", "root:relaygate", p)
 		}
 	}
-	fmt.Printf("==> 密钥保存在 %s（不会打印明文）\n", opt.SecretsDir)
+	fmt.Printf("==> 密钥保存在 %s（默认密码弱，生产务必修改；不会打印明文）\n", opt.SecretsDir)
 	return nil
-}
-
-// randomPassword returns a URL-safe base64 password of 16 characters
-// (12 random bytes → ~96 bits of entropy).
-func randomPassword() (string, error) {
-	b := make([]byte, 12)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 func detectSSHPort() string {

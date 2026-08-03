@@ -81,11 +81,28 @@ RelayGate 安装器（bootstrap · 预编译 release tar）
 用法:
   install.sh [--install|--upgrade|--uninstall] [--purge] [--dry-run] [-y] [-h]
 
+一键示例（可复制）:
+  # 1) 安装主控（Panel；首启默认密码 relaygate，生产务必改密）
+  curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
+    | sudo env ENABLE_PANEL=1 NONINTERACTIVE=1 bash -s -- -y
+
+  # 2) 安装节点：优先用主控 fleet join / Panel「接入」生成的一行；
+  #    或自行指定 PRIMARY_URL + GATEWAY_NAME + AGENT_TOKEN：
+  curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
+    | sudo env PRIMARY_URL='http://203.0.113.10:9000' GATEWAY_NAME=gateway-02 \
+        AGENT_TOKEN='<token>' ENABLE_PANEL=0 NONINTERACTIVE=1 bash -s -- -y
+
+  # 3) 升级主控 / 4) 升级节点（同一命令；读现有 .env 保留角色与 DataDir）
+  curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
+    | sudo bash -s -- --upgrade -y
+  # 已安装本机也可:  sudo /opt/relaygate/bin/relaygate upgrade
+  #                或 sudo bash /opt/relaygate/install.sh --upgrade -y
+
 默认流程:
   检测 root/OS/arch/systemd/Docker
   → 下载并校验 release tar（或 RELAYGATE_TAR）
   → 解压到 /opt/relaygate（保留 .env / data/）
-  → relaygate setup → apply → panel install → smoke
+  → relaygate setup → apply → panel 或 agent install → smoke
 
 环境变量:
   RELAYGATE_VERSION=<tag|sha|latest>  # 默认 latest（解析为最新 GitHub Release / git tag）
@@ -96,9 +113,10 @@ RelayGate 安装器（bootstrap · 预编译 release tar）
   RELAYGATE_GIT_FALLBACK=1            # Release 不可用时自动回退到 FROM_SOURCE
   RELAYGATE_SOURCE_DIR=/path/src      # 配合 FROM_SOURCE（跳过 clone）
   RELAYGATE_REPO_URL                  # 默认 HTTPS；私有仓自动带 token
-  GATEWAY_NAME / GATEWAY_PUBLIC_IP
-  GATEWAY_SSH_PORT                 # 安装时指定，常见 22 或其他
-  ENABLE_PANEL=1 ENABLE_GRAFANA=1 APPLY_FIREWALL=0
+  GATEWAY_NAME / GATEWAY_PUBLIC_IP    # 公网 IP 非交互时可自动探测
+  GATEWAY_SSH_PORT                    # 安装时指定，常见 22 或其他
+  ENABLE_PANEL / ENABLE_GRAFANA / APPLY_FIREWALL
+  PRIMARY_URL / AGENT_TOKEN           # 节点一句话接入：写令牌、装 agent、连主控
   NONINTERACTIVE=1
 EOF
 }
@@ -248,9 +266,19 @@ Prepare_System() {
     VERSION="${RELAYGATE_VERSION:-$_rg_version}"
     SECRETS_DIR="${RELAYGATE_SECRETS_DIR:-$SECRETS_DIR}"
   fi
-  ENABLE_PANEL="${ENABLE_PANEL:-1}"
-  ENABLE_GRAFANA="${ENABLE_GRAFANA:-1}"
-  ok "OS=${PRETTY_NAME:-$OS_ID} arch=${ARCH}"
+  # 角色：节点（AGENT_TOKEN / ENABLE_PANEL=0）默认不装 Panel / Grafana；主控默认都开
+  if [[ -n "${AGENT_TOKEN:-}" ]]; then
+    ENABLE_PANEL="${ENABLE_PANEL:-0}"
+    ENABLE_GRAFANA="${ENABLE_GRAFANA:-0}"
+    [[ -n "${PRIMARY_URL:-}" ]] || die "节点接入需要 PRIMARY_URL（主控地址）"
+    [[ -n "${GATEWAY_NAME:-}" ]] || die "节点接入需要 GATEWAY_NAME"
+  elif [[ "${ENABLE_PANEL:-}" == "0" ]]; then
+    ENABLE_GRAFANA="${ENABLE_GRAFANA:-0}"
+  else
+    ENABLE_PANEL="${ENABLE_PANEL:-1}"
+    ENABLE_GRAFANA="${ENABLE_GRAFANA:-1}"
+  fi
+  ok "OS=${PRETTY_NAME:-$OS_ID} arch=${ARCH} panel=${ENABLE_PANEL}"
 }
 
 Install_Packages() {
@@ -563,10 +591,29 @@ ensure_envoy_runtime_perms() {
   fi
 }
 
+# 节点接入：落盘一次性代理令牌并写入 .env 字段（不含 Panel 密码）。
+write_agent_join_creds() {
+  [[ -n "${AGENT_TOKEN:-}" ]] || return 0
+  mkdir -p "$SECRETS_DIR"
+  local tok="${SECRETS_DIR}/agent.token"
+  printf '%s\n' "$AGENT_TOKEN" >"$tok"
+  chmod 600 "$tok"
+  export AGENT_TOKEN_FILE="$tok"
+  if [[ -f "${INSTALL_DIR}/.env" ]]; then
+    upsert_env_file "${INSTALL_DIR}/.env" PRIMARY_URL "${PRIMARY_URL}"
+    upsert_env_file "${INSTALL_DIR}/.env" AGENT_TOKEN_FILE "$tok"
+    upsert_env_file "${INSTALL_DIR}/.env" ENABLE_PANEL "0"
+    upsert_env_file "${INSTALL_DIR}/.env" PANEL_ROLE "standby"
+    upsert_env_file "${INSTALL_DIR}/.env" ENABLE_GRAFANA "${ENABLE_GRAFANA:-0}"
+    [[ -n "${GATEWAY_NAME:-}" ]] && upsert_env_file "${INSTALL_DIR}/.env" GATEWAY_NAME "$GATEWAY_NAME"
+  fi
+  log "已写入节点代理令牌: ${tok}"
+}
+
 Invoke_Product() {
   log "阶段 5/5 · 运行产品 CLI"
   if [[ "$DRY_RUN" == "1" ]]; then
-    log "[dry-run] setup → apply → panel install → smoke"
+    log "[dry-run] setup → apply → panel/agent install → smoke"
     return 0
   fi
   cd "$INSTALL_DIR"
@@ -577,12 +624,15 @@ Invoke_Product() {
   export NONINTERACTIVE ENABLE_PANEL ENABLE_GRAFANA
   export GATEWAY_NAME="${GATEWAY_NAME:-}" GATEWAY_PUBLIC_IP="${GATEWAY_PUBLIC_IP:-}" GATEWAY_SSH_PORT="${GATEWAY_SSH_PORT:-}"
   export APPLY_FIREWALL FIREWALL_CONFIRM="${FIREWALL_CONFIRM:-}"
+  export PRIMARY_URL="${PRIMARY_URL:-}" AGENT_TOKEN="${AGENT_TOKEN:-}" AGENT_TOKEN_FILE="${AGENT_TOKEN_FILE:-}"
 
   local setup_flags=(--noninteractive --sysctl)
   [[ "$ACTION" == "upgrade" ]] && setup_flags+=(--upgrade)
 
   log "→ relaygate setup ${setup_flags[*]}"
   ./bin/relaygate setup "${setup_flags[@]}" || die "setup 失败"
+
+  write_agent_join_creds
 
   tune_compose_cpu_limits
   ensure_envoy_runtime_perms
@@ -625,9 +675,19 @@ Invoke_Product() {
       chown root:relaygate "${INSTALL_DIR}/data/inventory/gateways.env"
       chmod 0640 "${INSTALL_DIR}/data/inventory/gateways.env"
     fi
+    # 升级后确保新二进制生效
     systemctl restart relaygate-panel 2>/dev/null || true
   else
     PURGE=0 ./bin/relaygate panel uninstall || true
+    # 节点：有令牌 / PRIMARY_URL / 已装 agent 单元 → 安装或升级后重启 agent
+    if [[ -n "${AGENT_TOKEN:-}" || -n "${AGENT_TOKEN_FILE:-}" || -n "${PRIMARY_URL:-}" ]] \
+      || systemctl cat relaygate-agent.service >/dev/null 2>&1; then
+      log "→ relaygate agent install"
+      ENABLE_NOW=1 ./bin/relaygate agent install || die "agent install 失败"
+      systemctl restart relaygate-agent 2>/dev/null || true
+    else
+      warn "ENABLE_PANEL=0 但未检测到 PRIMARY_URL/AGENT_TOKEN；跳过 agent install"
+    fi
   fi
 
   log "→ relaygate smoke"
@@ -652,7 +712,12 @@ Show_Result() {
   log "目录: ${INSTALL_DIR}  密钥: ${SECRETS_DIR}"
   log "运维: cd ${INSTALL_DIR} && ./bin/relaygate reload|smoke|doctor"
   if [[ "${ENABLE_PANEL:-1}" == "1" ]]; then
-    log "Panel: http://${GATEWAY_PUBLIC_IP:-<IP>}:9000 （默认 PANEL_BIND=0.0.0.0:9000；仅本机可改 127.0.0.1:9000）"
+    log "Panel: http://${GATEWAY_PUBLIC_IP:-<IP>}:9000 （默认 PANEL_BIND=0.0.0.0:9000）"
+    log "默认管理员密码: relaygate（密钥文件 panel_admin_password；生产务必改密）"
+    log "升级: curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh | sudo bash -s -- --upgrade -y"
+  elif [[ -n "${PRIMARY_URL:-}" ]]; then
+    log "节点 Agent: systemctl status relaygate-agent ；主控 ${PRIMARY_URL}"
+    log "升级: curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh | sudo bash -s -- --upgrade -y"
   fi
 }
 
@@ -669,6 +734,9 @@ Uninstall_RelayGate() {
       /usr/local/libexec/relaygate/apply /etc/relaygate/panel.env
     systemctl daemon-reload 2>/dev/null || true
   fi
+  systemctl disable --now relaygate-agent.service 2>/dev/null || true
+  rm -f /etc/systemd/system/relaygate-agent.service
+  systemctl daemon-reload 2>/dev/null || true
   if [[ -f .env ]]; then
     # shellcheck disable=SC1091
     set -a; source .env; set +a

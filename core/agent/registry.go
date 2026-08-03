@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,14 +91,97 @@ type JoinResult struct {
 	Token          string `json:"token"`
 	TokenFileHint  string `json:"token_file_hint"`
 	BootstrapHint  string `json:"bootstrap_hint"`
+	JoinCommand    string `json:"join_command"`
 	PrimaryURLHint string `json:"primary_url_hint"`
 }
 
+// ResolvePrimaryURL picks the URL new nodes use to reach the control plane.
+// Order: explicit → PRIMARY_URL → PANEL_PUBLIC_URL → http://GATEWAY_PUBLIC_IP:<panel port> → docs placeholder.
+func ResolvePrimaryURL(explicit string) string {
+	if s := strings.TrimSpace(explicit); s != "" {
+		return strings.TrimRight(s, "/")
+	}
+	for _, k := range []string{"PRIMARY_URL", "PANEL_PUBLIC_URL"} {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			return strings.TrimRight(v, "/")
+		}
+	}
+	if ip := strings.TrimSpace(os.Getenv("GATEWAY_PUBLIC_IP")); ip != "" {
+		port := "9000"
+		if bind := strings.TrimSpace(os.Getenv("PANEL_BIND")); bind != "" {
+			if _, p, err := net.SplitHostPort(bind); err == nil && p != "" {
+				port = p
+			}
+		}
+		return fmt.Sprintf("http://%s:%s", ip, port)
+	}
+	return "http://203.0.113.10:9000"
+}
+
+// InstallScriptURL is the curl target for the one-line bootstrap / upgrade.
+func InstallScriptURL() string {
+	if u := strings.TrimSpace(os.Getenv("RELAYGATE_INSTALL_SCRIPT_URL")); u != "" {
+		return u
+	}
+	slug := strings.TrimSpace(os.Getenv("RELAYGATE_REPO_SLUG"))
+	if slug == "" {
+		slug = "relaygate/relaygate"
+	}
+	ref := strings.TrimSpace(os.Getenv("RELAYGATE_INSTALL_REF"))
+	if ref == "" {
+		ref = "master"
+	}
+	return fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/install.sh", slug, ref)
+}
+
+// FormatControlInstallCommand is the one-line control (Panel) install.
+// Default admin password on first boot is "relaygate" (change in production).
+func FormatControlInstallCommand() string {
+	return fmt.Sprintf(
+		"curl -fsSL %s | sudo env ENABLE_PANEL=1 NONINTERACTIVE=1 bash -s -- -y",
+		shellSingleQuote(InstallScriptURL()),
+	)
+}
+
+// FormatUpgradeCommand is the one-line upgrade for an existing install.
+// Preserves .env / DataDir; role (Panel vs agent) is taken from the existing .env.
+func FormatUpgradeCommand() string {
+	return fmt.Sprintf(
+		"curl -fsSL %s | sudo bash -s -- --upgrade -y",
+		shellSingleQuote(InstallScriptURL()),
+	)
+}
+
+// FormatJoinCommand builds a single shell line for remote node install + agent start.
+// Contains PRIMARY_URL / GATEWAY_NAME / AGENT_TOKEN only — never Panel admin password.
+func FormatJoinCommand(primaryURL, name, token string) string {
+	primaryURL = strings.TrimRight(strings.TrimSpace(primaryURL), "/")
+	name = strings.TrimSpace(name)
+	token = strings.TrimSpace(token)
+	script := InstallScriptURL()
+	return fmt.Sprintf(
+		"curl -fsSL %s | sudo env PRIMARY_URL=%s GATEWAY_NAME=%s AGENT_TOKEN=%s ENABLE_PANEL=0 ENABLE_GRAFANA=0 NONINTERACTIVE=1 bash -s -- -y",
+		shellSingleQuote(script),
+		shellSingleQuote(primaryURL),
+		shellSingleQuote(name),
+		shellSingleQuote(token),
+	)
+}
+
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // JoinNode registers a gateway node and issues a one-time agent token.
+// Name should be a gateway id such as gateway-02 (zero-padded); not the control role label.
 func JoinNode(root, name, primaryURL string) (*JoinResult, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, fmt.Errorf("请填写节点名称")
+	}
+	switch strings.ToLower(name) {
+	case "control", "primary", "主控":
+		return nil, fmt.Errorf("请使用网关节点名（如 gateway-02），不要用主控角色名作名册成员")
 	}
 	reg, err := LoadRegistry(root)
 	if err != nil {
@@ -130,25 +214,20 @@ func JoinNode(root, name, primaryURL string) (*JoinResult, error) {
 	if err := saveRegistry(root, reg); err != nil {
 		return nil, err
 	}
-	if primaryURL == "" {
-		primaryURL = strings.TrimSpace(os.Getenv("PRIMARY_URL"))
-	}
-	if primaryURL == "" {
-		primaryURL = "http://203.0.113.10:9000"
-	}
+	primaryURL = ResolvePrimaryURL(primaryURL)
+	cmd := FormatJoinCommand(primaryURL, name, token)
 	hint := fmt.Sprintf(
-		"# 在目标主机安装节点组件后：\n"+
-			"cp packaging/node/env.example .env && chmod 600 .env\n"+
-			"PRIMARY_URL=%s\nAGENT_TOKEN_FILE=/etc/relaygate/secrets/agent.token\nENABLE_PANEL=0\n"+
-			"# 将令牌写入 AGENT_TOKEN_FILE 后执行：relaygate agent run\n"+
-			"# 令牌已保存在主控：%s",
-		primaryURL, tokPath,
+		"在目标主机以 root 执行下面一行即可安装节点并连接主控（含一次性令牌，勿写入公开日志）。\n\n%s\n\n"+
+			"令牌副本保存在主控：%s\n"+
+			"若前置了可选云 L4 入口：请在云控制台将新节点挂入目标组（本产品不调用云 API）。",
+		cmd, tokPath,
 	)
 	return &JoinResult{
 		Name:           name,
 		Token:          token,
 		TokenFileHint:  tokPath,
 		BootstrapHint:  hint,
+		JoinCommand:    cmd,
 		PrimaryURLHint: primaryURL,
 	}, nil
 }
@@ -159,7 +238,9 @@ type LeaveResult struct {
 	ManualHints []string `json:"manual_hints"`
 }
 
-// LeaveNode removes a node from the registry and revokes its token.
+// LeaveNode removes a gateway node from the registry and revokes its token.
+// Control-role entries (if any) cannot be retired this way — stop the control
+// component separately; local forwarding on the control host uses 本机应用.
 func LeaveNode(root, name string) (*LeaveResult, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -173,6 +254,9 @@ func LeaveNode(root, name string) (*LeaveResult, error) {
 	out := make([]Node, 0, len(reg.Nodes))
 	for _, n := range reg.Nodes {
 		if n.Name == name {
+			if n.Role == RoleControl {
+				return nil, fmt.Errorf("不能退役主控条目 %s：机群退役仅针对网关节点；主控本机转发请用「本机应用」", name)
+			}
 			found = true
 			continue
 		}
@@ -189,7 +273,7 @@ func LeaveNode(root, name string) (*LeaveResult, error) {
 	return &LeaveResult{
 		Name: name,
 		ManualHints: []string{
-			"请在云控制台/Terraform 将该节点从负载均衡目标组摘除（本产品不调用云 API）。",
+			"若前置了可选云 L4 入口：请在云控制台/Terraform 将该节点从目标组摘除（本产品不调用云 API）。公网直连可跳过。",
 			"目标主机可停止 relaygate-agent 并卸载节点组件。",
 		},
 	}, nil

@@ -1,0 +1,66 @@
+---
+description: 贡献流程、DCO、分支、Issue/PR 模板与安全披露细则（编辑仓库元数据时）
+globs: CONTRIBUTING.md,SECURITY.md,CODE_OF_CONDUCT.md,CHANGELOG.md,LICENSE,.github/**/*,.gitignore
+alwaysApply: false
+---
+
+# RelayGate 贡献与仓库元数据
+
+常驻开源约束见 **`relaygate-oss.mdc`**；产品用语见 **`relaygate-product.mdc`**。本规则在改贡献/安全/CI/模板时补充可执行细则。
+
+## 权威文档（勿架空）
+
+| 主题 | 文件 |
+|------|------|
+| 开发与 PR 流程、DCO | `CONTRIBUTING.md` |
+| 漏洞披露 | `SECURITY.md` |
+| 行为准则 | `CODE_OF_CONDUCT.md` |
+| 变更摘要 | `CHANGELOG.md` |
+| PR / Issue 模板 | `.github/PULL_REQUEST_TEMPLATE.md`、`.github/ISSUE_TEMPLATE/` |
+
+**MUST**：改流程时同步更新上表对应文件，避免规则与文档打架。  
+**MUST NOT**：删除 DCO（`Signed-off-by`）或把安全渠道改成「开公开 Issue 贴利用细节」。
+
+## 分支与 PR
+
+- **默认集成分支**：`main`（CI 对 `main` 的 PR 跑全量校验；亦监听 `develop` push）。
+- **MUST**：基于最新 `main` 开短生命周期分支；**小步 PR**（单一意图）；大重构拆开。
+- **MUST**：PR 可验证——相关 `go test` / CI 绿；触及 UI 时说明 `make ui` 或验证 Panel 的方式；触及打包时确认 `make dist` 不含整本 `docs/`。
+- **MUST**：提交说明用中性运维/工程语言；附 DCO：`git commit -s` → `Signed-off-by:`。
+- **MUST**：破坏性变更在 PR 标题/正文与 `CHANGELOG.md` 标明，并写迁移或升级顺序。
+- **MUST NOT**：在 PR 中提交密钥、`.env`、`.runtime/`、`bin/`、`dist/`、`ui/dist/`。
+- 危险运维路径变更 **MUST** 保留二次确认（确认词见 product 规则）。
+
+## Issue / 模板
+
+- Bug 与功能分流：保持 `.github/ISSUE_TEMPLATE/bug_report.md` 与 `feature_request.md`（或等价配置）。
+- Bug 模板 **MUST** 提醒打码密钥，并指向 `SECURITY.md`。
+- 功能模板 **MUST** 提醒中性用语（主控/节点、上游/下游），与 product 对齐。
+- **MUST NOT** 用 Issue 模板收集真实生产密钥或未打码的配置全文。
+
+## SECURITY.md
+
+- **MUST** 保留「勿公开 Issue 报告未修复漏洞」与私密披露途径（GitHub Security Advisory / 维护者公布渠道）。
+- 报告指引 **MUST** 要求：版本/commit、复现、影响面；**MUST NOT** 要求或鼓励粘贴真实生产密钥。
+
+## CI / Release 工作流
+
+编辑 `.github/workflows/ci.yml` 时：
+
+- **MUST** 保留：`gofmt`、`go vet`、`go test`、`make build`；现有 validate / compose / Envoy 烟测无充分理由勿删。
+- **MUST NOT** 在 workflow 中硬编码密钥；用 GitHub Secrets，且勿 `echo` 秘密值到日志。
+
+编辑 `.github/workflows/release.yml` 时：
+
+- **MUST**：以 `v*` tag 发版；产物为 `dist/*.tar.gz` + checksum；与源码 release 分离（不要把整仓当唯一产物）。
+- 发行说明 **MUST** 覆盖破坏性变更；可与 `CHANGELOG.md` / `generate_release_notes` 互补。
+
+## CHANGELOG.md
+
+- 发版或用户可见破坏性变更时 **MUST** 更新（按版本倒序；类别如 Added / Changed / Fixed / Security）。
+- **MUST NOT** 写入真实客户名、密钥或未公开漏洞利用细节。
+
+## CODE_OF_CONDUCT / LICENSE
+
+- 保持 CoC 可执行联系与标准行为描述；勿空洞删除执行条款。
+- `LICENSE` 保持 MIT；版权年/持有人变更须有意为之并与 README 一致。

@@ -573,11 +573,11 @@ export type FleetJoinResponse = OpsResult & {
   name?: string
   token?: string
   bootstrap_hint?: string
+  join_command?: string
   manual_hints?: string[]
 }
 
 export async function opsFleetJoin(body: {
-  confirm: string
   name: string
   primary_url?: string
 }): Promise<FleetJoinResponse> {
@@ -590,6 +590,7 @@ export async function opsFleetJoin(body: {
       name: data.name ? String(data.name) : undefined,
       token: data.token ? String(data.token) : undefined,
       bootstrap_hint: data.bootstrap_hint ? String(data.bootstrap_hint) : undefined,
+      join_command: data.join_command ? String(data.join_command) : undefined,
       manual_hints: Array.isArray(hintsRaw) ? hintsRaw.map((h) => String(h)) : undefined,
     }
   } catch (err) {

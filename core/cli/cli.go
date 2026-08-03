@@ -42,7 +42,7 @@ func Run(args []string) int {
 		opts := dataplane.ReloadOptions{}
 		rest := parseReloadArgs(args[1:], &opts)
 		if !opts.ForceHard {
-			fmt.Fprintln(os.Stderr, "警告: reload 可能重启 Envoy 并断开连接；XDS_ENABLED=1 且可热更新时将走 HotApply（无 drain）。双活请先 drain 本节点。")
+			fmt.Fprintln(os.Stderr, "警告: 若需硬重启会断开本机现有连接；可热更时将无 drain 热推。双活请先 drain 本节点。")
 		}
 		_ = rest
 		return exitErr(reloadWithOpts(opts))
@@ -51,7 +51,7 @@ func Run(args []string) int {
 		if len(args) > 1 {
 			stamp = args[1]
 		}
-		fmt.Fprintln(os.Stderr, "警告: rollback 会 force-recreate Envoy，断开本网关上全部现有连接。")
+		fmt.Fprintln(os.Stderr, "警告: rollback 会重启本机 Envoy，断开本网关上全部现有连接。")
 		return exitErr(dataplane.Rollback(mustRoot(), stamp))
 	case "drain":
 		return runDrain(args[1:])
@@ -143,7 +143,7 @@ func runDrain(args []string) int {
 	}
 	switch args[0] {
 	case "fail", "drain":
-		fmt.Fprintln(os.Stderr, "警告: drain fail 会使 LB/NLB 停止向本节点分配新连接；单节点生产请确认维护窗口。已有长连接通常仍保留。")
+		fmt.Fprintln(os.Stderr, "警告: drain fail 会使本机探活失败并停止承接新连接；单节点生产请确认维护窗口。已有长连接通常仍保留。若前置了可选云 L4 入口，目标组会随之摘除本节点。")
 		return exitErr(dataplane.Drain(mustRoot(), args[0]))
 	case "ok", "undrain", "status":
 		return exitErr(dataplane.Drain(mustRoot(), args[0]))
@@ -622,19 +622,19 @@ func usage(out *os.File) {
   relaygate profile list|show|apply NAME
   relaygate changes [--limit N]
 
-数据面:
+本机网关:
   relaygate apply                 # 校验 + compose up（首次/全量）
-  relaygate reload                # 按热/硬分流应用（已迁移且可热更 → Hot；否则 Hard）
-  relaygate reload --hard         # 强制摘流 + 重启 Envoy（迁移/镜像/硬变更）
+  relaygate reload                # 本机应用（优先热更新）
+  relaygate reload --hard         # 强制摘流并重启 Envoy
   relaygate rollback [STAMP]      # 回滚并重建 Envoy（会断现有连接）
   relaygate drain fail|ok|status
-  relaygate upgrade [--drain]     # 二进制/packaging：委托 install.sh --upgrade
+  relaygate upgrade [--drain]     # 委托 install.sh --upgrade（主控/节点同一命令，保留角色）
 
 检查:
   relaygate smoke [HOST]
   relaygate canary [HOST]
   relaygate baseline
-  relaygate diag                # 含 admin/drain/xDS bootstrap/NLB 清单
+  relaygate diag                # admin/drain/热更新/可选云入口清单
 
 防火墙 / Panel:
   relaygate firewall [check|apply]   # ACL/nftables-only；默认 check
@@ -644,16 +644,18 @@ func usage(out *os.File) {
 机群（主控）:
   relaygate fleet status
   relaygate fleet publish              # 确认 PUBLISH_FLEET
-  relaygate fleet join <name>          # 确认 FLEET_JOIN
+  relaygate fleet join <name>          # 打印一句话节点安装命令
   relaygate fleet leave <name>         # 确认 FLEET_LEAVE
 
 节点代理:
   relaygate agent run                  # 心跳 + 拉取（可内嵌本机 ADS）
   relaygate agent pull                 # 拉一次并落盘
+  relaygate agent install              # systemd（需 root；一句话接入会自动调用）
 
-文档:
-  docs/product-surface-agent.md · docs/fleet-ops.md
-  docs/hot-update-xds.md · docs/fleet-scale-control-plane.md
+一键安装 / 升级（见 install.sh --help）:
+  主控: curl …/install.sh | sudo env ENABLE_PANEL=1 NONINTERACTIVE=1 bash -s -- -y
+  节点: fleet join 输出的一行，或 PRIMARY_URL+AGENT_TOKEN+GATEWAY_NAME
+  升级: curl …/install.sh | sudo bash -s -- --upgrade -y
 
 变更分流:
   ACL / nftables-only     → firewall apply
@@ -704,22 +706,23 @@ func runFleet(args []string) int {
 			fmt.Fprintln(os.Stderr, "usage: relaygate fleet join <name>")
 			return 2
 		}
-		if err := requireConfirm("FLEET_JOIN", "将创建节点身份与一次性加入凭证；请在目标主机完成节点组件安装。"); err != nil {
-			return exitErr(err)
-		}
 		res, err := agent.JoinNode(root, args[1], os.Getenv("PRIMARY_URL"))
 		if err != nil {
 			return exitErr(err)
 		}
-		fmt.Printf("已接入节点 %s\n令牌文件: %s\n\n%s\n", res.Name, res.TokenFileHint, res.BootstrapHint)
-		fmt.Printf("TOKEN=%s\n", res.Token)
+		fmt.Printf("已接入节点 %s（写入名册并签发一次性令牌；不影响主控与既有节点转发）\n", res.Name)
+		fmt.Println()
+		fmt.Println("在目标主机执行：")
+		fmt.Println(res.JoinCommand)
+		fmt.Println()
+		fmt.Printf("令牌文件（主控侧备份）: %s\n", res.TokenFileHint)
 		return 0
 	case "leave":
 		if len(args) < 2 {
 			fmt.Fprintln(os.Stderr, "usage: relaygate fleet leave <name>")
 			return 2
 		}
-		if err := requireConfirm("FLEET_LEAVE", "将从机群名册移除该节点并吊销其代理凭证。"); err != nil {
+		if err := requireConfirm("FLEET_LEAVE", "将从机群名册移除该网关节点并吊销其代理凭证。"); err != nil {
 			return exitErr(err)
 		}
 		res, err := agent.LeaveNode(root, args[1])
@@ -743,11 +746,15 @@ func runFleet(args []string) int {
 
 func runAgent(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: relaygate agent run|pull")
+		fmt.Fprintln(os.Stderr, "usage: relaygate agent run|pull|install")
 		return 2
 	}
 	root := mustRoot()
 	switch args[0] {
+	case "install":
+		return exitErr(host.AgentInstall(root, host.AgentInstallOptions{
+			InstallDir: config.Getenv("RELAYGATE_INSTALL_DIR", root),
+		}))
 	case "pull":
 		client, err := agent.LoadClientFromEnv()
 		if err != nil {
@@ -767,7 +774,7 @@ func runAgent(args []string) int {
 		}
 		after := func(r, _ string) error {
 			if !env.XDSEnabled {
-				fmt.Println("XDS_ENABLED=0：已落盘，跳过自动热更新；请手动 reload --hard")
+				fmt.Println("热更新已关闭：已落盘，请手动 reload --hard")
 				return nil
 			}
 			xds.SetDiskPublishHandler(func(nodeID string) (string, error) {
@@ -777,13 +784,13 @@ func runAgent(args []string) int {
 				}
 				srv := xds.Global().Server()
 				if srv == nil {
-					return "", fmt.Errorf("本机控制面未运行")
+					return "", fmt.Errorf("本机热更新服务未运行")
 				}
 				return dataplane.PublishSnapshotFromDisk(r, e, nodeID, srv.Publisher)
 			})
 			if xds.Global().Server() == nil {
 				if err := dataplane.PublishInitialSnapshot(r, env); err != nil {
-					fmt.Fprintf(os.Stderr, "启动本机控制面: %v（仍保留已拉取配置）\n", err)
+					fmt.Fprintf(os.Stderr, "启动本机热更新服务: %v（仍保留已拉取配置）\n", err)
 					return nil
 				}
 			}
@@ -791,7 +798,7 @@ func runAgent(args []string) int {
 		}
 		return exitErr(agent.Run(agent.RunOptions{Root: root, AfterPull: after}))
 	case "help", "-h", "--help":
-		fmt.Fprintln(os.Stderr, "usage: relaygate agent run|pull")
+		fmt.Fprintln(os.Stderr, "usage: relaygate agent run|pull|install")
 		return 0
 	default:
 		fmt.Fprintf(os.Stderr, "未知 agent 子命令: %s\n", args[0])
@@ -852,7 +859,7 @@ func runXDS(args []string) int {
 			return exitErr(err)
 		}
 		if !env.XDSEnabled {
-			fmt.Fprintln(os.Stderr, "XDS_ENABLED=0：瘦 xDS agent 需开启 XDS_ENABLED=1")
+			fmt.Fprintln(os.Stderr, "热更新已关闭，无法启动本机热更新服务")
 			return 1
 		}
 		xds.SetDiskPublishHandler(func(nodeID string) (string, error) {
@@ -877,7 +884,7 @@ func runXDS(args []string) int {
 			return exitErr(err)
 		}
 		if !env.XDSEnabled {
-			fmt.Fprintln(os.Stderr, "XDS_ENABLED=0：请设置 XDS_ENABLED=1 或 relaygate reload --hard")
+			fmt.Fprintln(os.Stderr, "热更新已关闭；请用 reload --hard")
 			return 1
 		}
 		return exitErr(dataplane.HotApplyTo(root, env, os.Stdout, os.Stderr))

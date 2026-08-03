@@ -8,7 +8,7 @@ import (
 	"github.com/relaygate/relaygate/core/resources"
 )
 
-// DefaultXDSPort is the loopback ADS port when XDS_PORT is unset (see docs/hot-update-xds.md).
+// DefaultXDSPort is the loopback ADS port when XDS_PORT is unset.
 const DefaultXDSPort = 18000
 
 // BootstrapOptions controls xDS bootstrap rendering (Phase 1).

@@ -24,6 +24,6 @@ output "health_check" {
 }
 
 output "backend_allowlist_reminder" {
-  description = "Game servers must allow BOTH gateway private/public source IPs"
+  description = "Upstream services must allow BOTH gateway private/public source IPs"
   value       = [for g in var.gateways : "${g.name}=${g.private_ip}"]
 }
