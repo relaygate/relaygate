@@ -8,17 +8,18 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        default:
+          "border-primary/70 bg-primary text-primary-foreground hover:border-primary hover:bg-primary/85 dark:border-primary/50",
         outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border-border bg-background text-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "border-border bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground dark:border-input",
         ghost:
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+          "border-destructive/45 bg-destructive/10 text-destructive hover:border-destructive/60 hover:bg-destructive/20 focus-visible:border-destructive/55 focus-visible:ring-destructive/20 dark:border-destructive/50 dark:bg-destructive/20 dark:hover:border-destructive/65 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         caution:
-          "bg-caution/15 text-caution-foreground hover:bg-caution/25 focus-visible:border-caution/40 focus-visible:ring-caution/25 dark:bg-caution/20 dark:text-caution dark:hover:bg-caution/30 dark:focus-visible:ring-caution/40",
+          "border-caution/50 bg-caution/15 text-caution-foreground hover:border-caution/65 hover:bg-caution/25 focus-visible:border-caution/55 focus-visible:ring-caution/25 dark:border-caution/45 dark:bg-caution/20 dark:text-caution dark:hover:border-caution/60 dark:hover:bg-caution/30 dark:focus-visible:ring-caution/40",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

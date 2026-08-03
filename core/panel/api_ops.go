@@ -14,12 +14,15 @@ import (
 
 func writeOpsResult(w http.ResponseWriter, body string, err error) {
 	if err != nil {
+		// Short `error` for toast; full CLI capture (+ raw err) stays in `output` for the log pane.
+		human := dataplane.UserFacingError(err)
+		detail := err.Error()
 		if body == "" {
-			body = err.Error()
+			body = detail
 		} else {
-			body = strings.TrimRight(body, "\n") + "\n" + err.Error()
+			body = strings.TrimRight(body, "\n") + "\n" + detail
 		}
-		writeJSON(w, 500, map[string]any{"ok": false, "output": body, "error": err.Error()})
+		writeJSON(w, 500, map[string]any{"ok": false, "output": body, "error": human})
 		return
 	}
 	if body == "" {
@@ -85,7 +88,7 @@ func fleetProductHints() []string {
 		"relaygate fleet leave <name> # 输入 确认 或 Confirm",
 		"# 安装主控: " + agent.FormatControlInstallCommand(),
 		"# 升级（主控/节点）: " + agent.FormatUpgradeCommand(),
-		"# 节点接入: 粘贴 join 输出的一行，或以 PRIMARY_URL+AGENT_TOKEN 跑 install.sh",
+		"# 节点接入: 粘贴 fleet join / Panel「接入」生成的一行",
 	}
 }
 
@@ -144,15 +147,15 @@ func (s *Server) apiFleetJoin(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Name       string `json:"name"`
-		PrimaryURL string `json:"primary_url"`
+		ControlURL string `json:"control_url"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, 400, map[string]any{"error": err.Error()})
 		return
 	}
 	// Join 只写名册与一次性令牌，不发布版本、不热更新/硬重启既有节点，故无需确认词。
-	primary := agent.ResolvePrimaryURL(body.PrimaryURL)
-	res, err := agent.JoinNode(s.cfg.Root, body.Name, primary)
+	controlURL := agent.ResolveControlURL(body.ControlURL)
+	res, err := agent.JoinNode(s.cfg.Root, body.Name, controlURL)
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
 		return
@@ -165,7 +168,7 @@ func (s *Server) apiFleetJoin(w http.ResponseWriter, r *http.Request) {
 		"token_file_hint":  res.TokenFileHint,
 		"bootstrap_hint":   res.BootstrapHint,
 		"join_command":     res.JoinCommand,
-		"primary_url_hint": res.PrimaryURLHint,
+		"control_url_hint": res.ControlURLHint,
 		"manual_hints": []string{
 			"在目标主机以 root 执行 join_command 一行即可安装并连接主控。",
 			"若前置了可选云 L4 入口：请在云控制台/Terraform 将新节点注册到目标组（本产品不调用云 API）。公网直连网关可跳过。",

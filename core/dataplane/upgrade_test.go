@@ -86,7 +86,7 @@ func TestFleetRemoteUpgradeCmd(t *testing.T) {
 	for _, want := range []string{
 		"RELAYGATE_VERSION='v0.1.0'",
 		"RELAYGATE_TAR='/tmp/pkg.tar.gz'",
-		"bash ./install.sh --upgrade -y",
+		"bash ./install.sh upgrade",
 	} {
 		if !strings.Contains(cmd, want) {
 			t.Fatalf("missing %q in %s", want, cmd)

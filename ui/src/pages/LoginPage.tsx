@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
+import { EyeIcon, EyeOffIcon } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -16,6 +17,7 @@ export function LoginPage() {
   const location = useLocation()
   const { login } = useSession()
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const [submitting, setSubmitting] = useState(false)
 
@@ -48,7 +50,7 @@ export function LoginPage() {
   return (
     <div className="page-enter flex min-h-svh items-center justify-center bg-background p-6">
       <div className="w-full max-w-sm">
-        <div className="mb-8 flex items-center gap-3">
+        <div className="mb-8 flex flex-col items-center gap-3 text-center">
           <img src="/favicon.svg" alt="" className="size-10 rounded-lg" />
           <div>
             <h1 className="text-lg font-semibold tracking-wide">RelayGate</h1>
@@ -59,14 +61,28 @@ export function LoginPage() {
           <FieldGroup>
             <Field>
               <FieldLabel htmlFor="password">{t("login.password")}</FieldLabel>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoFocus
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pr-9"
+                  autoFocus
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="absolute top-1/2 right-1 -translate-y-1/2 text-muted-foreground"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? t("login.hide_password") : t("login.show_password")}
+                  aria-pressed={showPassword}
+                >
+                  {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                </Button>
+              </div>
             </Field>
           </FieldGroup>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}

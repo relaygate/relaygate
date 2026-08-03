@@ -160,7 +160,7 @@ func runUpgrade(args []string) int {
 	drain := fs.Bool("drain", false, "升级前 drain fail、完成后 drain ok（双活）")
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "usage: relaygate upgrade [--drain]")
-		fmt.Fprintln(fs.Output(), "  二进制/packaging 升级：委托 install.sh --upgrade（默认最新 Release；可设 RELAYGATE_VERSION / RELAYGATE_TAR）")
+		fmt.Fprintln(fs.Output(), "  二进制/packaging 升级：委托 install.sh upgrade（默认最新 Release；可设 RELAYGATE_VERSION / RELAYGATE_TAR）")
 		fmt.Fprintln(fs.Output(), "  ACL/nftables → firewall apply；resources/Envoy → reload；本命令仅用于产物升级")
 		fs.PrintDefaults()
 	}
@@ -629,7 +629,7 @@ func usage(out *os.File) {
   relaygate reload --hard         # 强制摘流并重启 Envoy
   relaygate rollback [STAMP]      # 回滚并重建 Envoy（会断现有连接）
   relaygate drain fail|ok|status
-  relaygate upgrade [--drain]     # 委托 install.sh --upgrade（主控/节点同一命令，保留角色）
+  relaygate upgrade [--drain]     # 委托 install.sh upgrade（主控/节点同一命令，保留角色）
 
 检查:
   relaygate smoke [HOST]
@@ -654,14 +654,14 @@ func usage(out *os.File) {
   relaygate agent install              # systemd（需 root；一句话接入会自动调用）
 
 一键安装 / 升级（见 install.sh --help）:
-  主控: curl …/install.sh | sudo env ENABLE_PANEL=1 NONINTERACTIVE=1 bash -s -- -y
-  节点: fleet join 输出的一行，或 PRIMARY_URL+AGENT_TOKEN+GATEWAY_NAME
-  升级: curl …/install.sh | sudo bash -s -- --upgrade -y
+  主控: curl …/install.sh | sudo bash -s -- control
+  节点: fleet join / Panel「接入」生成的一行（node --control … --name … --token …）
+  升级: curl …/install.sh | sudo bash -s -- upgrade
 
 变更分流:
   ACL / nftables-only     → firewall apply
   resources / Envoy 配置  → reload（本机）或 fleet publish（机群）
-  二进制 / packaging      → upgrade [--drain] 或 install.sh --upgrade
+  二进制 / packaging      → upgrade [--drain] 或 install.sh upgrade
 
   relaygate version`)
 }
@@ -707,7 +707,7 @@ func runFleet(args []string) int {
 			fmt.Fprintln(os.Stderr, "usage: relaygate fleet join <name>")
 			return 2
 		}
-		res, err := agent.JoinNode(root, args[1], os.Getenv("PRIMARY_URL"))
+		res, err := agent.JoinNode(root, args[1], os.Getenv("CONTROL_URL"))
 		if err != nil {
 			return exitErr(err)
 		}

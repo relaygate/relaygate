@@ -39,6 +39,7 @@ import { useStandby } from "@/context/SessionContext"
 import {
   ApiError,
   apiErrorDetail,
+  apiErrorOutput,
   getConfigResources,
   getProfiles,
   opsCanary,
@@ -126,15 +127,20 @@ export function OpsPage() {
   const standby = useStandby()
   const [busy, setBusy] = useState<BusyKey>(null)
   const [doctorOut, setDoctorOut] = useState("")
+  const [doctorErr, setDoctorErr] = useState(false)
   const [drainOut, setDrainOut] = useState("")
+  const [drainErr, setDrainErr] = useState(false)
   const [probeOut, setProbeOut] = useState("")
+  const [probeErr, setProbeErr] = useState(false)
   const [firewallOut, setFirewallOut] = useState("")
+  const [firewallErr, setFirewallErr] = useState(false)
   const [host, setHost] = useState("127.0.0.1")
   const [drainAction, setDrainAction] = useState<"fail" | "ok" | null>(null)
   const [drainConfirm, setDrainConfirm] = useState("")
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [profileName, setProfileName] = useState("")
   const [profileOut, setProfileOut] = useState("")
+  const [profileErr, setProfileErr] = useState(false)
   const [profileConfirm, setProfileConfirm] = useState("")
   const [profileApplyOpen, setProfileApplyOpen] = useState(false)
   const [rl, setRl] = useState<RateLimitDefaults | null>(null)
@@ -176,11 +182,13 @@ export function OpsPage() {
     setBusy("doctor")
     try {
       const res = await opsDoctor()
+      setDoctorErr(false)
       setDoctorOut(res.output ?? res.error ?? t("error.no_output"))
       toast.success(t("ops.toast_doctor_ok"))
     } catch (err) {
       const msg = apiErrorDetail(err, t("ops.toast_doctor_err"))
-      setDoctorOut(msg)
+      setDoctorErr(true)
+      setDoctorOut(apiErrorOutput(err, msg))
       toast.error(msg)
     } finally {
       setBusy(null)
@@ -191,16 +199,24 @@ export function OpsPage() {
     if (action !== "status") {
       if (!matchesConfirm(drainConfirm)) return
     }
+    const actionLabel =
+      action === "fail"
+        ? t("ops.btn_drain_fail")
+        : action === "ok"
+          ? t("ops.btn_drain_ok")
+          : t("ops.btn_drain_status")
     setBusy("drain")
     try {
       const res = await opsDrain(action, action === "status" ? undefined : drainConfirm.trim())
+      setDrainErr(false)
       setDrainOut(res.output ?? res.error ?? t("error.no_output"))
-      toast.success(tf("ops.toast_drain_ok", action))
+      toast.success(tf("ops.toast_drain_ok", actionLabel))
       setDrainAction(null)
       setDrainConfirm("")
     } catch (err) {
-      const msg = apiErrorDetail(err, tf("ops.toast_drain_err", action))
-      setDrainOut(msg)
+      const msg = apiErrorDetail(err, tf("ops.toast_drain_err", actionLabel))
+      setDrainErr(true)
+      setDrainOut(apiErrorOutput(err, msg))
       toast.error(msg)
     } finally {
       setBusy(null)
@@ -211,14 +227,15 @@ export function OpsPage() {
     setBusy(kind)
     try {
       const res = kind === "smoke" ? await opsSmoke(host) : await opsCanary(host)
+      setProbeErr(false)
       setProbeOut(res.output ?? res.error ?? t("error.no_output"))
       toast.success(kind === "smoke" ? t("ops.toast_smoke_ok") : t("ops.toast_canary_ok"))
     } catch (err) {
-      const msg = apiErrorDetail(
-        err,
-        kind === "smoke" ? t("ops.toast_smoke_err") : t("ops.toast_canary_err"),
-      )
-      setProbeOut(msg)
+      const fallback =
+        kind === "smoke" ? t("ops.toast_smoke_err") : t("ops.toast_canary_err")
+      const msg = apiErrorDetail(err, fallback)
+      setProbeErr(true)
+      setProbeOut(apiErrorOutput(err, msg))
       toast.error(msg)
     } finally {
       setBusy(null)
@@ -229,11 +246,13 @@ export function OpsPage() {
     setBusy("firewall")
     try {
       const res = await opsFirewallCheck()
+      setFirewallErr(false)
       setFirewallOut(res.output ?? res.error ?? t("error.no_output"))
       toast.success(t("ops.toast_fw_ok"))
     } catch (err) {
       const msg = apiErrorDetail(err, t("ops.toast_fw_err"))
-      setFirewallOut(msg)
+      setFirewallErr(true)
+      setFirewallOut(apiErrorOutput(err, msg))
       toast.error(msg)
     } finally {
       setBusy(null)
@@ -245,11 +264,13 @@ export function OpsPage() {
     setBusy("preview")
     try {
       const res = await opsProfilePreview(profileName)
+      setProfileErr(false)
       setProfileOut(res.output ?? res.error ?? t("error.no_output"))
       toast.success(t("ops.toast_preview_ok"))
     } catch (err) {
       const msg = apiErrorDetail(err, t("ops.toast_preview_err"))
-      setProfileOut(msg)
+      setProfileErr(true)
+      setProfileOut(apiErrorOutput(err, msg))
       toast.error(msg)
     } finally {
       setBusy(null)
@@ -261,6 +282,7 @@ export function OpsPage() {
     setBusy("profile")
     try {
       const res = await opsProfileApply(profileName, profileConfirm.trim())
+      setProfileErr(false)
       setProfileOut(res.output ?? t("error.no_output"))
       toast.success(t("ops.toast_profile_ok"))
       setProfileApplyOpen(false)
@@ -268,7 +290,8 @@ export function OpsPage() {
       await loadRateLimits().catch(() => {})
     } catch (err) {
       const msg = apiErrorDetail(err, t("ops.toast_profile_err"))
-      setProfileOut(msg)
+      setProfileErr(true)
+      setProfileOut(apiErrorOutput(err, msg))
       toast.error(msg)
     } finally {
       setBusy(null)
@@ -333,6 +356,7 @@ export function OpsPage() {
         >
           <OpsLogView
             value={doctorOut}
+            error={doctorErr}
             placeholder={
               <EmptyState
                 compact
@@ -381,6 +405,7 @@ export function OpsPage() {
         >
           <OpsLogView
             value={drainOut}
+            error={drainErr}
             placeholder={
               <EmptyState
                 compact
@@ -420,6 +445,7 @@ export function OpsPage() {
         >
           <OpsLogView
             value={probeOut}
+            error={probeErr}
             placeholder={
               <EmptyState
                 compact
@@ -452,6 +478,7 @@ export function OpsPage() {
         >
           <OpsLogView
             value={firewallOut}
+            error={firewallErr}
             placeholder={
               <EmptyState
                 compact
@@ -654,6 +681,7 @@ export function OpsPage() {
           ) : null}
           <OpsLogView
             value={profileOut}
+            error={profileErr}
             placeholder={
               <EmptyState
                 compact

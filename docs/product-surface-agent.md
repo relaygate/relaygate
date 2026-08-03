@@ -14,31 +14,36 @@ RelayGate（单一产品）
      agent + 本机热更新 + Envoy
      无完整 Panel（ENABLE_PANEL=0）
      模板：packaging/node/env.example
-     需 PRIMARY_URL + AGENT_TOKEN_FILE
+     需 CONTROL_URL + AGENT_TOKEN_FILE
 ```
 
 | | 主控 | 节点 |
 |--|------|------|
-| Panel | `ENABLE_PANEL=1` `PANEL_ROLE=primary` | `ENABLE_PANEL=0` |
+| Panel | `ENABLE_PANEL=1`（可写） | `ENABLE_PANEL=0` |
 | 机群动作 | `fleet publish` / `join` / `leave` / `status` | `agent run` / `agent pull` |
 | 观测 | 可选中心 Grafana/Loki | 日志出站；不启完整观测栈 |
 
-只读角色（standby）拒写并引导主控；不是推荐的节点形态。
+只读角色拒写并引导主控；不是推荐的节点形态。
 
-日常链路：**主控发布配置版本 → 节点 Agent 拉取 → 本机热更新**。
+日常链路：**主控发布配置版本 → 节点 agent 拉取 → 本机热更新**。
 
 ## 1. 术语（终态）
 
 | 对外 | English / CLI | 说明 |
 |------|---------------|------|
-| 主控 | control / primary | 唯一可写意图源 + Panel |
-| 网关节点 | gateway node | Envoy + agent |
+| 主控 | control | 唯一可写意图源 + Panel；安装：`install.sh control` |
+| 网关节点 | node | 机群中的转发角色（一台机器）；安装：`install.sh node --control …` |
+| agent | `relaygate agent` · `relaygate-agent` | **节点上的**拉取/心跳守护进程（不是安装角色）；包 `core/agent`；API `/api/agent/*` |
 | 机群 | fleet | UI 用「机群」 |
 | 发布配置 | `fleet publish` | 使机群可见新版本 |
 | 已对齐 / 未对齐 / 离线 | aligned / drifted / offline | 节点相对发布版本 |
 | 接入 / 退役 | `fleet join` / `leave` | 名册 + 令牌 |
 | 热更新 / 硬重启 | hot apply / `reload --hard` | 二次确认输入「确认」/`Confirm` |
 | 上游 / 转发 / 入口 | upstream / forward / entry | L4 产品主词 |
+
+**分层：** 用户文案与安装子命令用「主控 / 节点」；工程侧进程、systemd、CLI 子命令、令牌 env 保留 `agent`。关系：**节点 = 跑 agent 的机器**。勿把安装改成 `agent`，也勿为统一而 rename `core/agent`。
+
+勿再用 primary / secondary 作为用户可见产品角色名。
 
 ## 2. Panel 侧栏（主控）
 
@@ -50,9 +55,9 @@ RelayGate（单一产品）
 | 访问控制 | `/acl` | 下游 ACL |
 | 配置编辑 | `/config` | 编辑意图（落盘） |
 | 配置应用 | `/apply` | 本机应用 · 发布到机群 |
-| 机群管理 | `/fleet` | 节点 · 发布概况 · 接入 · 退役 |
 | 运维工具 | `/ops` | 本机诊断 / 摘流 / 探测 / 防火墙 / 档位 |
 | 变更历史 | `/changes` | 本机回滚 |
+| 机群管理 | `/fleet` | 节点 · 发布概况 · 接入 · 退役（机群页；置于本机项下、监控上） |
 | 监控面板 | Grafana | 中心观测 |
 
 **机群页**：节点列表 · 发布概况 · 接入节点 · 退役节点  

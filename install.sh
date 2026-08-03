@@ -13,6 +13,8 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 ACTION=install
+# ROLE: control|node|""（空=旧语法 / 环境变量推断）
+ROLE=""
 DRY_RUN=0
 PURGE=0
 NONINTERACTIVE="${NONINTERACTIVE:-0}"
@@ -79,24 +81,37 @@ usage() {
 RelayGate 安装器（bootstrap · 预编译 release tar）
 
 用法:
-  install.sh [--install|--upgrade|--uninstall] [--purge] [--dry-run] [-y] [-h]
+  install.sh control [--dry-run]
+  install.sh node --control <url> --name <gateway> --token <token> [--dry-run]
+  install.sh upgrade [--dry-run]
+  install.sh uninstall [--purge] [--dry-run]
+  install.sh -h|--help
 
 一键示例（可复制）:
   # 1) 安装主控（Panel；首启默认密码 relaygate，生产务必改密）
   curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
-    | sudo env ENABLE_PANEL=1 NONINTERACTIVE=1 bash -s -- -y
+    | sudo bash -s -- control
 
-  # 2) 安装节点：优先用主控 fleet join / Panel「接入」生成的一行；
-  #    或自行指定 PRIMARY_URL + GATEWAY_NAME + AGENT_TOKEN：
+  # 2) 安装节点：优先用主控 fleet join / Panel「接入」生成的一行
   curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
-    | sudo env PRIMARY_URL='http://203.0.113.10:9000' GATEWAY_NAME=gateway-02 \
-        AGENT_TOKEN='<token>' ENABLE_PANEL=0 NONINTERACTIVE=1 bash -s -- -y
+    | sudo bash -s -- node --control http://203.0.113.10:9000 \
+        --name gateway-02 --token '<token>'
 
-  # 3) 升级主控 / 4) 升级节点（同一命令；读现有 .env 保留角色与 DataDir）
+  # 3) 升级主控 / 节点（同一命令；读现有 .env 保留角色与 DataDir）
   curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
-    | sudo bash -s -- --upgrade -y
+    | sudo bash -s -- upgrade
   # 已安装本机也可:  sudo /opt/relaygate/bin/relaygate upgrade
-  #                或 sudo bash /opt/relaygate/install.sh --upgrade -y
+  #                或 sudo bash /opt/relaygate/install.sh upgrade
+
+节点选项:
+  --control / -c <url>     主控地址（写入 CONTROL_URL）
+  --name / -n <gateway>    本机网关名（如 gateway-02）
+  --token / -t <token>     接入令牌（来自 fleet join）
+
+子命令默认非交互。
+control → ENABLE_PANEL=1；node → ENABLE_PANEL=0 ENABLE_GRAFANA=0。
+安装角色只用 control / node（不是 primary；也不是 agent）。
+agent 是节点上的拉取/心跳进程（relaygate agent / relaygate-agent.service），不是安装子命令。
 
 默认流程:
   检测 root/OS/arch/systemd/Docker
@@ -104,20 +119,16 @@ RelayGate 安装器（bootstrap · 预编译 release tar）
   → 解压到 /opt/relaygate（保留 .env / data/）
   → relaygate setup → apply → panel 或 agent install → smoke
 
-环境变量:
-  RELAYGATE_VERSION=<tag|sha|latest>  # 默认 latest（解析为最新 GitHub Release / git tag）
+环境变量（高级）:
+  RELAYGATE_VERSION=<tag|sha|latest>  # 默认 latest
   RELAYGATE_TAR=/path/to.tar.gz       # 本地包，跳过下载
   RELAYGATE_INSTALL_DIR=/opt/relaygate
-  GH_TOKEN / GITHUB_TOKEN             # 私有仓访问 Releases API / 下载资产
-  FROM_SOURCE=1                       # 从 git 源码构建（含 UI）
-  RELAYGATE_GIT_FALLBACK=1            # Release 不可用时自动回退到 FROM_SOURCE
-  RELAYGATE_SOURCE_DIR=/path/src      # 配合 FROM_SOURCE（跳过 clone）
-  RELAYGATE_REPO_URL                  # 默认 HTTPS；私有仓自动带 token
-  GATEWAY_NAME / GATEWAY_PUBLIC_IP    # 公网 IP 非交互时可自动探测
-  GATEWAY_SSH_PORT                    # 安装时指定，常见 22 或其他
+  GH_TOKEN / GITHUB_TOKEN
+  FROM_SOURCE=1 / RELAYGATE_GIT_FALLBACK=1 / RELAYGATE_SOURCE_DIR
+  RELAYGATE_REPO_URL
+  GATEWAY_NAME / GATEWAY_PUBLIC_IP / GATEWAY_SSH_PORT
   ENABLE_PANEL / ENABLE_GRAFANA / APPLY_FIREWALL
-  PRIMARY_URL / AGENT_TOKEN           # 节点一句话接入：写令牌、装 agent、连主控
-  NONINTERACTIVE=1
+  CONTROL_URL / AGENT_TOKEN / AGENT_TOKEN_FILE   # 节点（通常由 node 子命令写入）
 EOF
 }
 
@@ -254,10 +265,10 @@ Prepare_System() {
   esac
   [[ "$INSTALL_DIR" == /* && "$INSTALL_DIR" != "/" ]] || die "RELAYGATE_INSTALL_DIR 无效"
   if [[ "$ACTION" == "install" && -f "$INSTALL_DIR/.env" ]]; then
-    die "已存在安装（${INSTALL_DIR}/.env）；请用 --upgrade"
+    die "已存在安装（${INSTALL_DIR}/.env）；请用 upgrade"
   fi
   if [[ "$ACTION" == "upgrade" && ! -f "$INSTALL_DIR/.env" ]]; then
-    die "未检测到安装；请用 --install"
+    die "未检测到安装；请用 control 或 node 安装"
   fi
   if [[ "$ACTION" == "upgrade" && -f "$INSTALL_DIR/.env" ]]; then
     # shellcheck disable=SC1091
@@ -266,19 +277,28 @@ Prepare_System() {
     VERSION="${RELAYGATE_VERSION:-$_rg_version}"
     SECRETS_DIR="${RELAYGATE_SECRETS_DIR:-$SECRETS_DIR}"
   fi
-  # 角色：节点（AGENT_TOKEN / ENABLE_PANEL=0）默认不装 Panel / Grafana；主控默认都开
-  if [[ -n "${AGENT_TOKEN:-}" ]]; then
-    ENABLE_PANEL="${ENABLE_PANEL:-0}"
-    ENABLE_GRAFANA="${ENABLE_GRAFANA:-0}"
-    [[ -n "${PRIMARY_URL:-}" ]] || die "节点接入需要 PRIMARY_URL（主控地址）"
-    [[ -n "${GATEWAY_NAME:-}" ]] || die "节点接入需要 GATEWAY_NAME"
-  elif [[ "${ENABLE_PANEL:-}" == "0" ]]; then
-    ENABLE_GRAFANA="${ENABLE_GRAFANA:-0}"
-  else
+  # 角色由子命令决定：control / node；upgrade 沿用已有 .env
+  if [[ "$ROLE" == "control" ]]; then
     ENABLE_PANEL="${ENABLE_PANEL:-1}"
     ENABLE_GRAFANA="${ENABLE_GRAFANA:-1}"
+  elif [[ "$ROLE" == "node" ]]; then
+    ENABLE_PANEL="${ENABLE_PANEL:-0}"
+    ENABLE_GRAFANA="${ENABLE_GRAFANA:-0}"
+    [[ -n "${CONTROL_URL:-}" ]] || die "节点接入需要 --control（主控地址）"
+    [[ -n "${GATEWAY_NAME:-}" ]] || die "节点接入需要 --name（网关名）"
+    [[ -n "${AGENT_TOKEN:-}" || -n "${AGENT_TOKEN_FILE:-}" ]] || die "节点接入需要 --token（接入令牌）"
+  elif [[ "$ACTION" == "upgrade" ]]; then
+    # 升级：角色来自已 source 的 .env
+    ENABLE_PANEL="${ENABLE_PANEL:-1}"
+    if [[ "${ENABLE_PANEL}" == "0" ]]; then
+      ENABLE_GRAFANA="${ENABLE_GRAFANA:-0}"
+    else
+      ENABLE_GRAFANA="${ENABLE_GRAFANA:-1}"
+    fi
+  else
+    die "请指定子命令：control / node / upgrade / uninstall（见 --help）"
   fi
-  ok "OS=${PRETTY_NAME:-$OS_ID} arch=${ARCH} panel=${ENABLE_PANEL}"
+  ok "OS=${PRETTY_NAME:-$OS_ID} arch=${ARCH} role=${ROLE:-from-env} panel=${ENABLE_PANEL}"
 }
 
 Install_Packages() {
@@ -604,7 +624,7 @@ write_agent_join_creds() {
   chmod 600 "$tok"
   export AGENT_TOKEN_FILE="$tok"
   if [[ -f "${INSTALL_DIR}/.env" ]]; then
-    upsert_env_file "${INSTALL_DIR}/.env" PRIMARY_URL "${PRIMARY_URL}"
+    upsert_env_file "${INSTALL_DIR}/.env" CONTROL_URL "${CONTROL_URL}"
     upsert_env_file "${INSTALL_DIR}/.env" AGENT_TOKEN_FILE "$tok"
     upsert_env_file "${INSTALL_DIR}/.env" ENABLE_PANEL "0"
     upsert_env_file "${INSTALL_DIR}/.env" PANEL_ROLE "standby"
@@ -628,7 +648,7 @@ Invoke_Product() {
   export NONINTERACTIVE ENABLE_PANEL ENABLE_GRAFANA
   export GATEWAY_NAME="${GATEWAY_NAME:-}" GATEWAY_PUBLIC_IP="${GATEWAY_PUBLIC_IP:-}" GATEWAY_SSH_PORT="${GATEWAY_SSH_PORT:-}"
   export APPLY_FIREWALL FIREWALL_CONFIRM="${FIREWALL_CONFIRM:-}"
-  export PRIMARY_URL="${PRIMARY_URL:-}" AGENT_TOKEN="${AGENT_TOKEN:-}" AGENT_TOKEN_FILE="${AGENT_TOKEN_FILE:-}"
+  export CONTROL_URL="${CONTROL_URL:-}" AGENT_TOKEN="${AGENT_TOKEN:-}" AGENT_TOKEN_FILE="${AGENT_TOKEN_FILE:-}"
 
   local setup_flags=(--noninteractive --sysctl)
   [[ "$ACTION" == "upgrade" ]] && setup_flags+=(--upgrade)
@@ -667,30 +687,49 @@ Invoke_Product() {
       chown root:relaygate "${INSTALL_DIR}/.env"
       chmod 0640 "${INSTALL_DIR}/.env"
     fi
-    if [[ -f "${INSTALL_DIR}/data/resources.yaml" ]]; then
-      chown root:relaygate "${INSTALL_DIR}/data/resources.yaml"
-      chmod 0660 "${INSTALL_DIR}/data/resources.yaml"
+    # Panel User=relaygate：DataDir 与名册须组可读写（勿 777；勿留 root:root 0640）
+    local data_dir="${RELAYGATE_DATA_DIR:-$INSTALL_DIR/data}"
+    mkdir -p "${data_dir}/agent-tokens" "${data_dir}/versions" "${data_dir}/backups" "${data_dir}/inventory"
+    chown root:relaygate "${data_dir}" \
+      "${data_dir}/agent-tokens" "${data_dir}/versions" "${data_dir}/backups" \
+      "${data_dir}/inventory" 2>/dev/null || true
+    chmod 0770 "${data_dir}" "${data_dir}/agent-tokens" "${data_dir}/versions" "${data_dir}/backups" 2>/dev/null || true
+    chmod 0750 "${data_dir}/inventory" 2>/dev/null || true
+    if [[ -f "${data_dir}/resources.yaml" ]]; then
+      chown root:relaygate "${data_dir}/resources.yaml"
+      chmod 0660 "${data_dir}/resources.yaml"
     fi
-    if [[ -d "${INSTALL_DIR}/data/inventory" ]]; then
-      chown root:relaygate "${INSTALL_DIR}/data/inventory"
-      chmod 0750 "${INSTALL_DIR}/data/inventory"
+    if [[ -f "${data_dir}/inventory/gateways.env" ]]; then
+      chown root:relaygate "${data_dir}/inventory/gateways.env"
+      chmod 0640 "${data_dir}/inventory/gateways.env"
     fi
-    if [[ -f "${INSTALL_DIR}/data/inventory/gateways.env" ]]; then
-      chown root:relaygate "${INSTALL_DIR}/data/inventory/gateways.env"
-      chmod 0640 "${INSTALL_DIR}/data/inventory/gateways.env"
+    if [[ -f "${data_dir}/nodes.yaml" ]]; then
+      chown root:relaygate "${data_dir}/nodes.yaml"
+      chmod 0660 "${data_dir}/nodes.yaml"
+    fi
+    if [[ -f "${data_dir}/panel-audit.log" ]]; then
+      chown root:relaygate "${data_dir}/panel-audit.log"
+      chmod 0660 "${data_dir}/panel-audit.log"
+    fi
+    if [[ -f "${data_dir}/versions/current" ]]; then
+      chown root:relaygate "${data_dir}/versions/current"
+      chmod 0640 "${data_dir}/versions/current"
+    fi
+    if [[ -d "${data_dir}/agent-tokens" ]]; then
+      find "${data_dir}/agent-tokens" -maxdepth 1 -type f -exec chown root:relaygate {} \; -exec chmod 0640 {} \; 2>/dev/null || true
     fi
     # 升级后确保新二进制生效
     systemctl restart relaygate-panel 2>/dev/null || true
   else
     PURGE=0 ./bin/relaygate panel uninstall || true
-    # 节点：有令牌 / PRIMARY_URL / 已装 agent 单元 → 安装或升级后重启 agent
-    if [[ -n "${AGENT_TOKEN:-}" || -n "${AGENT_TOKEN_FILE:-}" || -n "${PRIMARY_URL:-}" ]] \
+    # 节点：有令牌 / CONTROL_URL / 已装 agent 单元 → 安装或升级后重启 agent
+    if [[ -n "${AGENT_TOKEN:-}" || -n "${AGENT_TOKEN_FILE:-}" || -n "${CONTROL_URL:-}" ]] \
       || systemctl cat relaygate-agent.service >/dev/null 2>&1; then
       log "→ relaygate agent install"
       ENABLE_NOW=1 ./bin/relaygate agent install || die "agent install 失败"
       systemctl restart relaygate-agent 2>/dev/null || true
     else
-      warn "ENABLE_PANEL=0 但未检测到 PRIMARY_URL/AGENT_TOKEN；跳过 agent install"
+      warn "ENABLE_PANEL=0 但未检测到 CONTROL_URL/AGENT_TOKEN；跳过 agent install"
     fi
   fi
 
@@ -718,10 +757,10 @@ Show_Result() {
   if [[ "${ENABLE_PANEL:-1}" == "1" ]]; then
     log "Panel: http://${GATEWAY_PUBLIC_IP:-<IP>}:9000 （默认 PANEL_BIND=0.0.0.0:9000）"
     log "默认管理员密码: relaygate（密钥文件 panel_admin_password；生产务必改密）"
-    log "升级: curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh | sudo bash -s -- --upgrade -y"
-  elif [[ -n "${PRIMARY_URL:-}" ]]; then
-    log "节点 Agent: systemctl status relaygate-agent ；主控 ${PRIMARY_URL}"
-    log "升级: curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh | sudo bash -s -- --upgrade -y"
+    log "升级: curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh | sudo bash -s -- upgrade"
+  elif [[ -n "${CONTROL_URL:-}" ]]; then
+    log "节点代理: systemctl status relaygate-agent ；主控 ${CONTROL_URL}"
+    log "升级: curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh | sudo bash -s -- upgrade"
   fi
 }
 
@@ -762,20 +801,95 @@ Uninstall_RelayGate() {
   ok "已彻底清除"
 }
 
-main() {
+parse_common_flag() {
+  case "$1" in
+    --purge) PURGE=1; return 0 ;;
+    --dry-run) DRY_RUN=1; return 0 ;;
+    -y|--non-interactive) NONINTERACTIVE=1; return 0 ;;
+    -h|--help) usage; exit 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# node：--control / --name / --token（短选项 -c/-n/-t）
+parse_node_args() {
   while (($#)); do
     case "$1" in
-      --install) ACTION=install ;;
-      --upgrade) ACTION=upgrade ;;
-      --uninstall) ACTION=uninstall ;;
-      --purge) PURGE=1 ;;
-      --dry-run) DRY_RUN=1 ;;
-      -y|--non-interactive) NONINTERACTIVE=1 ;;
-      -h|--help) usage; exit 0 ;;
-      *) die "未知参数: $1" ;;
+      --control|-c)
+        (($# >= 2)) || die "$1 需要参数"
+        CONTROL_URL="$2"
+        shift 2
+        ;;
+      --name|-n)
+        (($# >= 2)) || die "$1 需要参数"
+        GATEWAY_NAME="$2"
+        shift 2
+        ;;
+      --token|-t)
+        (($# >= 2)) || die "$1 需要参数"
+        AGENT_TOKEN="$2"
+        shift 2
+        ;;
+      *)
+        if parse_common_flag "$1"; then
+          shift
+        else
+          die "未知参数: $1（用法: node --control <url> --name <gateway> --token <token>）"
+        fi
+        ;;
     esac
-    shift
   done
+}
+
+main() {
+  if (($# == 0)); then
+    usage
+    die "请指定子命令：control / node / upgrade / uninstall"
+  fi
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    control)
+      ACTION=install
+      ROLE=control
+      NONINTERACTIVE=1
+      shift
+      while (($#)); do
+        parse_common_flag "$1" || die "未知参数: $1（control 无额外必填项）"
+        shift
+      done
+      ;;
+    node)
+      ACTION=install
+      ROLE=node
+      NONINTERACTIVE=1
+      shift
+      parse_node_args "$@"
+      set --
+      ;;
+    upgrade)
+      ACTION=upgrade
+      NONINTERACTIVE=1
+      shift
+      while (($#)); do
+        parse_common_flag "$1" || die "未知参数: $1"
+        shift
+      done
+      ;;
+    uninstall)
+      ACTION=uninstall
+      shift
+      while (($#)); do
+        parse_common_flag "$1" || die "未知参数: $1"
+        shift
+      done
+      ;;
+    *)
+      die "未知参数: $1（见 install.sh --help：control / node / upgrade）"
+      ;;
+  esac
 
   if [[ -z "${RELAYGATE_INSTALL_LOG:-}" ]]; then
     if [[ "$DRY_RUN" != "1" && "$(id -u)" == "0" ]]; then
@@ -786,7 +900,7 @@ main() {
   fi
   mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
 
-  log "bootstrap 开始 action=${ACTION} from_source=${FROM_SOURCE}"
+  log "bootstrap 开始 action=${ACTION} role=${ROLE:-from-env} from_source=${FROM_SOURCE}"
   Check_Root
   if [[ "$ACTION" == "uninstall" ]]; then
     Uninstall_RelayGate

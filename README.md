@@ -30,24 +30,25 @@ RelayGate 是**单一产品**，按角色安装两个组件之一（详见 [产�
 | 角色 | 环境模板 | 启用什么 |
 |------|----------|----------|
 | **主控** | [`packaging/control/env.example`](packaging/control/env.example) | Panel（意图/发布/节点名册）+ 可选本机转发与中心观测 |
-| **节点** | [`packaging/node/env.example`](packaging/node/env.example) | Envoy + agent（`PRIMARY_URL` / `AGENT_TOKEN_FILE`）；`ENABLE_PANEL=0` |
+| **节点** | [`packaging/node/env.example`](packaging/node/env.example) | Envoy + agent（`CONTROL_URL` / `AGENT_TOKEN_FILE`）；`ENABLE_PANEL=0` |
+
+**节点 vs agent：** 「节点」是机群角色（`install.sh node`）；**agent** 是节点上的拉取/心跳进程（`relaygate agent` / systemd `relaygate-agent`）。用户文案说节点；命令与服务名保留 agent。
 
 ### 一键安装 / 升级
 
 ```bash
-# 1) 安装主控（ENABLE_PANEL=1；首启默认密码 relaygate，生产务必改密）
+# 1) 安装主控（首启默认密码 relaygate，生产务必改密）
 curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
-  | sudo env ENABLE_PANEL=1 NONINTERACTIVE=1 bash -s -- -y
+  | sudo bash -s -- control
 
-# 2) 安装节点：优先用主控 `fleet join` / Panel「接入」生成的一行；
-#    或自行指定 PRIMARY_URL + GATEWAY_NAME + AGENT_TOKEN：
+# 2) 安装节点：优先用主控 `fleet join` / Panel「接入」生成的一行
 curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
-  | sudo env PRIMARY_URL='http://203.0.113.10:9000' GATEWAY_NAME=gateway-02 \
-      AGENT_TOKEN='<token>' ENABLE_PANEL=0 NONINTERACTIVE=1 bash -s -- -y
+  | sudo bash -s -- node --control http://203.0.113.10:9000 \
+      --name gateway-02 --token '<token>'
 
-# 3) 升级主控 / 4) 升级节点（同一命令；读现有 .env，保留角色与 DataDir）
+# 3) 升级主控 / 节点（同一命令；读现有 .env，保留角色与 DataDir）
 curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
-  | sudo bash -s -- --upgrade -y
+  | sudo bash -s -- upgrade
 # 已安装本机也可: sudo /opt/relaygate/bin/relaygate upgrade [--drain]
 ```
 
@@ -55,9 +56,9 @@ curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
-  | sudo RELAYGATE_VERSION=v0.1.0 bash -s -- -y
+  | sudo RELAYGATE_VERSION=v0.1.0 bash -s -- control
 
-sudo RELAYGATE_TAR=/path/relaygate-v0.1.0-linux-amd64.tar.gz bash install.sh
+sudo RELAYGATE_TAR=/path/relaygate-v0.1.0-linux-amd64.tar.gz bash install.sh control
 ```
 
 ### 安装变量
@@ -70,11 +71,11 @@ sudo RELAYGATE_TAR=/path/relaygate-v0.1.0-linux-amd64.tar.gz bash install.sh
 | `RELAYGATE_DATA_DIR` | `$INSTALL_DIR/data` |
 | `GATEWAY_NAME` / `GATEWAY_PUBLIC_IP` | 网关身份 |
 | `GATEWAY_SSH_PORT` | 安装/配置时指定（常见 `22`；示例见 [`packaging/shared/env.example`](packaging/shared/env.example)） |
-| `ENABLE_PANEL` | 主控 `1`；节点 `0` |
+| `ENABLE_PANEL` | 主控 `1`；节点 `0`（由 `control` / `node` 子命令默认） |
 | `ENABLE_GRAFANA` | 主控常用 `1`；节点勿启中心栈 |
 | `PANEL_BIND` | `0.0.0.0:9000`（对外；可改 `127.0.0.1:9000`） |
 | `APPLY_FIREWALL` | `0`（安装时只校验防火墙） |
-| `PRIMARY_URL` / `AGENT_TOKEN_FILE` | 节点组件必填（见 `node.env.example`） |
+| `CONTROL_URL` / `AGENT_TOKEN_FILE` | 节点组件必填（见 `node.env.example`；`node` 子命令写入） |
 
 ### 首启检查
 
@@ -109,7 +110,7 @@ relaygate smoke
 |----------|----------|
 | 上游 / 转发 / Envoy 限速等 | Panel「应用配置」或 `relaygate reload`（首次全量用 `apply`） |
 | ACL / 仅 nftables | Panel「应用防火墙」或 `relaygate firewall apply` |
-| 二进制 / packaging | `relaygate upgrade [--drain]` 或 `install.sh --upgrade` |
+| 二进制 / packaging | `relaygate upgrade [--drain]` 或 `install.sh upgrade` |
 
 | `entry` | 用途 |
 |---------|------|
@@ -185,10 +186,10 @@ relaygate version
 
 链路：**Envoy TCP access** → Fluent Bit → Loki → Grafana（经 Panel `/grafana/` 反代）。
 
-| 节点 | `.env` 中 `COMPOSE_PROFILES` |
+| 角色 | `.env` 中 `COMPOSE_PROFILES` |
 |------|------------------------------|
-| 主管理 | `with-grafana,with-loki,with-logs` |
-| 从节点 | `with-logs`（并设 `LOKI_HOST=<中心私网>`） |
+| 主控 | `with-grafana,with-loki,with-logs` |
+| 节点 | `with-logs`（并设 `LOKI_HOST=<中心私网>`） |
 
 启用步骤与 LogQL 见 **[docs/logging-playbook.md](docs/logging-playbook.md)**。看板：**TCP Session Logs**。  
 本地日志：`${RELAYGATE_DATA_DIR}/envoy/logs/tcp-access.json`。

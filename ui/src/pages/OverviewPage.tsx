@@ -3,8 +3,8 @@ import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import { ClipboardListIcon, GaugeIcon } from "lucide-react"
 
-import { DiffView } from "@/components/layout/DiffView"
 import { EmptyState } from "@/components/layout/EmptyState"
+import { OpsLogView } from "@/components/layout/OpsLogView"
 import { Page, PageHeader, Section, StatBlock, StatGrid } from "@/components/layout/PageParts"
 import {
   Table,
@@ -80,7 +80,7 @@ export function OverviewPage() {
       </StatGrid>
 
       <Section title={t("overview.last_apply")}>
-        <DiffView
+        <OpsLogView
           value={lastApply}
           placeholder={
             <EmptyState

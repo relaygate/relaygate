@@ -83,8 +83,8 @@ func Baseline(root string, outPath string) error {
 	return nil
 }
 
-// Fleet upgrades gateways from inventory one-by-one via release tar / install.sh --upgrade.
-// Flow per host: drain fail → install.sh --upgrade → smoke → drain ok.
+// Fleet upgrades gateways from inventory one-by-one via release tar / install.sh upgrade.
+// Flow per host: drain fail → install.sh upgrade → smoke → drain ok.
 // No git fetch/checkout fallback (production installs are tar-based).
 func Fleet(root string, gatewaysCSV string) error {
 	inventory := getenv("INVENTORY", config.ResolvePaths(root).Inventory)
@@ -112,7 +112,7 @@ func Fleet(root string, gatewaysCSV string) error {
 		fmt.Sscanf(v, "%d", &pauseSec)
 	}
 
-	fmt.Println("==> fleet：分批 release-tar / install.sh --upgrade（不用 git）")
+	fmt.Println("==> fleet：分批 release-tar / install.sh upgrade（不用 git）")
 	if localTar != "" {
 		fmt.Printf("    RELAYGATE_TAR=%s\n", localTar)
 	}
@@ -181,7 +181,7 @@ func Fleet(root string, gatewaysCSV string) error {
 		}
 
 		upgradeCmd := fleetRemoteUpgradeCmd(rdir, version, remoteTar)
-		fmt.Println("==> 3/4 install.sh --upgrade")
+		fmt.Println("==> 3/4 install.sh upgrade")
 		if err := remote(upgradeCmd); err != nil {
 			return fmt.Errorf("%s 升级失败（无 git 回退）: %w", gw, err)
 		}
@@ -198,7 +198,7 @@ func Fleet(root string, gatewaysCSV string) error {
 	return nil
 }
 
-// fleetRemoteUpgradeCmd builds the remote shell snippet for install.sh --upgrade.
+// fleetRemoteUpgradeCmd builds the remote shell snippet for install.sh upgrade.
 func fleetRemoteUpgradeCmd(remoteDir, version, remoteTar string) string {
 	var b strings.Builder
 	b.WriteString("set -euo pipefail; ")
@@ -219,7 +219,7 @@ func fleetRemoteUpgradeCmd(remoteDir, version, remoteTar string) string {
 	b.WriteString("if [[ ! -f ./install.sh ]]; then ")
 	b.WriteString("echo 'ERROR: 远端缺少 install.sh；生产请用 release tar 安装树，fleet 不回退到源码同步' >&2; exit 1; ")
 	b.WriteString("fi; ")
-	b.WriteString("bash ./install.sh --upgrade -y")
+	b.WriteString("bash ./install.sh upgrade")
 	return b.String()
 }
 

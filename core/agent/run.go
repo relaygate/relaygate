@@ -33,7 +33,7 @@ func Run(opts RunOptions) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	fmt.Printf("节点代理已启动：主控=%s 拉取间隔=%s\n", client.PrimaryURL, opts.PullInterval)
+	fmt.Printf("节点代理已启动：主控=%s 拉取间隔=%s\n", client.ControlURL, opts.PullInterval)
 
 	pullTicker := time.NewTicker(opts.PullInterval)
 	heartTicker := time.NewTicker(opts.HeartInterval)

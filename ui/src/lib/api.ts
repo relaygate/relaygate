@@ -37,14 +37,28 @@ export class ApiError extends Error {
   }
 }
 
-/** Prefer ops `output` from error body; fall back to message / fallback. */
+/**
+ * Short actionable text for toast / dialogs.
+ * Prefer API `error` (ApiError.message); never dump long CLI `output`.
+ */
 export function apiErrorDetail(err: unknown, fallback: string): string {
+  if (err instanceof ApiError && err.message.trim()) {
+    return err.message
+  }
+  return fallback
+}
+
+/**
+ * Full ops CLI / log text for OpsLogView.
+ * Prefer body.output, then short error, then fallback.
+ */
+export function apiErrorOutput(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
     const body = err.body as Record<string, unknown> | null
     if (body && typeof body.output === "string" && body.output.trim()) {
       return body.output
     }
-    if (err.message) return err.message
+    if (err.message.trim()) return err.message
   }
   return fallback
 }
@@ -579,7 +593,7 @@ export type FleetJoinResponse = OpsResult & {
 
 export async function opsFleetJoin(body: {
   name: string
-  primary_url?: string
+  control_url?: string
 }): Promise<FleetJoinResponse> {
   try {
     const data = await api.post<Record<string, unknown>>("/api/ops/fleet/join", body)

@@ -37,27 +37,30 @@ func TestPublishJoinLeaveStatus(t *testing.T) {
 	if join.Token == "" {
 		t.Fatal("empty token")
 	}
-	if join.JoinCommand == "" || !strings.Contains(join.JoinCommand, "AGENT_TOKEN=") {
+	if join.JoinCommand == "" || !strings.Contains(join.JoinCommand, "--token ") {
 		t.Fatalf("join_command=%q", join.JoinCommand)
 	}
-	if !strings.Contains(join.JoinCommand, "PRIMARY_URL='http://203.0.113.10:9000'") {
-		t.Fatalf("missing primary in command: %q", join.JoinCommand)
+	if !strings.Contains(join.JoinCommand, "--control 'http://203.0.113.10:9000'") {
+		t.Fatalf("missing control url in command: %q", join.JoinCommand)
 	}
-	if join.JoinCommand == "" || !strings.Contains(join.JoinCommand, "AGENT_TOKEN=") {
-		t.Fatalf("join command missing: %q", join.JoinCommand)
+	if !strings.Contains(join.JoinCommand, " bash -s -- node ") {
+		t.Fatalf("join command missing node subcommand: %q", join.JoinCommand)
 	}
-	if !strings.Contains(join.JoinCommand, "PRIMARY_URL='http://203.0.113.10:9000'") {
-		t.Fatalf("primary url missing: %q", join.JoinCommand)
+	if !strings.Contains(join.JoinCommand, "--name 'gateway-02'") {
+		t.Fatalf("join command missing name: %q", join.JoinCommand)
 	}
 	if strings.Contains(join.JoinCommand, "PANEL_ADMIN") {
 		t.Fatal("join command must not include panel admin secrets")
 	}
+	if strings.Contains(join.JoinCommand, "ENABLE_PANEL=") || strings.Contains(join.JoinCommand, "PRIMARY_URL") || strings.Contains(join.JoinCommand, "NONINTERACTIVE=") {
+		t.Fatalf("join command should use short syntax only: %q", join.JoinCommand)
+	}
 	ctrl := FormatControlInstallCommand()
-	if !strings.Contains(ctrl, "ENABLE_PANEL=1") || !strings.Contains(ctrl, "NONINTERACTIVE=1") {
+	if !strings.Contains(ctrl, " bash -s -- control") || strings.Contains(ctrl, "ENABLE_PANEL=") {
 		t.Fatalf("control install: %q", ctrl)
 	}
 	up := FormatUpgradeCommand()
-	if !strings.Contains(up, "--upgrade") || !strings.Contains(up, "install.sh") {
+	if !strings.Contains(up, " bash -s -- upgrade") || !strings.Contains(up, "install.sh") {
 		t.Fatalf("upgrade: %q", up)
 	}
 	n, err := LookupByToken(root, join.Token)

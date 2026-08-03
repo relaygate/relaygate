@@ -24,3 +24,15 @@ func TestUserFacingErrorStandby(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestUserFacingErrorDrainHealthcheck(t *testing.T) {
+	t.Parallel()
+	fail := UserFacingError(errors.New("healthcheck/fail: connection refused（Envoy 可能未运行或 admin 不可达）"))
+	if !strings.Contains(fail, "摘流失败") {
+		t.Fatalf("fail got %q", fail)
+	}
+	ok := UserFacingError(errors.New("healthcheck/ok: connection refused"))
+	if !strings.Contains(ok, "恢复承接失败") {
+		t.Fatalf("ok got %q", ok)
+	}
+}

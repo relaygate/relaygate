@@ -16,16 +16,16 @@ import (
 
 // Client talks to the control-plane Panel agent APIs.
 type Client struct {
-	PrimaryURL string
+	ControlURL string
 	Token      string
 	HTTP       *http.Client
 }
 
-// LoadClientFromEnv builds a Client from PRIMARY_URL + AGENT_TOKEN_FILE (or AGENT_TOKEN).
+// LoadClientFromEnv builds a Client from CONTROL_URL + AGENT_TOKEN_FILE (or AGENT_TOKEN).
 func LoadClientFromEnv() (*Client, error) {
-	url := strings.TrimSpace(os.Getenv("PRIMARY_URL"))
+	url := strings.TrimSpace(os.Getenv("CONTROL_URL"))
 	if url == "" {
-		return nil, fmt.Errorf("未设置 PRIMARY_URL。请在节点 .env 中填写主控地址（例如 http://203.0.113.10:9000）")
+		return nil, fmt.Errorf("未设置 CONTROL_URL。请在节点 .env 中填写主控地址（例如 http://203.0.113.10:9000）")
 	}
 	token := strings.TrimSpace(os.Getenv("AGENT_TOKEN"))
 	if token == "" {
@@ -43,7 +43,7 @@ func LoadClientFromEnv() (*Client, error) {
 		return nil, fmt.Errorf("代理令牌为空。请重新接入节点或轮换令牌")
 	}
 	return &Client{
-		PrimaryURL: strings.TrimRight(url, "/"),
+		ControlURL: strings.TrimRight(url, "/"),
 		Token:      token,
 		HTTP:       &http.Client{Timeout: 30 * time.Second},
 	}, nil
@@ -56,14 +56,14 @@ type versionResp struct {
 
 // PullOnce fetches the current published config and writes it to local DataDir.
 func (c *Client) PullOnce(root string) (version string, err error) {
-	req, err := http.NewRequest(http.MethodGet, c.PrimaryURL+"/api/agent/config", nil)
+	req, err := http.NewRequest(http.MethodGet, c.ControlURL+"/api/agent/config", nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("无法连接主控：请检查 PRIMARY_URL 与网络后重试")
+		return "", fmt.Errorf("无法连接主控：请检查 CONTROL_URL 与网络后重试")
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
@@ -95,7 +95,7 @@ func (c *Client) PullOnce(root string) (version string, err error) {
 // Heartbeat reports applied version to the control plane.
 func (c *Client) Heartbeat(appliedVersion string) error {
 	payload, _ := json.Marshal(map[string]string{"applied_version": appliedVersion})
-	req, err := http.NewRequest(http.MethodPost, c.PrimaryURL+"/api/agent/heartbeat", bytes.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, c.ControlURL+"/api/agent/heartbeat", bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}

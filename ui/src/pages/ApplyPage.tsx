@@ -5,6 +5,7 @@ import { FileClockIcon, TriangleAlertIcon } from "lucide-react"
 
 import { DiffView } from "@/components/layout/DiffView"
 import { EmptyState } from "@/components/layout/EmptyState"
+import { OpsLogView } from "@/components/layout/OpsLogView"
 import { Page, PageHeader, Section } from "@/components/layout/PageParts"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -249,7 +250,7 @@ export function ApplyPage() {
       </Section>
 
       <Section title={t("overview.last_apply")}>
-        <DiffView
+        <OpsLogView
           value={loading ? "" : lastApply}
           placeholder={
             loading ? (
@@ -271,7 +272,7 @@ export function ApplyPage() {
 
       {result ? (
         <Section title={t("apply.result")}>
-          <DiffView value={result} error={error} />
+          <OpsLogView value={result} error={error} />
         </Section>
       ) : null}
 

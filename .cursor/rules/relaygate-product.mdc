@@ -11,6 +11,20 @@ alwaysApply: true
 
 **对内双组件（单一产品，非双产品线）**：主控（control）= Panel + 意图/发布/节点名册 + 可选本机转发；节点（node）= agent + 本机热更新 + Envoy（无完整 Panel）。
 
+## 术语表（分层；勿混用）
+
+**节点是角色，agent 是节点上的守护进程**——二者并存，不要为统一而把安装改成 `agent`，也不要大规模把 `core/agent` 改成 `core/node`。
+
+| 层级 | 用户可见（中/英） | 标识符 / 路径 | 勿再用 |
+|------|------------------|---------------|--------|
+| 安装角色 | 主控 / control；节点 / node（网关节点） | `install.sh control` · `install.sh node …` · `packaging/{control,node}/` | primary、secondary；**勿用 agent 作安装角色名** |
+| 升级 | 升级 | `install.sh upgrade`（读现有 `.env` 保留角色） | 长串 `env KEY=… bash -s -- -y` |
+| 守护进程 | （运维文案说「节点拉取 / 心跳」；高级/命令可写 agent） | `relaygate agent`；systemd `relaygate-agent`；包 `core/agent`；HTTP `/api/agent/*` | 把 agent 说成与主控对等的「第二种产品角色」 |
+| 节点凭证 / 主控地址 | — | `AGENT_TOKEN` / `AGENT_TOKEN_FILE`；`CONTROL_URL` | `PRIMARY_URL` |
+| Panel 写保护 | 主控 / 只读 | 内部 `PANEL_ROLE=primary\|standby` | 对外说「secondary」 |
+
+机群稳态：节点上的 **agent** 拉取配置版本 → 本机落盘 → 本机热更新；SSH 不进正式菜单。
+
 ## 产品定位
 
 - 文档、UI、CLI、注释、示例、提交说明中，**不要**使用游戏或真实业务向表述。
@@ -19,7 +33,6 @@ alwaysApply: true
 - 新文案 / 字段 / i18n key **禁止**以 `game` / `player` /「玩家」/「游戏服」等作产品主词。
 - 写作用左列：客户端/下游（非玩家）；上游服务（非区服/房间服）；业务/项目名（非 `game_*`）；网关/机群（非备服/开服等黑话）。
 - YAML 已有标识符（如 `game_name`、`backend_*`）可兼容保留；展示层用中性词；勿擅自全仓重命名。新能力一律中性命名。
-- 机群稳态：节点 **Agent 拉取**配置版本 → 本机落盘 → 本机热更新；SSH 不进正式菜单。
 
 ## 用户文案
 

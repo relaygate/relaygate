@@ -1,31 +1,43 @@
-import type { ReactNode } from "react"
+import { useEffect, useRef, type ReactNode } from "react"
 
 import { opsLineTone, opsToneClass } from "@/lib/opsLog"
 import { cn } from "@/lib/utils"
 
 /**
- * Ops-tool output panel: plain monospace log (scrollable, fixed min-height).
- * Accepts plain-text `output` from `/api/ops/*`.
+ * Shared monospace log / output pane (ops tools, last-apply, apply result, etc.).
+ * Fixed min-height + capped max-height; scrolls inside the panel; auto-scrolls to bottom on new content.
  */
 export function OpsLogView({
   value,
   placeholder,
   className,
+  error = false,
   fixedHeight = true,
 }: {
   value?: string
   placeholder?: ReactNode
   className?: string
+  /** Soft destructive chrome when the operation failed. */
+  error?: boolean
   /** When true (default), box keeps a stable min-height so layout does not jump. */
   fixedHeight?: boolean
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
   const trimmed = value?.trim() ?? ""
   const empty = !trimmed || trimmed === "尚无" || trimmed === "None" || trimmed === "(no output)"
 
+  useEffect(() => {
+    if (empty) return
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+  }, [value, empty])
+
   const shell = cn(
-    "overflow-hidden rounded-md border border-border bg-muted/40 text-foreground",
-    fixedHeight && "min-h-56",
-    !fixedHeight && "max-h-[32rem]",
+    "overflow-y-auto thin-scrollbar rounded-md border border-border bg-muted/40 text-foreground",
+    // Cap height so long logs scroll inside the panel instead of stretching the page.
+    fixedHeight ? "min-h-56 max-h-[28rem]" : "max-h-[32rem]",
+    error && "border-destructive/50 bg-destructive/5",
     className,
   )
 
@@ -48,12 +60,16 @@ export function OpsLogView({
   const lines = value!.replace(/\r\n/g, "\n").split("\n")
 
   return (
-    <div className={cn(shell, "overflow-y-auto")}>
-      <pre className="m-0 min-h-56 p-3 font-mono text-[12px] leading-[1.55]">
+    <div ref={scrollRef} className={shell}>
+      <pre className="m-0 p-3 font-mono text-[12px] leading-[1.55]">
         {lines.map((line, i) => (
           <div
             key={i}
-            className={cn("whitespace-pre-wrap break-all", opsToneClass[opsLineTone(line)])}
+            className={cn(
+              "whitespace-pre-wrap break-all",
+              opsToneClass[opsLineTone(line)],
+              error && "text-destructive",
+            )}
           >
             {line || " "}
           </div>
@@ -62,3 +78,6 @@ export function OpsLogView({
     </div>
   )
 }
+
+/** @deprecated Prefer OpsLogView — same component. */
+export const LogPane = OpsLogView

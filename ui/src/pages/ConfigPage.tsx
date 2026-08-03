@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import { DownloadIcon, PencilIcon, SaveIcon } from "lucide-react"
 
+import { DiffView } from "@/components/layout/DiffView"
 import { Page, PageHeader, OutputPre, Section } from "@/components/layout/PageParts"
 import { YamlEditor } from "@/components/layout/YamlEditor"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -226,7 +227,7 @@ export function ConfigPage({ embedded = false }: { embedded?: boolean }) {
       ) : null}
       {result?.ok && result.diff ? (
         <Section title={t("config.diff")}>
-          <OutputPre value={result.diff} />
+          <DiffView value={result.diff} />
         </Section>
       ) : null}
       {saveDiff ? (

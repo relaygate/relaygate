@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 
-import { DiffView } from "@/components/layout/DiffView"
+import { OpsLogView } from "@/components/layout/OpsLogView"
 import { cn } from "@/lib/utils"
 
 export function Page({ children, className }: { children: ReactNode; className?: string }) {
@@ -76,7 +76,7 @@ export function StatBlock({
   )
 }
 
-/** Plain console-style output (ops logs). Prefer DiffView for summaries. */
+/** Plain console-style output (ops logs / errors). Prefer DiffView for change summaries. */
 export function OutputPre({
   value,
   placeholder,
@@ -86,7 +86,7 @@ export function OutputPre({
   placeholder?: string
   error?: boolean
 }) {
-  return <DiffView value={value} placeholder={placeholder} error={error} />
+  return <OpsLogView value={value} placeholder={placeholder} error={error} />
 }
 
 export function Section({

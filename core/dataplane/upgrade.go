@@ -16,7 +16,7 @@ type UpgradeOptions struct {
 	SkipInstall bool
 }
 
-// Upgrade upgrades packaging/binary by delegating to install.sh --upgrade.
+// Upgrade upgrades packaging/binary by delegating to install.sh upgrade.
 // Does not re-implement install logic. Pass RELAYGATE_VERSION or RELAYGATE_TAR in the environment.
 func Upgrade(root string, opt UpgradeOptions) error {
 	env, err := LoadEnv(root)
@@ -28,7 +28,7 @@ func Upgrade(root string, opt UpgradeOptions) error {
 		return err
 	}
 
-	fmt.Println("==> 变更分流：二进制 / packaging → relaygate upgrade（或 install.sh --upgrade）")
+	fmt.Println("==> 变更分流：二进制 / packaging → relaygate upgrade（或 install.sh upgrade）")
 	fmt.Println("    ACL/nftables-only → firewall apply；resources/Envoy → reload")
 	WarnIfDrainWaitShort(env.DrainWait, os.Stdout)
 
@@ -41,7 +41,7 @@ func Upgrade(root string, opt UpgradeOptions) error {
 
 	installSh := filepath.Join(root, "install.sh")
 	if _, err := os.Stat(installSh); err != nil {
-		return fmt.Errorf("缺少 %s；请用官方 install.sh --upgrade 或将 release 树放到本机", installSh)
+		return fmt.Errorf("缺少 %s；请用官方 install.sh upgrade 或将 release 树放到本机", installSh)
 	}
 
 	if opt.SkipInstall {
@@ -50,14 +50,14 @@ func Upgrade(root string, opt UpgradeOptions) error {
 		return nil
 	}
 
-	fmt.Println("==> 委托 install.sh --upgrade（不复制安装逻辑）")
-	cmd := exec.Command("bash", installSh, "--upgrade", "-y")
+	fmt.Println("==> 委托 install.sh upgrade（不复制安装逻辑）")
+	cmd := exec.Command("bash", installSh, "upgrade")
 	cmd.Dir = root
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = upgradeEnv(os.Environ(), root, version, tarPath)
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("install.sh --upgrade 失败: %w（未回退 git；请检查 RELAYGATE_VERSION / RELAYGATE_TAR）", err)
+		return fmt.Errorf("install.sh upgrade 失败: %w（未回退 git；请检查 RELAYGATE_VERSION / RELAYGATE_TAR）", err)
 	}
 
 	if opt.Drain {
@@ -79,7 +79,7 @@ func printUpgradeCommand(installSh, version, tarPath string) {
 	if version != "" {
 		parts = append(parts, "RELAYGATE_VERSION="+shellQuote(version))
 	}
-	parts = append(parts, "bash", shellQuote(installSh), "--upgrade", "-y")
+	parts = append(parts, "bash", shellQuote(installSh), "upgrade")
 	fmt.Println(strings.Join(parts, " "))
 }
 
@@ -143,5 +143,5 @@ func ChangePathHint() {
 	fmt.Println("变更分流:")
 	fmt.Println("  ACL / nftables-only     → relaygate firewall apply")
 	fmt.Println("  resources / Envoy 配置  → relaygate reload（含 drain）")
-	fmt.Println("  二进制 / packaging      → relaygate upgrade [--drain] 或 install.sh --upgrade")
+	fmt.Println("  二进制 / packaging      → relaygate upgrade [--drain] 或 install.sh upgrade")
 }

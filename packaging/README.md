@@ -5,7 +5,7 @@
 | 目录 | 角色 | 内容 |
 |------|------|------|
 | [`control/`](control/) | 主控组件 | `env.example`（Panel + 发布/名册）；中心观测相关见 `grafana/` `loki/` `observability/` |
-| [`node/`](node/) | 节点组件 | `env.example`（`ENABLE_PANEL=0`、`PRIMARY_URL`、`AGENT_TOKEN_FILE`） |
+| [`node/`](node/) | 节点组件 | `env.example`（`ENABLE_PANEL=0`、`CONTROL_URL`、`AGENT_TOKEN_FILE`） |
 | [`shared/`](shared/) | 共用 | 默认 `.env`、resources、历史 inventory 模板 |
 | 根下 Compose/采集 | 共用运行时 | `compose.yaml`、`prometheus/`、`fluent-bit/`、`firewall/`、`sysctl/`、`profiles/` |
 | [`systemd/`](systemd/) | 宿主服务 | Panel（主控）；节点用 `relaygate agent run`（可自建 unit） |

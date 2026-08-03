@@ -273,8 +273,11 @@ func TestFleetJoinIssuesCommand(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "join_command") {
 		t.Fatalf("expected join_command in body=%s", rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "AGENT_TOKEN=") {
-		t.Fatalf("expected AGENT_TOKEN in join command body=%s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "--token ") {
+		t.Fatalf("expected --token in join command body=%s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), " bash -s -- node ") {
+		t.Fatalf("expected node subcommand in join command body=%s", rec.Body.String())
 	}
 	if strings.Contains(rec.Body.String(), "PANEL_ADMIN_PASSWORD") {
 		t.Fatalf("must not embed panel password: %s", rec.Body.String())

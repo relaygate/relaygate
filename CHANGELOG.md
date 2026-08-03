@@ -14,6 +14,22 @@
 
 ### Security
 
+## [0.1.11] - 2026-08-04
+
+### Changed
+
+- 一键安装改为短子命令：`control` / `node` / `upgrade`（无旧 `env KEY=… bash -y` 兼容层）
+- 节点主控地址环境变量由 `PRIMARY_URL` 更名为 `CONTROL_URL`（无双读兼容）
+- 对外角色统一为「主控 / 节点」；安装与 join 命令不再使用 primary 作为角色名
+
+### Fixed
+
+- Panel 在非 HTTPS（如 `http://IP:9000`）下复制接入命令等文本时使用兼容回退，避免剪贴板 API 静默失败
+
+### Added
+
+- 登录页支持显示/隐藏密码
+
 ## [0.1.10] - 2026-08-04
 
 ### Fixed

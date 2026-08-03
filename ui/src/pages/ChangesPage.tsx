@@ -5,6 +5,7 @@ import { FileTextIcon, HistoryIcon } from "lucide-react"
 
 import { DiffView, stripChangeSummaryNoise } from "@/components/layout/DiffView"
 import { EmptyState } from "@/components/layout/EmptyState"
+import { OpsLogView } from "@/components/layout/OpsLogView"
 import { Page, PageHeader, Section } from "@/components/layout/PageParts"
 import { Button } from "@/components/ui/button"
 import {
@@ -247,7 +248,7 @@ export function ChangesPage({ embedded = false }: { embedded?: boolean }) {
               />
             </Field>
           </FieldGroup>
-          {rollbackResult ? <DiffView value={rollbackResult} error /> : null}
+          {rollbackResult ? <OpsLogView value={rollbackResult} error /> : null}
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRollbackStamp(null)} disabled={rollbackBusy}>
               {t("ops.cancel")}

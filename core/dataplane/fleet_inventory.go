@@ -71,7 +71,7 @@ func FleetCLIHints(root string) []string {
 		"relaygate fleet publish   # 输入 确认 或 Confirm",
 		"relaygate fleet join gateway-02   # 生成一句话安装命令",
 		"relaygate fleet leave gateway-02 # 输入 确认 或 Confirm",
-		"# 节点：粘贴 join 输出的一行命令（PRIMARY_URL + AGENT_TOKEN）",
-		"# 升级: curl …/install.sh | sudo bash -s -- --upgrade -y",
+		"# 节点：粘贴 join 输出的一行命令（node --control …）",
+		"# 升级: curl …/install.sh | sudo bash -s -- upgrade",
 	}
 }

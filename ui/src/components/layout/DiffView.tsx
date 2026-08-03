@@ -1,7 +1,6 @@
-import type { ReactNode } from "react"
+import { useEffect, useRef, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { isLifecycleInfoLine, opsLineTone, opsToneClass } from "@/lib/opsLog"
 import { cn } from "@/lib/utils"
 
@@ -114,13 +113,17 @@ export function stripChangeSummaryNoise(
     .replace(/\n+$/, "")
 }
 
+/**
+ * Change-summary / unified-diff viewer.
+ * Same pane chrome as OpsLogView: min-h-56 + max-h-[28rem], in-panel scroll, auto-scroll.
+ */
 export function DiffView({
   value,
   placeholder,
   error,
   className,
-  /** Lock viewport height (ops logs): no collapse when empty, scroll when long. */
-  fixedHeight = false,
+  /** Lock viewport height (default): no collapse when empty, scroll when long. */
+  fixedHeight = true,
 }: {
   value?: string
   placeholder?: ReactNode
@@ -129,30 +132,38 @@ export function DiffView({
   fixedHeight?: boolean
 }) {
   const { t } = useTranslation()
+  const scrollRef = useRef<HTMLDivElement>(null)
   // Backend may return localized sentinels (e.g. 「尚无」/ "None") instead of "".
   const trimmed = value?.trim() ?? ""
   const text =
     !trimmed || trimmed === "尚无" || trimmed === "None"
       ? ""
       : stripChangeSummaryNoise(value ?? "", { noDiffLabel: t("changes.no_diff") })
+  const empty = !text
+
+  useEffect(() => {
+    if (empty) return
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTop = el.scrollHeight
+  }, [text, empty])
+
   const shell = cn(
-    "rounded-md border border-border bg-muted/50 font-mono text-[12px] leading-[1.55] text-foreground",
-    fixedHeight && "h-44",
-    !fixedHeight && "max-h-[28rem]",
+    "overflow-y-auto thin-scrollbar rounded-md border border-border bg-muted/40 text-foreground",
+    fixedHeight ? "min-h-56 max-h-[28rem]" : "max-h-[32rem]",
     error && "border-destructive/50 bg-destructive/5",
     className,
   )
 
-  if (!text) {
+  if (empty) {
     const isNode = placeholder != null && typeof placeholder !== "string"
     return (
       <div
         className={cn(
           shell,
           isNode
-            ? "flex min-h-44 items-center justify-center border-dashed bg-transparent p-0"
-            : "border-dashed px-3 py-3 text-muted-foreground",
-          fixedHeight && !isNode && "flex items-start",
+            ? "flex min-h-56 items-center justify-center border-dashed bg-transparent p-0"
+            : "flex min-h-56 items-center border-dashed px-3 py-3 text-sm text-muted-foreground",
         )}
       >
         {placeholder ?? ""}
@@ -165,8 +176,8 @@ export function DiffView({
   const asSummary = !asDiff && looksLikeChangeSummary(lines)
 
   return (
-    <ScrollArea className={shell}>
-      <pre className="m-0 p-0">
+    <div ref={scrollRef} className={shell}>
+      <pre className="m-0 p-3 font-mono text-[12px] leading-[1.55]">
         {lines.map((line, i) => {
           const toneClass = asDiff
             ? diffKindClass[lineKind(line)]
@@ -177,7 +188,7 @@ export function DiffView({
             <div
               key={i}
               className={cn(
-                "whitespace-pre-wrap break-all px-3 py-px",
+                "whitespace-pre-wrap break-all",
                 toneClass,
                 error && "text-destructive",
               )}
@@ -187,6 +198,6 @@ export function DiffView({
           )
         })}
       </pre>
-    </ScrollArea>
+    </div>
   )
 }

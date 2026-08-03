@@ -20,6 +20,10 @@ func UserFacingError(err error) string {
 			return "Envoy 未在时限内确认新配置，且回滚上一快照失败。请立即执行硬重启（reload --hard），并检查本机 Panel 与 Envoy 是否正常。"
 		}
 		return "Envoy 未在时限内确认新配置，已尝试回滚上一快照。请检查本机 Panel 与 Envoy；仍异常时执行 reload --hard。"
+	case strings.Contains(low, "healthcheck/fail"):
+		return "摘流失败：无法接通本机 Envoy 探活接口。请确认 Envoy 已运行后重试。"
+	case strings.Contains(low, "healthcheck/ok"):
+		return "恢复承接失败：无法接通本机 Envoy 探活接口。请确认 Envoy 已运行后重试。"
 	case strings.Contains(low, "admin unreachable"), strings.Contains(msg, "admin 不可达"):
 		return "无法连接 Envoy 管理口，热更新无法确认是否生效。请确认 Envoy 已运行，或改用硬重启应用。"
 	case strings.Contains(low, "update_rejected"), strings.Contains(msg, "配置被拒绝"):

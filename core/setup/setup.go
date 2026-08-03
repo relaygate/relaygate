@@ -185,14 +185,14 @@ func writeEnv(opt Options) error {
 			profiles = "with-logs"
 		}
 	}
-	primaryURL := strings.TrimSpace(os.Getenv("PRIMARY_URL"))
+	controlURL := strings.TrimSpace(os.Getenv("CONTROL_URL"))
 	agentTokFile := strings.TrimSpace(os.Getenv("AGENT_TOKEN_FILE"))
 	if agentTokFile == "" && strings.TrimSpace(os.Getenv("AGENT_TOKEN")) != "" {
 		agentTokFile = filepath.Join(opt.SecretsDir, "agent.token")
 	}
 	nodeExtras := ""
-	if primaryURL != "" {
-		nodeExtras += fmt.Sprintf("PRIMARY_URL=%s\n", primaryURL)
+	if controlURL != "" {
+		nodeExtras += fmt.Sprintf("CONTROL_URL=%s\n", controlURL)
 	}
 	if agentTokFile != "" {
 		nodeExtras += fmt.Sprintf("AGENT_TOKEN_FILE=%s\n", agentTokFile)

@@ -157,11 +157,15 @@ func fixPanelPermissions(opt PanelInstallOptions, dataDir string) error {
 		{filepath.Join(opt.InstallDir, "ui"), 0o755, "root", "root"},
 		{filepath.Join(opt.InstallDir, config.PackagingDirName), 0o755, "root", "root"},
 		{dataDir, 0o770, "root", "relaygate"},
-		{filepath.Join(dataDir, "envoy"), 0o770, "root", "relaygate"},
+		// Envoy 容器 bind-mount 单文件/日志目录；保持 0755 以便非 root 容器可读 yaml。
+		{filepath.Join(dataDir, "envoy"), 0o755, "root", "root"},
 		{filepath.Join(dataDir, "firewall"), 0o770, "root", "relaygate"},
 		{filepath.Join(dataDir, "prometheus"), 0o770, "root", "relaygate"},
 		{filepath.Join(dataDir, "backups"), 0o770, "root", "relaygate"},
 		{filepath.Join(dataDir, "inventory"), 0o750, "root", "relaygate"},
+		// Panel（User=relaygate）读写名册 / 令牌 / 发布版本；勿留 root:root 0600/0700。
+		{filepath.Join(dataDir, "agent-tokens"), 0o770, "root", "relaygate"},
+		{filepath.Join(dataDir, "versions"), 0o770, "root", "relaygate"},
 		{opt.SecretsDir, 0o750, "root", "relaygate"},
 		{filepath.Dir(opt.SecretsDir), 0o750, "root", "relaygate"},
 	}
@@ -191,6 +195,30 @@ func fixPanelPermissions(opt PanelInstallOptions, dataDir string) error {
 	if _, err := os.Stat(inv); err == nil {
 		_ = dataplane.RunCmd(opt.InstallDir, "chown", "root:relaygate", inv)
 		_ = os.Chmod(inv, 0o640)
+	}
+	// 名册 / 审计常由 root CLI 落盘为 0640 root:root，Panel 组不可读 → permission denied
+	for _, f := range []struct {
+		path string
+		mode os.FileMode
+	}{
+		{filepath.Join(dataDir, "nodes.yaml"), 0o660},
+		{filepath.Join(dataDir, "panel-audit.log"), 0o660},
+		{filepath.Join(dataDir, "versions", "current"), 0o640},
+	} {
+		if _, err := os.Stat(f.path); err == nil {
+			_ = dataplane.RunCmd(opt.InstallDir, "chown", "root:relaygate", f.path)
+			_ = os.Chmod(f.path, f.mode)
+		}
+	}
+	if ents, err := os.ReadDir(filepath.Join(dataDir, "agent-tokens")); err == nil {
+		for _, e := range ents {
+			if e.IsDir() {
+				continue
+			}
+			p := filepath.Join(dataDir, "agent-tokens", e.Name())
+			_ = dataplane.RunCmd(opt.InstallDir, "chown", "root:relaygate", p)
+			_ = os.Chmod(p, 0o640)
+		}
 	}
 	panelPW := filepath.Join(opt.SecretsDir, "panel_admin_password")
 	if _, err := os.Stat(panelPW); err == nil {
@@ -375,7 +403,7 @@ func PanelUninstall(purge, dryRun bool) error {
 				_ = exec.Command("groupdel", "relaygate").Run()
 			}
 		}
-		fmt.Println("==> 已 purge 用户/组 relaygate（配置与密钥未删；用 install.sh --uninstall --purge）")
+		fmt.Println("==> 已 purge 用户/组 relaygate（配置与密钥未删；用 install.sh uninstall --purge）")
 	} else {
 		fmt.Println("==> 已移除 unit/helper/sudoers；保留用户 relaygate 与配置/密钥")
 	}

@@ -92,16 +92,16 @@ type JoinResult struct {
 	TokenFileHint  string `json:"token_file_hint"`
 	BootstrapHint  string `json:"bootstrap_hint"`
 	JoinCommand    string `json:"join_command"`
-	PrimaryURLHint string `json:"primary_url_hint"`
+	ControlURLHint string `json:"control_url_hint"`
 }
 
-// ResolvePrimaryURL picks the URL new nodes use to reach the control plane.
-// Order: explicit → PRIMARY_URL → PANEL_PUBLIC_URL → http://GATEWAY_PUBLIC_IP:<panel port> → docs placeholder.
-func ResolvePrimaryURL(explicit string) string {
+// ResolveControlURL picks the URL new nodes use to reach the control plane.
+// Order: explicit → CONTROL_URL → PANEL_PUBLIC_URL → http://GATEWAY_PUBLIC_IP:<panel port> → docs placeholder.
+func ResolveControlURL(explicit string) string {
 	if s := strings.TrimSpace(explicit); s != "" {
 		return strings.TrimRight(s, "/")
 	}
-	for _, k := range []string{"PRIMARY_URL", "PANEL_PUBLIC_URL"} {
+	for _, k := range []string{"CONTROL_URL", "PANEL_PUBLIC_URL"} {
 		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
 			return strings.TrimRight(v, "/")
 		}
@@ -138,7 +138,7 @@ func InstallScriptURL() string {
 // Default admin password on first boot is "relaygate" (change in production).
 func FormatControlInstallCommand() string {
 	return fmt.Sprintf(
-		"curl -fsSL %s | sudo env ENABLE_PANEL=1 NONINTERACTIVE=1 bash -s -- -y",
+		"curl -fsSL %s | sudo bash -s -- control",
 		shellSingleQuote(InstallScriptURL()),
 	)
 }
@@ -147,22 +147,22 @@ func FormatControlInstallCommand() string {
 // Preserves .env / DataDir; role (Panel vs agent) is taken from the existing .env.
 func FormatUpgradeCommand() string {
 	return fmt.Sprintf(
-		"curl -fsSL %s | sudo bash -s -- --upgrade -y",
+		"curl -fsSL %s | sudo bash -s -- upgrade",
 		shellSingleQuote(InstallScriptURL()),
 	)
 }
 
 // FormatJoinCommand builds a single shell line for remote node install + agent start.
-// Contains PRIMARY_URL / GATEWAY_NAME / AGENT_TOKEN only — never Panel admin password.
-func FormatJoinCommand(primaryURL, name, token string) string {
-	primaryURL = strings.TrimRight(strings.TrimSpace(primaryURL), "/")
+// Contains --control / --name / --token only — never Panel admin password.
+func FormatJoinCommand(controlURL, name, token string) string {
+	controlURL = strings.TrimRight(strings.TrimSpace(controlURL), "/")
 	name = strings.TrimSpace(name)
 	token = strings.TrimSpace(token)
 	script := InstallScriptURL()
 	return fmt.Sprintf(
-		"curl -fsSL %s | sudo env PRIMARY_URL=%s GATEWAY_NAME=%s AGENT_TOKEN=%s ENABLE_PANEL=0 ENABLE_GRAFANA=0 NONINTERACTIVE=1 bash -s -- -y",
+		"curl -fsSL %s | sudo bash -s -- node --control %s --name %s --token %s",
 		shellSingleQuote(script),
-		shellSingleQuote(primaryURL),
+		shellSingleQuote(controlURL),
 		shellSingleQuote(name),
 		shellSingleQuote(token),
 	)
@@ -174,7 +174,7 @@ func shellSingleQuote(s string) string {
 
 // JoinNode registers a gateway node and issues a one-time agent token.
 // Name should be a gateway id such as gateway-02 (zero-padded); not the control role label.
-func JoinNode(root, name, primaryURL string) (*JoinResult, error) {
+func JoinNode(root, name, controlURL string) (*JoinResult, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, fmt.Errorf("请填写节点名称")
@@ -214,8 +214,8 @@ func JoinNode(root, name, primaryURL string) (*JoinResult, error) {
 	if err := saveRegistry(root, reg); err != nil {
 		return nil, err
 	}
-	primaryURL = ResolvePrimaryURL(primaryURL)
-	cmd := FormatJoinCommand(primaryURL, name, token)
+	controlURL = ResolveControlURL(controlURL)
+	cmd := FormatJoinCommand(controlURL, name, token)
 	hint := fmt.Sprintf(
 		"在目标主机以 root 执行下面一行即可安装节点并连接主控（含一次性令牌，勿写入公开日志）。\n\n%s\n\n"+
 			"令牌副本保存在主控：%s\n"+
@@ -228,7 +228,7 @@ func JoinNode(root, name, primaryURL string) (*JoinResult, error) {
 		TokenFileHint:  tokPath,
 		BootstrapHint:  hint,
 		JoinCommand:    cmd,
-		PrimaryURLHint: primaryURL,
+		ControlURLHint: controlURL,
 	}, nil
 }
 

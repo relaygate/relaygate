@@ -45,7 +45,7 @@ func BuildScalePlaybook(root, mode string) (ScalePlaybook, error) {
 					Title:       "目标机执行一句话安装",
 					Description: "在目标主机以 root 粘贴 join 输出的一行命令：下载安装、写令牌、启动 agent。",
 					Checklist:   []string{"已执行一句话命令", "relaygate-agent 已启动并出现在机群列表"},
-					Commands:    []string{"# 使用 fleet join 输出的 curl | sudo env … bash -s -- -y"},
+					Commands:    []string{"# 使用 fleet join 输出的 curl | sudo bash -s -- node --control …"},
 					Automated:   false,
 					DocHref:     "packaging/node/env.example",
 				},

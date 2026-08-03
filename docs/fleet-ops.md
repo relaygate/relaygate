@@ -2,14 +2,16 @@
 
 主控 Panel **机群管理**（`/fleet`）。只读角色不可发布/接入/退役。运维工具（`/ops`）仅本机诊断、摘流、探测、防火墙、档位。
 
-正式路径：**主控发布 → 节点 Agent 拉取 → 本机热更新**。
+正式路径：**主控发布 → 节点上的 agent 拉取 → 本机热更新**。
+
+**节点 vs agent：** 节点 = 安装角色（`install.sh node`）；agent = 该机上的拉取/心跳守护进程（`relaygate agent` / `relaygate-agent`）。二者并存，不是两套产品角色。
 
 ## 安装角色
 
 | 角色 | 环境模板 | 要点 |
 |------|----------|------|
 | **主控** | [`packaging/control/env.example`](../packaging/control/env.example) | `ENABLE_PANEL=1`；可选本机转发与中心观测 |
-| **节点** | [`packaging/node/env.example`](../packaging/node/env.example) | `ENABLE_PANEL=0`；`PRIMARY_URL` + `AGENT_TOKEN_FILE`；`agent run` |
+| **节点** | [`packaging/node/env.example`](../packaging/node/env.example) | `ENABLE_PANEL=0`；`CONTROL_URL` + `AGENT_TOKEN_FILE`；本机 `agent run` |
 
 ## 发布到机群
 
@@ -38,7 +40,7 @@ relaygate fleet join gateway-02
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
-  | sudo bash -s -- --upgrade -y
+  | sudo bash -s -- upgrade
 ```
 
 ## 退役节点
