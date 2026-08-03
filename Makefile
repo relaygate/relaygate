@@ -52,8 +52,6 @@ dist: build
 	cp -a install.sh "$(DIST_DIR)/"
 	chmod 755 "$(DIST_DIR)/install.sh"
 	printf '%s\n' "$(VERSION)" > "$(DIST_DIR)/RELEASE"
-	# 便于 FindRoot / 文档；不含完整源码
-	cp -a go.mod "$(DIST_DIR)/" 2>/dev/null || true
 	mkdir -p "$(DIST_ROOT)"
 	tar -C "$(DIST_ROOT)" -czf "$(DIST_ROOT)/$(DIST_NAME).tar.gz" "$(DIST_NAME)"
 	(cd "$(DIST_ROOT)" && sha256sum "$(DIST_NAME).tar.gz" > "$(DIST_NAME).tar.gz.sha256")

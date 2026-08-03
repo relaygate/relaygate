@@ -550,6 +550,10 @@ Place_Product() {
 upsert_env_file() {
   local file="$1" key="$2" val="$3"
   [[ -f "$file" ]] || return 0
+  # 无尾换行时 >> 会粘到上一行（例如 RELAYGATE_DATA_DIR=...ENVOY_CPU_LIMIT=2）
+  if [[ -s "$file" ]] && [[ "$(tail -c1 "$file" | wc -l)" -eq 0 ]]; then
+    printf '\n' >>"$file"
+  fi
   if grep -qE "^${key}=" "$file" 2>/dev/null; then
     sed -i "s|^${key}=.*|${key}=${val}|" "$file"
   else
