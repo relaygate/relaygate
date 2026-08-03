@@ -14,6 +14,12 @@
 
 ### Security
 
+## [0.1.12] - 2026-08-04
+
+### Fixed
+
+- `install.sh` upgrade：替换正在运行的 `bin/relaygate` 时先写入旁路再 `mv`，避免 ETXTBSY（Text file busy）
+
 ## [0.1.11] - 2026-08-04
 
 ### Changed

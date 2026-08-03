@@ -530,11 +530,14 @@ Place_Product() {
       --exclude 'bin/' \
       "${PACKAGE_ROOT}/" "${INSTALL_DIR}/"
     mkdir -p "$INSTALL_DIR/bin"
-    cp -a "${PACKAGE_ROOT}/bin/relaygate" "$INSTALL_DIR/bin/relaygate"
+    # 运行中的二进制不可被 cp 原地覆盖（ETXTBSY）；先写旁路再 mv 替换。
+    cp -a "${PACKAGE_ROOT}/bin/relaygate" "$INSTALL_DIR/bin/relaygate.new"
+    mv -f "$INSTALL_DIR/bin/relaygate.new" "$INSTALL_DIR/bin/relaygate"
   else
     # 无 rsync：逐项覆盖产品目录（安装前缀含 packaging/ + data/ 运行态骨架）
     mkdir -p "$INSTALL_DIR/bin" "$INSTALL_DIR/ui"
-    cp -a "${PACKAGE_ROOT}/bin/relaygate" "$INSTALL_DIR/bin/relaygate"
+    cp -a "${PACKAGE_ROOT}/bin/relaygate" "$INSTALL_DIR/bin/relaygate.new"
+    mv -f "$INSTALL_DIR/bin/relaygate.new" "$INSTALL_DIR/bin/relaygate"
     rm -rf "$INSTALL_DIR/ui" "$INSTALL_DIR/packaging"
     mkdir -p "$INSTALL_DIR/ui"
     cp -a "${PACKAGE_ROOT}/ui/dist" "$INSTALL_DIR/ui/"
