@@ -134,4 +134,94 @@ func TestAfterPullApplySkipsKernelWhenPolicyOff(t *testing.T) {
 	if st.FailedAt == DomainKernel {
 		t.Fatalf("must not fail at kernel when policy off: %s", b)
 	}
+	if st.NIC.Status != LayerStatusSkipped {
+		t.Fatalf("nic status=%q want skipped (default off); detail=%q", st.NIC.Status, st.NIC.Detail)
+	}
+}
+
+func TestAfterPullApplySkipsNICWhenPolicyOff(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("RELAYGATE_DATA_DIR", filepath.Join(root, "data"))
+	data := filepath.Join(root, "data")
+	if err := os.MkdirAll(data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	res := &resources.Resources{Security: resources.DefaultSecurity()}
+	sp := res.Security.PolicyByID(resources.PolicyKernelSyn)
+	sp.Enabled = false
+	nic := res.Security.PolicyByID(resources.PolicyNICEgressShape)
+	nic.Enabled = false
+	if err := resources.Save(filepath.Join(data, "resources.yaml"), res); err != nil {
+		t.Fatal(err)
+	}
+
+	env := Env{PanelEnabled: "0", SecurityAutoApply: "1", XDSEnabled: true}
+	_ = AfterPullApply(PullApplyOptions{
+		Root:        root,
+		Env:         env,
+		Stdout:      os.Stdout,
+		Stderr:      os.Stderr,
+		SkipGateway: true,
+	})
+	stPath := filepath.Join(data, "security-apply-status.json")
+	b, err := os.ReadFile(stPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st PullApplyStatus
+	if err := json.Unmarshal(b, &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.NIC.Status != LayerStatusSkipped {
+		t.Fatalf("nic status=%q want skipped; detail=%q body=%s", st.NIC.Status, st.NIC.Detail, b)
+	}
+	if st.FailedAt == DomainNIC {
+		t.Fatalf("must not fail at nic when policy off: %s", b)
+	}
+}
+
+func TestAfterPullApplySkipsHostIncludingNICWhenControlDefault(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("RELAYGATE_DATA_DIR", filepath.Join(root, "data"))
+	data := filepath.Join(root, "data")
+	if err := os.MkdirAll(data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	res := &resources.Resources{Security: resources.DefaultSecurity()}
+	nic := res.Security.PolicyByID(resources.PolicyNICEgressShape)
+	nic.Enabled = true
+	nic.Params.Rate = "3mbit"
+	ing := res.Security.PolicyByID(resources.PolicyNICIngressPolice)
+	ing.Enabled = true
+	ing.Params.Rate = "3mbit"
+	if err := resources.Save(filepath.Join(data, "resources.yaml"), res); err != nil {
+		t.Fatal(err)
+	}
+
+	env := Env{PanelEnabled: "1", SecurityAutoApply: "", XDSEnabled: true}
+	err := AfterPullApply(PullApplyOptions{
+		Root:        root,
+		Env:         env,
+		Stdout:      os.Stdout,
+		Stderr:      os.Stderr,
+		SkipGateway: true,
+	})
+	if err != nil {
+		t.Fatalf("control default must skip host apply: %v", err)
+	}
+	stPath := filepath.Join(data, "security-apply-status.json")
+	b, err := os.ReadFile(stPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st PullApplyStatus
+	if err := json.Unmarshal(b, &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.NIC.Status != LayerStatusSkipped {
+		t.Fatalf("nic status=%q want skipped on control; body=%s", st.NIC.Status, b)
+	}
+	if st.HostAuto {
+		t.Fatal("host auto must be false on control default")
+	}
 }

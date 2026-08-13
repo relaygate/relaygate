@@ -64,7 +64,7 @@ type PullApplyOptions struct {
 	SkipGateway bool
 }
 
-// AfterPullApply runs: optional host kernel → nic (skip) → firewall → gateway HotApply,
+// AfterPullApply runs: optional host kernel → nic → firewall → gateway HotApply,
 // verifying each step. applied-version must only be updated when this returns nil.
 func AfterPullApply(opts PullApplyOptions) error {
 	stdout, stderr := opts.Stdout, opts.Stderr
@@ -83,11 +83,7 @@ func AfterPullApply(opts PullApplyOptions) error {
 		At:       time.Now().UTC().Format(time.RFC3339),
 		HostAuto: hostAuto,
 		Kernel:   LayerResult{Module: DomainKernel, Status: LayerStatusSkipped},
-		NIC: LayerResult{
-			Module: DomainNIC,
-			Status: LayerStatusSkipped,
-			Detail: "网卡域预留（未实现）",
-		},
+		NIC:      LayerResult{Module: DomainNIC, Status: LayerStatusSkipped},
 		Firewall: LayerResult{Module: DomainFirewall, Status: LayerStatusSkipped},
 		Gateway:  LayerResult{Module: DomainGateway, Status: LayerStatusSkipped},
 	}
@@ -101,8 +97,9 @@ func AfterPullApply(opts PullApplyOptions) error {
 	skipHostDetail := "主机侧自动应用未启用（纯节点 PANEL_ENABLED=0 默认开启；主控默认关闭。显式 SECURITY_AUTO_APPLY=1/0 可覆盖）"
 	if !hostAuto {
 		st.Kernel.Detail = skipHostDetail
+		st.NIC.Detail = skipHostDetail
 		st.Firewall.Detail = skipHostDetail
-		logf(stdout, "主机侧（内核 / 防火墙）：跳过自动应用（%s）", skipHostDetail)
+		logf(stdout, "主机侧（内核 / 网卡 / 防火墙）：跳过自动应用（%s）", skipHostDetail)
 	} else {
 		kernelOn, err := kernelSynEnabled(root)
 		if err != nil {
@@ -130,7 +127,31 @@ func AfterPullApply(opts PullApplyOptions) error {
 			logf(stdout, "==> [内核] 校验通过")
 		}
 
-		logf(stdout, "==> [网卡] 跳过（预留）")
+		nicOn, err := nicPoliciesEnabled(root)
+		if err != nil {
+			st.NIC = LayerResult{Module: DomainNIC, Status: LayerStatusFailed, Error: err.Error()}
+			return fail(DomainNIC, fmt.Errorf("读取网卡策略失败：%w", err))
+		}
+		if !nicOn {
+			st.NIC = LayerResult{
+				Module: DomainNIC,
+				Status: LayerStatusSkipped,
+				Detail: "nic_egress_shape / nic_ingress_police 均已关闭，未改网卡",
+			}
+			logf(stdout, "==> [网卡] 跳过（策略关闭）")
+		} else {
+			logf(stdout, "==> [网卡] 按配置应用并验证")
+			if err := ApplyNICShapeFromResources(root); err != nil {
+				st.NIC = LayerResult{Module: DomainNIC, Status: LayerStatusFailed, Error: err.Error()}
+				return fail(DomainNIC, fmt.Errorf("网卡应用失败：%w", err))
+			}
+			if err := VerifyNICShape(root); err != nil {
+				st.NIC = LayerResult{Module: DomainNIC, Status: LayerStatusFailed, Error: err.Error()}
+				return fail(DomainNIC, fmt.Errorf("网卡校验失败（未标记已应用）：%w", err))
+			}
+			st.NIC = LayerResult{Module: DomainNIC, Status: LayerStatusVerified, Detail: "网卡出口/入向与配置一致"}
+			logf(stdout, "==> [网卡] 校验通过")
+		}
 
 		logf(stdout, "==> [防火墙] 按配置应用并验证")
 		if err := ApplyNftablesConfirmed(root); err != nil {
@@ -196,7 +217,17 @@ func kernelSynEnabled(root string) (bool, error) {
 	return res.Security.EffectiveKernelSyn() != nil, nil
 }
 
-// VerifySecurityLayers checks kernel / firewall / gateway ready without applying.
+func nicPoliciesEnabled(root string) (bool, error) {
+	resPath, _, _ := resources.DefaultPaths(root)
+	res, err := resources.Load(resPath)
+	if err != nil {
+		return false, err
+	}
+	return res.Security.EffectiveNICEgressShape() != nil ||
+		res.Security.EffectiveNICIngressPolice() != nil, nil
+}
+
+// VerifySecurityLayers checks kernel / nic / firewall / gateway ready without applying.
 // Host domains that are not auto-apply targets can still be verified if present.
 func VerifySecurityLayers(root string, env Env, stdout io.Writer) error {
 	if stdout == nil {
@@ -210,8 +241,13 @@ func VerifySecurityLayers(root string, env Env, stdout io.Writer) error {
 	} else {
 		logf(stdout, "内核：通过")
 	}
-	logf(stdout, "==> 校验网卡（预留，跳过）")
-	logf(stdout, "网卡：跳过（未实现）")
+	logf(stdout, "==> 校验网卡")
+	if err := VerifyNICShape(root); err != nil {
+		errs = append(errs, "网卡: "+err.Error())
+		logf(stdout, "网卡：失败 — %v", err)
+	} else {
+		logf(stdout, "网卡：通过（未启用则跳过）")
+	}
 	logf(stdout, "==> 校验防火墙")
 	if err := VerifyNftablesLoaded(root); err != nil {
 		errs = append(errs, "防火墙: "+err.Error())

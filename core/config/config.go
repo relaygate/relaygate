@@ -278,10 +278,10 @@ func LoadEnv(root string) (Env, error) {
 }
 
 // HostSecurityAutoApply reports whether agent pull should apply host-side
-// kernel and firewall domains (in addition to gateway HotApply).
+// kernel, nic, and firewall domains (in addition to gateway HotApply).
 // Explicit SECURITY_AUTO_APPLY wins; when unset, defaults to true only for
 // pure nodes (PANEL_ENABLED=0). Control hosts (PANEL_ENABLED=1) stay off by default
-// so upgrades never rewrite firewall/kernel on the production control plane.
+// so upgrades never rewrite firewall/kernel/nic qdisc on the production control plane.
 func (e Env) HostSecurityAutoApply() bool {
 	switch strings.ToLower(strings.TrimSpace(e.SecurityAutoApply)) {
 	case "1", "true", "yes", "on":

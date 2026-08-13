@@ -4,7 +4,6 @@
 # 修改后执行: ./bin/relaygate render
 
 meta:
-  gateway_name: gateway-01
   service_name: main
   envoy_image: envoyproxy/envoy:v1.39.0
   admin_port: 9901
@@ -76,6 +75,22 @@ security:
       params:
         udp_pps_per_ip: 500/second
         udp_burst: 1000
+    # 网卡出口整形（tc）；默认关闭。主控 PANEL_ENABLED=1 不会自动 apply；节点可按 SECURITY_AUTO_APPLY
+    - id: nic_egress_shape
+      type: nic_egress_shape
+      enabled: false
+      attack_tags: [T7]
+      params:
+        device: ""
+        rate: 3mbit
+    # 网卡入向 police（tc ingress）；默认关闭。管入向带宽，不替代高防
+    - id: nic_ingress_police
+      type: nic_ingress_police
+      enabled: false
+      attack_tags: [T7]
+      params:
+        device: ""
+        rate: 3mbit
 
 # 上游：别名、地址、可选 TCP/UDP 端口（有端口=启用该协议）
 upstreams:

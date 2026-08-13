@@ -41,3 +41,16 @@ security:
       params:
         udp_pps_per_ip: 1200/second
         udp_burst: 2400
+    # UDP 侧重场景默认不开出口/入向整形（避免误伤）；低带宽主机可改用 tcp-longlived 或手动开启
+    - id: nic_egress_shape
+      type: nic_egress_shape
+      enabled: false
+      params:
+        device: ""
+        rate: 3mbit
+    - id: nic_ingress_police
+      type: nic_ingress_police
+      enabled: false
+      params:
+        device: ""
+        rate: 3mbit

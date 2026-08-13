@@ -41,3 +41,16 @@ security:
       params:
         udp_pps_per_ip: 400/second
         udp_burst: 800
+    # 短连接高突发场景默认不开口级整形/入向 police；需要时显式启用或改用 tcp-longlived
+    - id: nic_egress_shape
+      type: nic_egress_shape
+      enabled: false
+      params:
+        device: ""
+        rate: 3mbit
+    - id: nic_ingress_police
+      type: nic_ingress_police
+      enabled: false
+      params:
+        device: ""
+        rate: 3mbit

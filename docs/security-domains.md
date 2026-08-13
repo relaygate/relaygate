@@ -39,9 +39,9 @@ security:
 - **不**做 `policies` 别名或旧 id 双读。
 - **params 约定**：产品契约仍用真实键（如 `tcp_per_ip`）；Go 内置策略用 typed 字段 + tag。未知键进 `PolicyParams.Extra`，Load→Save / API 往返保留；内置 `Effective*` / 适配器只读 typed 字段，Extra 不参与生效计算（留给自定义 type→适配器）。`security.access` 保持强类型，不改为 map。
 
-### 顺带：`meta.gateway_name` vs `gateway.name`
+### 节点身份：`GATEWAY_NAME` 与 `gateway.name`
 
-示例中二者常重复。`gateway.name` 参与业务身份；`meta.gateway_name` 多为标签。**本次不改字段**；后续若收敛，建议以 `gateway.name` 为准、meta 只保留非身份标签。范围以安全结构为主。
+节点身份以安装环境变量 **`GATEWAY_NAME`** 为准；本机 `resources.yaml` 可选写入 **`gateway.name`**（拉取后由 agent 盖章）。**已删除** `meta.gateway_name`（无双读）；旧 YAML 中该键被忽略。机群发布剥离 `gateway.name` / `public_ip`。升级后请重新发布机群包，节点用本机 env 承接身份。
 
 ---
 
@@ -51,7 +51,7 @@ security:
 |------|--------|--------|--------------------------------------|
 | 主机内核加固 | 内核 | Kernel | sysctl 等 |
 | 主机防火墙 | 防火墙 | Firewall | nftables |
-| 网卡与入口路径 | 网卡 | NIC | ip / tc / XDP 等（**预留，未实现**） |
+| 网卡与入口路径 | 网卡 | NIC | ip / tc（默认整形）；XDP 不作默认 |
 | 网关转发 | 网关 | Gateway | Envoy |
 
 ## 入站路径 vs 落地顺序
@@ -75,17 +75,17 @@ established,related accept
 →（随后）网关 local_ratelimit / gateway_conn_limit
 ```
 
-当前未实现网卡域时：落地顺序为 **内核 → 防火墙 → 网关**，状态里对网卡记 `skipped`（预留位）。
+网卡域：**出口整形**（`nic_egress_shape` → tc egress TBF）与 **入向 police**（`nic_ingress_police` → tc ingress）。启用时落地；关闭则状态记 `skipped`（**不**自动删除已有 qdisc/police，需运维手动回滚）。过滤仍主要走防火墙（nft）；**不做** XDP（与「过滤 nft、整形/限速 tc」一致）。体量型入站清洗属云高防；本机入向 police 只做主机侧带宽减负，**不替代**高防。
 
 ## 产品文案 vs 执行组件
 
 | 场景 | 用语 |
 |------|------|
-| Panel / 确认框 / 状态 / 预览主文案 | `[内核]` / `[防火墙]` / `[网关]`（及对应英文） |
-| CLI 主帮助 | 领域名；子命令 `apply-kernel` / `kernel-conf`；帮助可括注执行细节「内核（sysctl）」 |
-| 脚本路径、日志折叠细节、高级区 | 可写 sysctl / nftables / Envoy |
+| Panel / 确认框 / 状态 / 预览主文案 | `[内核]` / `[网卡]` / `[防火墙]` / `[网关]`（及对应英文） |
+| CLI 主帮助 | 领域名；子命令 `apply-kernel` / `apply-nic` / `kernel-conf`；帮助可括注执行细节 |
+| 脚本路径、日志折叠细节、高级区 | 可写 sysctl / tc / nftables / Envoy |
 
-**禁止：** 把 nft / nftables / Envoy /「数据面」/ sysctl 当作产品三/四件套模块名；领域与组件混用并列。
+**禁止：** 把 nft / nftables / Envoy /「数据面」/ sysctl / tc 当作产品三/四件套模块名；领域与组件混用并列。
 
 ## 命名表（新旧对照）
 
@@ -94,6 +94,8 @@ established,related accept
 | `security.policies[]` | `security.protections[]` | — | — | — |
 | `allowlist`（policies 成员） | `security.access`（`enabled`/`deny`/`allow`） | — | 防火墙 | nft ACL |
 | `kernel_syn` / type `kernel` | `kernel_syn` | `kernel_syn` | 内核 | sysctl |
+| （无） | `nic_egress_shape` | `nic_egress_shape` | 网卡 | tc egress TBF |
+| （无） | `nic_ingress_police` | `nic_ingress_police` | 网卡 | tc ingress police |
 | `firewall_new_conn_limit` / type `new_conn_limit_firewall` | `firewall_new_conn_limit` | `firewall_new_conn_limit` | 防火墙 | nft new TCP |
 | `udp_limit` | `firewall_udp_limit` | `firewall_udp_limit` | 防火墙 | nft UDP PPS |
 | `gateway_new_conn_limit` / type `new_conn_limit_gateway` | `gateway_new_conn_limit` | `gateway_new_conn_limit` | 网关 | Envoy local_ratelimit |
@@ -101,24 +103,36 @@ established,related accept
 
 旧 id（含 `allowlist`、`conn_limit`、`udp_limit`、`sysctl_syn`、`nft_*`、`envoy_*`）与旧 type、旧键 `security.policies` **不再识别**。
 
+### 网卡域模型
+
+采用与内核/防火墙/网关一致的 **`security.protections[]` + `nic_` 前缀**（type≡id），**不**另开 `security.nic` 顶层块：
+
+- 策略 id：`nic_egress_shape`（出口整形）、`nic_ingress_police`（入向 police）
+- params 产品键：`device`（业务口名；空=探测默认路由口）、`rate`（如 `3mbit`）
+- 默认：**关闭**（`DefaultSecurity`）；场景如 `tcp-longlived` 可显式开启并对齐主机约 3 Mbps（出/入向）
+- 落地：`relaygate security apply-nic [--verify]`（同时 apply 已启用的 `nic_*`）；节点 AfterPull 在内核之后、防火墙之前；**主控 `PANEL_ENABLED=1` 默认不自动 apply**（同 `SECURITY_AUTO_APPLY`）
+- 边界：管入向**带宽**减负；大包洪水主防仍在高防；不替代云清洗
+
+未采用独立 `security.nic` 块的原因：合并/ catalog / Panel JSON 参数编辑已与 protections 对齐；口对象用 `device` 表达即可，后续若要多口可扩列表而不破坏 type≡id。
+
 ## 场景合并规则
 
 Profile / Panel 场景合并（`MergeSecurityInto`）：
 
 | 场景 | 碰 `access`？ | 碰 `protections`？ |
 |------|---------------|-------------------|
-| `default-l4` / `tcp-longlived` / `tcp-short-burst` / `udp-heavy` | 否（YAML 不写 `access`） | 是（限速/并发档位） |
+| `default-l4` / `tcp-longlived` / `tcp-short-burst` / `udp-heavy` | 否（YAML 不写 `access`） | 是（限速/并发/可选网卡出/入向档位） |
 | `strict-allowlist` | 是（示例 allow CIDR） | 是（可同时收紧限速） |
-| `host-harden-only` | 是（`enabled: false`） | 是（关防火墙/网关防护，保留 `kernel_syn`） |
+| `host-harden-only` | 是（`enabled: false`） | 是（关防火墙/网关/网卡防护，保留 `kernel_syn`） |
 
 规则：**仅当 profile 显式带 `security.access` 时覆盖名单**；缺省键则保留节点当前 access，避免选「长连接档」冲掉运维维护的 allow/deny。
 
 ## API / 状态字段（无双读）
 
 - Preview / catalog 的 `layer` 与 surfaces：`kernel` / `firewall` / `nic` / `gateway`。
-- Preview 内容块 JSON 键：`kernel` / `firewall` / `gateway`（无 `sysctl` / `nft` / `envoy`）。
+- Preview 内容块 JSON 键：`kernel` / `nic` / `firewall` / `gateway`（无 `sysctl` / `nft` / `envoy` / `tc` 作顶层键）。
 - Diff 字段前缀：`security.protections.<id>…`；access 变更用 `security.access…` 或 `+deny` / `+allow` 摘要。
-- 节点 `security-apply-status.json`：顶层键与 `module` / `failed_at` 同为领域名；含 `nic`（当前恒为 skipped）。
+- 节点 `security-apply-status.json`：顶层键与 `module` / `failed_at` 同为领域名；含 `nic`（未启用或主控跳过时为 skipped）。
 - **不提供**对旧键 `policies` / `sysctl` / `nftables` / `envoy` 的读取兼容。
 
 ## CLI
@@ -126,11 +140,12 @@ Profile / Panel 场景合并（`MergeSecurityInto`）：
 | 命令 | 含义 |
 |------|------|
 | `relaygate security apply-kernel [--verify]` | 落地内核 |
+| `relaygate security apply-nic [--verify]` | 落地已启用的网卡出口整形 / 入向 police（tc） |
 | `relaygate security kernel-conf` | 渲染内核叠加到 stdout |
 | `relaygate firewall apply` | 落地防火墙（含 access + 防火墙域 protections） |
 | `relaygate reload` | 落地网关 |
 
-特权 helper（`packaging/systemd/relaygate-apply`）对应动作为 `kernel-harden-apply` → `security apply-kernel`。
+特权 helper（`packaging/systemd/relaygate-apply`）对应动作：`kernel-harden-apply` → `security apply-kernel`；`nic-shape-apply` → `security apply-nic`。
 
 旧子命令与旧 id **已删除**。
 
@@ -149,8 +164,7 @@ Profile / Panel 场景合并（`MergeSecurityInto`）：
 
 - 外部 RLS / Redis 全局限速；本机独自抗 volumetric DDoS。
 - 对已建立 TCP 做主机 PPS 限速（禁止）。
-- 网卡域能力（XDP/tc 等）— 仅占位，本阶段不实现。
+- 网卡域 XDP / 多口复杂拓扑 — 当前为 tc 单业务口出口整形 + 入向 police；关闭策略不自动清 qdisc/police。
 - 旧命名 / 双写 / deprecated 别名 — **不做**。
-- 收敛 `meta.gateway_name` — 见上文，本次不动。
 
 运维手册与策略目录见 [`packaging/security/README.md`](../packaging/security/README.md)、[`threat-analysis.md`](../packaging/security/threat-analysis.md)。

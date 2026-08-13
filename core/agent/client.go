@@ -57,7 +57,7 @@ type versionResp struct {
 
 // PullOnce fetches the current published config and writes it to local DataDir.
 // It does NOT update applied-version — that happens only after AfterPull succeeds
-// (kernel → nic skip → firewall → gateway HotApply; see MarkApplied / Run).
+// (kernel → nic → firewall → gateway HotApply; see MarkApplied / Run).
 func (c *Client) PullOnce(root string) (version string, err error) {
 	req, err := http.NewRequest(http.MethodGet, c.ControlURL+"/api/agent/config", nil)
 	if err != nil {
@@ -78,7 +78,7 @@ func (c *Client) PullOnce(root string) (version string, err error) {
 		return "", fmt.Errorf("主控返回的配置无法解析")
 	}
 	if vr.Version == "" || vr.Body == "" {
-		return "", fmt.Errorf("主控尚无已发布版本。请先在主控执行「发布到机群」")
+		return "", fmt.Errorf("主控尚无已发布版本。请先在主控执行 relaygate fleet publish")
 	}
 
 	tmpParse := filepath.Join(config.ResolveDataDir(root), "resources.pull.tmp.yaml")
@@ -142,23 +142,33 @@ func MarkApplied(root, version string) error {
 }
 
 // Heartbeat reports applied version to the control plane.
-func (c *Client) Heartbeat(appliedVersion string) error {
+// When the control plane has a per-node sync mark, pullNow is true and the
+// agent should pull+apply immediately (other nodes are unaffected).
+func (c *Client) Heartbeat(appliedVersion string) (pullNow bool, err error) {
 	payload, _ := json.Marshal(map[string]string{"applied_version": appliedVersion})
 	req, err := http.NewRequest(http.MethodPost, c.ControlURL+"/api/agent/heartbeat", bytes.NewReader(payload))
 	if err != nil {
-		return err
+		return false, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return fmt.Errorf("心跳失败：无法连接主控")
+		return false, fmt.Errorf("心跳失败：无法连接主控")
 	}
 	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("心跳被主控拒绝。请确认节点令牌有效")
+		return false, fmt.Errorf("心跳被主控拒绝。请确认节点令牌有效")
 	}
-	return nil
+	var hr struct {
+		OK      bool `json:"ok"`
+		PullNow bool `json:"pull_now"`
+	}
+	if len(body) > 0 {
+		_ = json.Unmarshal(body, &hr)
+	}
+	return hr.PullNow, nil
 }
 
 // LocalAppliedVersion reads DataDir/applied-version.

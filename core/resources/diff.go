@@ -278,7 +278,7 @@ func Diff(before, after *Resources) ChangeSummary {
 }
 
 // diffMetaHardReload lists meta fields that force HardReload (bootstrap / image).
-// gateway_name / service_name are labels only and do not flip NeedsHardReload.
+// service_name is a label only and does not flip NeedsHardReload.
 func diffMetaHardReload(before, after Meta) []string {
 	var parts []string
 	add := func(field string, a, b any) {

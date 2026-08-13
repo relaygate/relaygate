@@ -486,6 +486,7 @@ export type FleetNodeStatus = {
   applied_version?: string
   published_version?: string
   last_heartbeat?: string
+  sync_pending?: boolean
 }
 
 export type FleetPublishMeta = {
@@ -549,6 +550,7 @@ export async function getFleetStatus(): Promise<FleetStatusOverview> {
           applied_version: row.applied_version ? String(row.applied_version) : undefined,
           published_version: row.published_version ? String(row.published_version) : undefined,
           last_heartbeat: row.last_heartbeat ? String(row.last_heartbeat) : undefined,
+          sync_pending: row.sync_pending === true,
         }
       })
     : []
@@ -565,32 +567,6 @@ export async function getFleetStatus(): Promise<FleetStatusOverview> {
     published_version: String(data.published_version ?? published?.version ?? ""),
     published,
     nodes,
-  }
-}
-
-export type FleetPublishResponse = OpsResult & {
-  version?: string
-}
-
-export async function opsFleetPublish(confirm: string): Promise<FleetPublishResponse> {
-  try {
-    const data = await api.post<Record<string, unknown>>("/api/ops/fleet/publish", { confirm })
-    return {
-      ok: data.ok === true,
-      output: pickString(data, "output") || undefined,
-      error: pickString(data, "error") || undefined,
-      version: data.version ? String(data.version) : undefined,
-    }
-  } catch (err) {
-    if (err instanceof ApiError && err.body && typeof err.body === "object") {
-      const data = err.body as Record<string, unknown>
-      return {
-        ok: false,
-        output: pickString(data, "output") || undefined,
-        error: pickString(data, "error") || err.message,
-      }
-    }
-    throw err
   }
 }
 
@@ -644,6 +620,33 @@ export async function opsFleetLeave(body: {
       error: pickString(data, "error") || undefined,
       name: data.name ? String(data.name) : undefined,
       manual_hints: Array.isArray(hintsRaw) ? hintsRaw.map((h) => String(h)) : undefined,
+    }
+  } catch (err) {
+    if (err instanceof ApiError && err.body && typeof err.body === "object") {
+      const data = err.body as Record<string, unknown>
+      return { ok: false, error: pickString(data, "error") || err.message }
+    }
+    throw err
+  }
+}
+
+export type FleetSyncResponse = OpsResult & {
+  name?: string
+  sync_requested_at?: string
+}
+
+export async function opsFleetSync(body: {
+  confirm: string
+  name: string
+}): Promise<FleetSyncResponse> {
+  try {
+    const data = await api.post<Record<string, unknown>>("/api/ops/fleet/sync", body)
+    return {
+      ok: data.ok === true,
+      output: pickString(data, "output") || undefined,
+      error: pickString(data, "error") || undefined,
+      name: data.name ? String(data.name) : undefined,
+      sync_requested_at: data.sync_requested_at ? String(data.sync_requested_at) : undefined,
     }
   } catch (err) {
     if (err instanceof ApiError && err.body && typeof err.body === "object") {

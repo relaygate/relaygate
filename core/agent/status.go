@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"strings"
 	"time"
 )
 
@@ -23,6 +24,7 @@ type NodeStatus struct {
 	AppliedVersion   string      `json:"applied_version,omitempty"`
 	PublishedVersion string      `json:"published_version,omitempty"`
 	LastHeartbeat    string      `json:"last_heartbeat,omitempty"`
+	SyncPending      bool        `json:"sync_pending,omitempty"`
 }
 
 // OfflineAfter is how long without heartbeat before a node is offline.
@@ -47,6 +49,7 @@ func BuildStatus(root string) (published string, nodes []NodeStatus, err error) 
 			AppliedVersion:   n.AppliedVer,
 			PublishedVersion: published,
 			LastHeartbeat:    n.LastHeartbeat,
+			SyncPending:      strings.TrimSpace(n.SyncRequestedAt) != "",
 			Status:           StatusUnknown,
 		}
 		if n.LastHeartbeat == "" {

@@ -41,3 +41,17 @@ security:
       params:
         udp_pps_per_ip: 500/second
         udp_burst: 1000
+    # 网卡出口整形默认关；低带宽场景见 tcp-longlived
+    - id: nic_egress_shape
+      type: nic_egress_shape
+      enabled: false
+      params:
+        device: ""
+        rate: 3mbit
+    # 网卡入向 police 默认关；低带宽场景见 tcp-longlived
+    - id: nic_ingress_police
+      type: nic_ingress_police
+      enabled: false
+      params:
+        device: ""
+        rate: 3mbit

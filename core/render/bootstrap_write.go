@@ -58,15 +58,12 @@ func WriteMergedValidate(path string, r *resources.Resources, opt Options) error
 	return os.Chmod(path, 0o644)
 }
 
-// BootstrapOptionsFromEnv builds BootstrapOptions from gateway env + resources meta.
-// Local install identity (GATEWAY_NAME / gatewayName arg) always wins over fleet
-// YAML meta.gateway_name / gateway.name — otherwise nodes ACK under the wrong
-// xDS node id after pulling a package published from the control host.
+// BootstrapOptionsFromEnv builds BootstrapOptions from gateway env + resources.
+// Local install identity (GATEWAY_NAME / gatewayName arg) always wins over
+// YAML gateway.name — otherwise nodes ACK under the wrong xDS node id after
+// pulling a package published from the control host.
 func BootstrapOptionsFromEnv(gatewayName, xdsPort string, r *resources.Resources) BootstrapOptions {
 	node := strings.TrimSpace(gatewayName)
-	if node == "" && r != nil {
-		node = strings.TrimSpace(r.Meta.GatewayName)
-	}
 	if node == "" && r != nil {
 		node = strings.TrimSpace(r.Gateway.Name)
 	}

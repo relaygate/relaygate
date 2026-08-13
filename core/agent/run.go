@@ -68,8 +68,14 @@ func Run(opts RunOptions) error {
 	}
 	doHeart := func() {
 		ver := LocalAppliedVersion(opts.Root)
-		if err := client.Heartbeat(ver); err != nil {
+		pullNow, err := client.Heartbeat(ver)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "心跳：%v\n", err)
+			return
+		}
+		if pullNow {
+			fmt.Println("主控要求本节点立即对齐已发布版本（单节点同步）")
+			doPull()
 		}
 	}
 

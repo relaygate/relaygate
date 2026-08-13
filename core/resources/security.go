@@ -10,6 +10,8 @@ import (
 // Protection IDs — keys in security.protections[] (resources.yaml). No legacy aliases.
 const (
 	PolicyKernelSyn            = "kernel_syn"
+	PolicyNICEgressShape       = "nic_egress_shape"
+	PolicyNICIngressPolice     = "nic_ingress_police"
 	PolicyFirewallNewConnLimit = "firewall_new_conn_limit"
 	PolicyGatewayNewConnLimit  = "gateway_new_conn_limit"
 	PolicyGatewayConnLimit     = "gateway_conn_limit"
@@ -19,6 +21,8 @@ const (
 // PolicyType classifies the protection (type ≡ id; no component aliases).
 const (
 	PolicyTypeKernelSyn            = PolicyKernelSyn
+	PolicyTypeNICEgressShape       = PolicyNICEgressShape
+	PolicyTypeNICIngressPolice     = PolicyNICIngressPolice
 	PolicyTypeFirewallNewConnLimit = PolicyFirewallNewConnLimit
 	PolicyTypeGatewayNewConnLimit  = PolicyGatewayNewConnLimit
 	PolicyTypeGatewayConnLimit     = PolicyGatewayConnLimit
@@ -26,13 +30,13 @@ const (
 )
 
 // PolicyLayer is the product security domain (kernel / firewall / nic / gateway).
-// Execution components (sysctl, nftables, Envoy) appear only in implementation detail.
+// Execution components (sysctl, nftables, Envoy, tc) appear only in implementation detail.
 type PolicyLayer string
 
 const (
 	LayerKernel   PolicyLayer = "kernel"
 	LayerFirewall PolicyLayer = "firewall"
-	LayerNIC      PolicyLayer = "nic" // reserved; not implemented
+	LayerNIC      PolicyLayer = "nic"
 	LayerGateway  PolicyLayer = "gateway"
 )
 
@@ -96,6 +100,9 @@ type PolicyParams struct {
 	TcpSynackRetries   int `yaml:"tcp_synack_retries,omitempty" json:"tcp_synack_retries,omitempty"`
 	TcpSynRetries      int `yaml:"tcp_syn_retries,omitempty" json:"tcp_syn_retries,omitempty"`
 	TcpAbortOnOverflow int `yaml:"tcp_abort_on_overflow,omitempty" json:"tcp_abort_on_overflow,omitempty"`
+	// nic_egress_shape / nic_ingress_police (tc; filtering stays primarily nft)
+	Device string `yaml:"device,omitempty" json:"device,omitempty"` // empty → auto-detect default-route iface
+	Rate   string `yaml:"rate,omitempty" json:"rate,omitempty"`     // e.g. 3mbit
 	// Extra holds unknown param keys (custom / future). Serialized inline with known keys;
 	// known fields always win on conflict. yaml:"-" / json:"-" — custom marshal merges them.
 	Extra map[string]any `yaml:"-" json:"-"`
@@ -130,6 +137,20 @@ var SecurityPolicyCatalog = []PolicyMeta{
 		NameZH: "SYN 洪泛加固", NameEN: "SYN flood hardening",
 		DescriptionZH: "内核 SYN cookies 与握手队列（仅影响新建握手，不伤 established 长连接）。",
 		DescriptionEN: "Kernel SYN cookies and handshake queues (new handshakes only; established sessions unaffected).",
+	},
+	{
+		ID: PolicyNICEgressShape, Type: PolicyTypeNICEgressShape, Threats: []string{"T7"},
+		Layer: LayerNIC, ApplyPath: ApplyHostScript,
+		NameZH: "网卡出口整形", NameEN: "NIC egress shaping",
+		DescriptionZH: "业务口出口带宽整形（tc）；过滤仍主要走防火墙。device 空则探测默认路由口。",
+		DescriptionEN: "Egress bandwidth shaping on the service NIC (tc); filtering stays primarily firewall. Empty device auto-detects the default-route iface.",
+	},
+	{
+		ID: PolicyNICIngressPolice, Type: PolicyTypeNICIngressPolice, Threats: []string{"T7"},
+		Layer: LayerNIC, ApplyPath: ApplyHostScript,
+		NameZH: "网卡入向限速", NameEN: "NIC ingress police",
+		DescriptionZH: "业务口入向带宽 police（tc ingress）；管入向字节/带宽，不替代高防。device 空则探测默认路由口。",
+		DescriptionEN: "Ingress bandwidth police on the service NIC (tc ingress); host-side byte/rate cap, not a scrubbing replacement. Empty device auto-detects the default-route iface.",
 	},
 	{
 		ID: PolicyFirewallNewConnLimit, Type: PolicyTypeFirewallNewConnLimit, Threats: []string{"T1", "T4"},
@@ -184,6 +205,17 @@ func DefaultSecurity() Security {
 					TcpSynRetries:      DefaultTcpSynRetries,
 					TcpAbortOnOverflow: DefaultTcpAbortOnOverflow,
 				},
+			},
+			{
+				// Default off: avoid rewriting host qdisc unless operator/profile enables it.
+				// Control hosts also skip host auto-apply when PANEL_ENABLED=1.
+				ID: PolicyNICEgressShape, Type: PolicyTypeNICEgressShape, Enabled: false, AttackTags: []string{"T7"},
+				Params: PolicyParams{Device: "", Rate: DefaultNICEgressRate},
+			},
+			{
+				// Default off: ingress police can drop excess inbound; enable only when intended.
+				ID: PolicyNICIngressPolice, Type: PolicyTypeNICIngressPolice, Enabled: false, AttackTags: []string{"T7"},
+				Params: PolicyParams{Device: "", Rate: DefaultNICIngressRate},
 			},
 			{
 				ID: PolicyFirewallNewConnLimit, Type: PolicyTypeFirewallNewConnLimit, Enabled: true, AttackTags: []string{"T1", "T4"},
@@ -274,6 +306,10 @@ func (p *SecurityPolicy) applyParamDefaults(d SecurityPolicy) {
 		}
 	case PolicyKernelSyn:
 		applyKernelSynDefaults(p, d)
+	case PolicyNICEgressShape:
+		applyNICEgressDefaults(p, d)
+	case PolicyNICIngressPolice:
+		applyNICIngressDefaults(p, d)
 	}
 }
 
@@ -396,9 +432,18 @@ func (s *Security) NormalizeSecurity() error {
 		s.Access.Allow = allow
 	}
 	for i := range s.Protections {
-		if s.Protections[i].ID == PolicyKernelSyn {
+		switch s.Protections[i].ID {
+		case PolicyKernelSyn:
 			if err := normalizeKernelSynParams(&s.Protections[i].Params); err != nil {
 				return fmt.Errorf("security.protections[kernel_syn].params: %w", err)
+			}
+		case PolicyNICEgressShape:
+			if err := normalizeNICEgressParams(&s.Protections[i].Params); err != nil {
+				return fmt.Errorf("security.protections[nic_egress_shape].params: %w", err)
+			}
+		case PolicyNICIngressPolice:
+			if err := normalizeNICIngressParams(&s.Protections[i].Params); err != nil {
+				return fmt.Errorf("security.protections[nic_ingress_police].params: %w", err)
 			}
 		}
 	}
@@ -573,7 +618,7 @@ func PolicyApplySurfaces(field string) (needsReload, needsFirewall bool) {
 			return false, true
 		case PolicyGatewayNewConnLimit, PolicyGatewayConnLimit:
 			return true, false
-		case PolicyKernelSyn:
+		case PolicyKernelSyn, PolicyNICEgressShape, PolicyNICIngressPolice:
 			return false, false
 		}
 	}
@@ -674,6 +719,9 @@ func diffPolicyParams(id string, before, after PolicyParams) []string {
 		add("tcp_synack_retries", before.TcpSynackRetries, after.TcpSynackRetries)
 		add("tcp_syn_retries", before.TcpSynRetries, after.TcpSynRetries)
 		add("tcp_abort_on_overflow", before.TcpAbortOnOverflow, after.TcpAbortOnOverflow)
+	case PolicyNICEgressShape, PolicyNICIngressPolice:
+		add("device", before.Device, after.Device)
+		add("rate", before.Rate, after.Rate)
 	}
 	// Extra keys are surfaced in diffs but do not affect built-in Effective*.
 	parts = append(parts, diffPolicyParamsExtra(id, before, after)...)
@@ -709,6 +757,26 @@ func summarizeSecurity(s Security) []string {
 			parts = append(parts, fmt.Sprintf("max_conn=%d", p.Params.MaxConnections))
 		case PolicyKernelSyn:
 			parts = append(parts, fmt.Sprintf("kernel_syn=%d/%d", p.Params.TcpSyncookies, p.Params.TcpMaxSynBacklog))
+		case PolicyNICEgressShape:
+			dev := p.Params.Device
+			if strings.TrimSpace(dev) == "" {
+				dev = "auto"
+			}
+			rate := p.Params.Rate
+			if strings.TrimSpace(rate) == "" {
+				rate = DefaultNICEgressRate
+			}
+			parts = append(parts, fmt.Sprintf("nic_egress=%s@%s", rate, dev))
+		case PolicyNICIngressPolice:
+			dev := p.Params.Device
+			if strings.TrimSpace(dev) == "" {
+				dev = "auto"
+			}
+			rate := p.Params.Rate
+			if strings.TrimSpace(rate) == "" {
+				rate = DefaultNICIngressRate
+			}
+			parts = append(parts, fmt.Sprintf("nic_ingress=%s@%s", rate, dev))
 		case PolicyFirewallUDPLimit:
 			parts = append(parts, fmt.Sprintf("firewall_udp=%s/%d", p.Params.UDPPPSPerIP, p.Params.UDPBurst))
 		}

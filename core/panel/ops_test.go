@@ -380,6 +380,90 @@ func TestFleetStatusEndpoint(t *testing.T) {
 	}
 }
 
+func TestFleetSyncRequiresConfirm(t *testing.T) {
+	srv, token, csrf := setupPanel(t)
+	h := srv.Handler()
+
+	body, _ := json.Marshal(map[string]any{"confirm": "nope", "name": "gateway-02"})
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/fleet/sync", bytes.NewReader(body))
+	authedCSRF(req, token, csrf)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestStandbyBlocksFleetSync(t *testing.T) {
+	srv, token, csrf := setupPanel(t)
+	t.Setenv("PANEL_ROLE", "standby")
+	h := srv.Handler()
+
+	body, _ := json.Marshal(map[string]any{"confirm": "Confirm", "name": "gateway-02"})
+	req := httptest.NewRequest(http.MethodPost, "/api/ops/fleet/sync", bytes.NewReader(body))
+	authedCSRF(req, token, csrf)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("sync on standby status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFleetSyncMarksNodeAndHeartbeatPullNow(t *testing.T) {
+	srv, token, csrf := setupPanel(t)
+	h := srv.Handler()
+
+	joinBody, _ := json.Marshal(map[string]string{"name": "gateway-05"})
+	joinReq := httptest.NewRequest(http.MethodPost, "/api/ops/fleet/join", bytes.NewReader(joinBody))
+	authedCSRF(joinReq, token, csrf)
+	joinRec := httptest.NewRecorder()
+	h.ServeHTTP(joinRec, joinReq)
+	if joinRec.Code != 200 {
+		t.Fatalf("join status=%d body=%s", joinRec.Code, joinRec.Body.String())
+	}
+	var joinResp map[string]any
+	if err := json.Unmarshal(joinRec.Body.Bytes(), &joinResp); err != nil {
+		t.Fatal(err)
+	}
+	agentToken, _ := joinResp["token"].(string)
+	if agentToken == "" {
+		t.Fatal("missing join token")
+	}
+
+	syncBody, _ := json.Marshal(map[string]string{"confirm": "Confirm", "name": "gateway-05"})
+	syncReq := httptest.NewRequest(http.MethodPost, "/api/ops/fleet/sync", bytes.NewReader(syncBody))
+	authedCSRF(syncReq, token, csrf)
+	syncRec := httptest.NewRecorder()
+	h.ServeHTTP(syncRec, syncReq)
+	if syncRec.Code != 200 {
+		t.Fatalf("sync status=%d body=%s", syncRec.Code, syncRec.Body.String())
+	}
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/ops/fleet/status", nil)
+	authed(statusReq, token)
+	statusRec := httptest.NewRecorder()
+	h.ServeHTTP(statusRec, statusReq)
+	if statusRec.Code != 200 {
+		t.Fatalf("status=%d", statusRec.Code)
+	}
+	if !strings.Contains(statusRec.Body.String(), `"sync_pending":true`) {
+		t.Fatalf("expected sync_pending in %s", statusRec.Body.String())
+	}
+
+	hbBody, _ := json.Marshal(map[string]string{"applied_version": ""})
+	hbReq := httptest.NewRequest(http.MethodPost, "/api/agent/heartbeat", bytes.NewReader(hbBody))
+	hbReq.Header.Set("Authorization", "Bearer "+agentToken)
+	hbReq.Header.Set("Content-Type", "application/json")
+	hbRec := httptest.NewRecorder()
+	h.ServeHTTP(hbRec, hbReq)
+	if hbRec.Code != 200 {
+		t.Fatalf("heartbeat status=%d body=%s", hbRec.Code, hbRec.Body.String())
+	}
+	if !strings.Contains(hbRec.Body.String(), `"pull_now":true`) {
+		t.Fatalf("expected pull_now in %s", hbRec.Body.String())
+	}
+}
+
 func TestAPILang(t *testing.T) {
 	srv, _, _ := setupPanel(t)
 	h := srv.Handler()

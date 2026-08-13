@@ -34,3 +34,9 @@ security:
     - id: firewall_udp_limit
       type: firewall_udp_limit
       enabled: false
+    - id: nic_egress_shape
+      type: nic_egress_shape
+      enabled: false
+    - id: nic_ingress_police
+      type: nic_ingress_police
+      enabled: false

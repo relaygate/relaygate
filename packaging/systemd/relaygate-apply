@@ -8,6 +8,7 @@
 #   firewall-check       — render + firewall syntax check (no ruleset change)
 #   firewall-apply       — apply firewall (Panel already confirmed 确认/Confirm)
 #   kernel-harden-apply  — apply kernel overlay from resources.yaml
+#   nic-shape-apply      — apply NIC egress shaping (tc) from resources.yaml
 #   rollback [STAMP]     — restore backup + recreate gateway
 #
 # No shell, no arbitrary args, no docker.sock for the Panel user.
@@ -64,6 +65,14 @@ case "$cmd" in
     export RELAYGATE_CONFIRM=Confirm
     exec "$BIN" security apply-kernel
     ;;
+  nic-shape-apply)
+    if [[ "$#" -ne 0 ]]; then
+      echo "ERROR: nic-shape-apply takes no arguments" >&2
+      exit 2
+    fi
+    export RELAYGATE_CONFIRM=Confirm
+    exec "$BIN" security apply-nic
+    ;;
   rollback)
     stamp="${1:-}"
     if [[ -n "$stamp" ]]; then
@@ -77,7 +86,7 @@ case "$cmd" in
     ;;
   *)
     echo "ERROR: disallowed helper command: ${cmd}" >&2
-    echo "allowed: reload | firewall-check | firewall-apply | kernel-harden-apply | rollback [STAMP]" >&2
+    echo "allowed: reload | firewall-check | firewall-apply | kernel-harden-apply | nic-shape-apply | rollback [STAMP]" >&2
     exit 2
     ;;
 esac

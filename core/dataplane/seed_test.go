@@ -17,7 +17,7 @@ func templateFixture(t *testing.T, root, name, body string) {
 func TestSeedDefaultsCreatesSkeletonAndCopiesTemplates(t *testing.T) {
 	config.IsolateDataDirEnv(t)
 	root := t.TempDir()
-	templateFixture(t, root, "resources.example.yaml", "meta:\n  gateway_name: example\n")
+	templateFixture(t, root, "resources.example.yaml", "meta:\n  service_name: example\n")
 	templateFixture(t, root, "gateways.env.example", "GATEWAY_MATRIX=gateway-01\n")
 
 	if err := SeedDefaults(root, false); err != nil {
@@ -30,7 +30,7 @@ func TestSeedDefaultsCreatesSkeletonAndCopiesTemplates(t *testing.T) {
 		}
 	}
 	res := mustRead(t, filepath.Join(data, "resources.yaml"))
-	if !strings.Contains(res, "gateway_name: example") {
+	if !strings.Contains(res, "service_name: example") {
 		t.Fatalf("resources not seeded: %q", res)
 	}
 	inv := mustRead(t, filepath.Join(data, "inventory", "gateways.env"))
@@ -120,7 +120,7 @@ func TestSeedDefaultsSourceTreeUsesRuntimeDir(t *testing.T) {
 	config.IsolateDataDirEnv(t)
 	root := t.TempDir()
 	mustWrite(t, filepath.Join(root, "core", "cmd", "relaygate", "main.go"), "package main\n")
-	templateFixture(t, root, "resources.example.yaml", "meta:\n  gateway_name: src\n")
+	templateFixture(t, root, "resources.example.yaml", "meta:\n  service_name: src\n")
 	templateFixture(t, root, "gateways.env.example", "GATEWAY_MATRIX=gateway-01\n")
 	if err := SeedDefaults(root, false); err != nil {
 		t.Fatal(err)

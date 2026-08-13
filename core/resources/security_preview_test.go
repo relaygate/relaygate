@@ -32,6 +32,9 @@ func TestBuildSecurityPreview(t *testing.T) {
 	if !strings.Contains(prev.Kernel.Content, "tcp_syncookies") {
 		t.Fatal("kernel content missing")
 	}
+	if prev.NIC == nil || prev.NIC.Enabled {
+		t.Fatal("nic should be present and disabled by default")
+	}
 	if prev.Firewall == nil || !strings.Contains(prev.Firewall.ForwardPorts, "FORWARD_TCP_PORTS") {
 		t.Fatal("firewall forward ports missing")
 	}
@@ -41,12 +44,40 @@ func TestBuildSecurityPreview(t *testing.T) {
 	if len(prev.ExecutionOrder) < 5 {
 		t.Fatalf("execution order=%d", len(prev.ExecutionOrder))
 	}
+
+	nic := res.Security.PolicyByID(PolicyNICEgressShape)
+	if nic == nil {
+		t.Fatal("missing nic_egress_shape")
+	}
+	nic.Enabled = true
+	nic.Params.Device = "eth0"
+	nic.Params.Rate = "3mbit"
+	ing := res.Security.PolicyByID(PolicyNICIngressPolice)
+	if ing == nil {
+		t.Fatal("missing nic_ingress_police")
+	}
+	ing.Enabled = true
+	ing.Params.Device = "eth0"
+	ing.Params.Rate = "3mbit"
+	prev2, err := BuildSecurityPreview(res, packaging, fwd, gatewayExcerpt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prev2.NIC == nil || !prev2.NIC.Enabled || !prev2.NIC.EgressEnabled || prev2.NIC.Device != "eth0" || prev2.NIC.Rate != "3mbit" {
+		t.Fatalf("nic egress preview: %+v", prev2.NIC)
+	}
+	if !prev2.NIC.IngressEnabled || prev2.NIC.IngressDevice != "eth0" || prev2.NIC.IngressRate != "3mbit" {
+		t.Fatalf("nic ingress preview: %+v", prev2.NIC)
+	}
+	if prev2.NIC.ApplyScript == "" || !strings.Contains(prev2.NIC.ApplyScript, "apply-nic") {
+		t.Fatalf("nic apply_script=%q", prev2.NIC.ApplyScript)
+	}
 }
 
 func TestPolicySurfacesSeparateNewConnLimits(t *testing.T) {
 	t.Parallel()
 	surfaces := PolicySurfaces()
-	var fwFound, gwFound bool
+	var fwFound, gwFound, nicFound, ingressFound bool
 	for _, s := range surfaces {
 		switch s.PolicyID {
 		case PolicyFirewallNewConnLimit:
@@ -59,10 +90,20 @@ func TestPolicySurfacesSeparateNewConnLimits(t *testing.T) {
 			if len(s.Layers) != 1 || s.Layers[0] != string(LayerGateway) || s.OverlapNote != "" {
 				t.Fatalf("gateway_new_conn_limit surface: %+v", s)
 			}
+		case PolicyNICEgressShape:
+			nicFound = true
+			if len(s.Layers) != 1 || s.Layers[0] != string(LayerNIC) || s.ApplyPath != string(ApplyHostScript) {
+				t.Fatalf("nic_egress_shape surface: %+v", s)
+			}
+		case PolicyNICIngressPolice:
+			ingressFound = true
+			if len(s.Layers) != 1 || s.Layers[0] != string(LayerNIC) || s.ApplyPath != string(ApplyHostScript) {
+				t.Fatalf("nic_ingress_police surface: %+v", s)
+			}
 		}
 	}
-	if !fwFound || !gwFound {
-		t.Fatalf("missing surfaces: firewall=%t gateway=%t", fwFound, gwFound)
+	if !fwFound || !gwFound || !nicFound || !ingressFound {
+		t.Fatalf("missing surfaces: firewall=%t gateway=%t nic=%t ingress=%t", fwFound, gwFound, nicFound, ingressFound)
 	}
 }
 

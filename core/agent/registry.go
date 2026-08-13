@@ -27,12 +27,13 @@ const (
 
 // Node is one entry in the node registry (nodes.yaml).
 type Node struct {
-	Name          string   `yaml:"name" json:"name"`
-	Role          NodeRole `yaml:"role" json:"role"`
-	TokenHash     string   `yaml:"token_hash,omitempty" json:"-"`
-	AppliedVer    string   `yaml:"applied_version,omitempty" json:"applied_version,omitempty"`
-	LastHeartbeat string   `yaml:"last_heartbeat,omitempty" json:"last_heartbeat,omitempty"`
-	CreatedAt     string   `yaml:"created_at,omitempty" json:"created_at,omitempty"`
+	Name             string   `yaml:"name" json:"name"`
+	Role             NodeRole `yaml:"role" json:"role"`
+	TokenHash        string   `yaml:"token_hash,omitempty" json:"-"`
+	AppliedVer       string   `yaml:"applied_version,omitempty" json:"applied_version,omitempty"`
+	LastHeartbeat    string   `yaml:"last_heartbeat,omitempty" json:"last_heartbeat,omitempty"`
+	SyncRequestedAt  string   `yaml:"sync_requested_at,omitempty" json:"sync_requested_at,omitempty"`
+	CreatedAt        string   `yaml:"created_at,omitempty" json:"created_at,omitempty"`
 }
 
 // Registry is the on-disk node name book under DataDir/nodes.yaml.
@@ -342,6 +343,84 @@ func RecordHeartbeat(root, name, appliedVersion string) error {
 	}
 	if !found {
 		return fmt.Errorf("名册中未找到节点 %s", name)
+	}
+	return saveRegistry(root, reg)
+}
+
+// SyncResult is returned after marking one gateway node for immediate pull.
+type SyncResult struct {
+	Name            string `json:"name"`
+	SyncRequestedAt string `json:"sync_requested_at"`
+}
+
+// RequestNodeSync marks a single gateway node to pull+apply the current
+// published version on its next heartbeat. Does not notify other nodes.
+func RequestNodeSync(root, name string) (*SyncResult, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("请指定要同步的节点名称")
+	}
+	heartbeatMu.Lock()
+	defer heartbeatMu.Unlock()
+	reg, err := LoadRegistry(root)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	for i := range reg.Nodes {
+		if reg.Nodes[i].Name != name {
+			continue
+		}
+		if reg.Nodes[i].Role == RoleControl {
+			return nil, fmt.Errorf("不能同步主控条目 %s：请用「本机应用」；机群同步仅针对网关节点", name)
+		}
+		reg.Nodes[i].SyncRequestedAt = now
+		if err := saveRegistry(root, reg); err != nil {
+			return nil, err
+		}
+		return &SyncResult{Name: name, SyncRequestedAt: now}, nil
+	}
+	return nil, fmt.Errorf("名册中未找到节点 %s", name)
+}
+
+// HasSyncRequest reports whether the named node has a pending sync mark.
+func HasSyncRequest(root, name string) (bool, error) {
+	heartbeatMu.Lock()
+	defer heartbeatMu.Unlock()
+	reg, err := LoadRegistry(root)
+	if err != nil {
+		return false, err
+	}
+	for i := range reg.Nodes {
+		if reg.Nodes[i].Name == name {
+			return strings.TrimSpace(reg.Nodes[i].SyncRequestedAt) != "", nil
+		}
+	}
+	return false, nil
+}
+
+// ClearSyncRequest clears a pending per-node sync mark (e.g. after config pull).
+func ClearSyncRequest(root, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	heartbeatMu.Lock()
+	defer heartbeatMu.Unlock()
+	reg, err := LoadRegistry(root)
+	if err != nil {
+		return err
+	}
+	changed := false
+	for i := range reg.Nodes {
+		if reg.Nodes[i].Name == name && reg.Nodes[i].SyncRequestedAt != "" {
+			reg.Nodes[i].SyncRequestedAt = ""
+			changed = true
+			break
+		}
+	}
+	if !changed {
+		return nil
 	}
 	return saveRegistry(root, reg)
 }

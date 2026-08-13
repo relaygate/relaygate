@@ -211,7 +211,7 @@ func runFirewall(args []string) int {
 
 func runSecurity(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: relaygate security list|kernel-conf|apply-kernel|verify")
+		fmt.Fprintln(os.Stderr, "usage: relaygate security list|kernel-conf|apply-kernel|apply-nic|verify")
 		fmt.Fprintln(os.Stderr, "  名单与参数编辑 security.access / security.protections；防火墙用 sudo relaygate firewall apply")
 		return 2
 	}
@@ -248,8 +248,30 @@ func runSecurity(args []string) int {
 				fmt.Printf("  tcp_syncookies=%d tcp_max_syn_backlog=%d\n",
 					p.Params.TcpSyncookies, p.Params.TcpMaxSynBacklog)
 			}
+			if p.ID == resources.PolicyNICEgressShape && p.Enabled {
+				dev := p.Params.Device
+				if strings.TrimSpace(dev) == "" {
+					dev = "auto"
+				}
+				rate := p.Params.Rate
+				if strings.TrimSpace(rate) == "" {
+					rate = resources.DefaultNICEgressRate
+				}
+				fmt.Printf("  device=%s rate=%s\n", dev, rate)
+			}
+			if p.ID == resources.PolicyNICIngressPolice && p.Enabled {
+				dev := p.Params.Device
+				if strings.TrimSpace(dev) == "" {
+					dev = "auto"
+				}
+				rate := p.Params.Rate
+				if strings.TrimSpace(rate) == "" {
+					rate = resources.DefaultNICIngressRate
+				}
+				fmt.Printf("  device=%s rate=%s\n", dev, rate)
+			}
 		}
-		fmt.Println("防火墙策略生效: validate + sudo relaygate firewall apply；网关策略: reload；内核(kernel_syn): relaygate security apply-kernel --verify")
+		fmt.Println("防火墙策略生效: validate + sudo relaygate firewall apply；网关策略: reload；内核(kernel_syn): relaygate security apply-kernel --verify；网卡(nic_egress_shape / nic_ingress_police): relaygate security apply-nic --verify")
 		fmt.Println("节点 agent 拉取后默认自动应用主机侧（PANEL_ENABLED=0）；主控默认不自动应用（见 SECURITY_AUTO_APPLY）")
 		return 0
 	case "kernel-conf":
@@ -289,6 +311,41 @@ func runSecurity(args []string) int {
 			fmt.Println("内核校验通过")
 		}
 		return 0
+	case "apply-nic":
+		verify := false
+		rest := args[1:]
+		for _, a := range rest {
+			switch a {
+			case "--verify":
+				verify = true
+			case "-h", "--help", "help":
+				fmt.Fprintln(os.Stderr, "usage: relaygate security apply-nic [--verify]")
+				fmt.Fprintln(os.Stderr, "  网卡（tc）：按 resources.yaml 已启用的 nic_egress_shape / nic_ingress_police 应用（需 root）")
+				fmt.Fprintln(os.Stderr, "  --verify  应用后校验 qdisc / police 是否生效")
+				fmt.Fprintln(os.Stderr, "  低带宽示例 rate=3mbit；device 空则探测默认路由口")
+				fmt.Fprintln(os.Stderr, "  主控 PANEL_ENABLED=1 默认不会在拉取后自动 apply；请仅在目标节点或明确测试环境执行")
+				fmt.Fprintln(os.Stderr, "  回滚出口（手动）：sudo tc qdisc del dev <iface> root")
+				fmt.Fprintln(os.Stderr, "  回滚入向（手动）：sudo tc qdisc del dev <iface> ingress")
+				fmt.Fprintln(os.Stderr, "  关闭策略不会自动删除已有 qdisc / police")
+				return 2
+			default:
+				fmt.Fprintf(os.Stderr, "未知参数: %s\n", a)
+				return 2
+			}
+		}
+		if err := requireConfirm("将按当前配置对本机业务口应用已启用的网卡出口整形与/或入向限速（可能影响吞吐；关闭策略不会自动清除 qdisc/police）。"); err != nil {
+			return exitErr(err)
+		}
+		if err := dataplane.ApplyNICShapeFromResources(root); err != nil {
+			return exitErr(err)
+		}
+		if verify {
+			if err := dataplane.VerifyNICShape(root); err != nil {
+				return exitErr(err)
+			}
+			fmt.Println("网卡校验通过")
+		}
+		return 0
 	case "verify":
 		env, err := dataplane.LoadEnv(root)
 		if err != nil {
@@ -296,7 +353,7 @@ func runSecurity(args []string) int {
 		}
 		return exitErr(dataplane.VerifySecurityLayers(root, env, os.Stdout))
 	case "help", "-h", "--help":
-		fmt.Fprintln(os.Stderr, "usage: relaygate security list|kernel-conf|apply-kernel|verify")
+		fmt.Fprintln(os.Stderr, "usage: relaygate security list|kernel-conf|apply-kernel|apply-nic|verify")
 		return 2
 	default:
 		fmt.Fprintf(os.Stderr, "未知 security 子命令: %s\n", args[0])
@@ -368,7 +425,7 @@ func runProfile(args []string) int {
 		}
 		fmt.Print(sum.String())
 		fmt.Println("已写入档位（defaults / security）。请: relaygate validate && relaygate reload")
-		fmt.Println("若改了防火墙策略，另需: sudo relaygate firewall apply；内核: relaygate security apply-kernel --verify")
+		fmt.Println("若改了防火墙策略，另需: sudo relaygate firewall apply；内核: relaygate security apply-kernel --verify；网卡: relaygate security apply-nic --verify")
 		return 0
 	case "help", "-h", "--help":
 		fmt.Fprintln(os.Stderr, "usage: relaygate profile list|show|apply")
@@ -649,6 +706,7 @@ func usage(out *os.File) {
   relaygate security list
   relaygate security kernel-conf
   relaygate security apply-kernel [--verify]
+  relaygate security apply-nic [--verify]
   relaygate security verify
   relaygate profile list|show|apply NAME
   relaygate changes [--limit N]
@@ -675,6 +733,7 @@ func usage(out *os.File) {
 机群（主控）:
   relaygate fleet status
   relaygate fleet publish              # 输入 确认 或 Confirm
+  relaygate fleet sync <name>          # 单节点立即拉取；输入 确认 或 Confirm
   relaygate fleet join <name>          # 打印一句话节点安装命令
   relaygate fleet leave <name>         # 输入 确认 或 Confirm
 
@@ -698,7 +757,7 @@ func usage(out *os.File) {
 
 func runFleet(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: relaygate fleet status|publish|join|leave")
+		fmt.Fprintln(os.Stderr, "usage: relaygate fleet status|publish|sync|join|leave")
 		return 2
 	}
 	root := mustRoot()
@@ -718,8 +777,12 @@ func runFleet(args []string) int {
 			return 0
 		}
 		for _, n := range nodes {
-			fmt.Printf("  %-16s role=%-7s status=%-12s applied=%s heartbeat=%s\n",
-				n.Name, n.Role, n.Status, n.AppliedVersion, n.LastHeartbeat)
+			syncMark := ""
+			if n.SyncPending {
+				syncMark = " sync=pending"
+			}
+			fmt.Printf("  %-16s role=%-7s status=%-12s applied=%s heartbeat=%s%s\n",
+				n.Name, n.Role, n.Status, n.AppliedVersion, n.LastHeartbeat, syncMark)
 		}
 		return 0
 	case "publish":
@@ -731,6 +794,20 @@ func runFleet(args []string) int {
 			return exitErr(err)
 		}
 		fmt.Printf("已发布版本 %s\n", res.Version)
+		return 0
+	case "sync":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: relaygate fleet sync <name>")
+			return 2
+		}
+		if err := requireConfirm("将标记该网关节点立即拉取并对齐当前已发布版本（仅该节点；应用时相关连接可能断开）。"); err != nil {
+			return exitErr(err)
+		}
+		res, err := agent.RequestNodeSync(root, args[1])
+		if err != nil {
+			return exitErr(err)
+		}
+		fmt.Printf("已标记节点 %s 立即同步（下次心跳拉取并本机落地；不影响其他节点）\n", res.Name)
 		return 0
 	case "join":
 		if len(args) < 2 {
@@ -766,11 +843,11 @@ func runFleet(args []string) int {
 		}
 		return 0
 	case "help", "-h", "--help":
-		fmt.Fprintln(os.Stderr, "usage: relaygate fleet status|publish|join|leave")
+		fmt.Fprintln(os.Stderr, "usage: relaygate fleet status|publish|sync|join|leave")
 		return 0
 	default:
 		fmt.Fprintf(os.Stderr, "未知 fleet 子命令: %s\n", args[0])
-		fmt.Fprintln(os.Stderr, "usage: relaygate fleet status|publish|join|leave")
+		fmt.Fprintln(os.Stderr, "usage: relaygate fleet status|publish|sync|join|leave")
 		return 2
 	}
 }
@@ -796,7 +873,7 @@ func runAgent(args []string) int {
 			return exitErr(err)
 		}
 		fmt.Printf("已拉取并落盘版本 %s（applied 未更新）\n", ver)
-		fmt.Println("提示: agent run 完成拉取后落地（内核→防火墙→网关）成功后才会上报 applied；也可手动 security apply-kernel / firewall apply / reload。")
+		fmt.Println("提示: agent run 完成拉取后落地（内核→网卡→防火墙→网关）成功后才会上报 applied；也可手动 security apply-kernel / apply-nic / firewall apply / reload。")
 		return 0
 	case "run":
 		if _, err := dataplane.LoadEnv(root); err != nil {

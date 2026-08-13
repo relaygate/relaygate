@@ -55,12 +55,12 @@ curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.
 
 1. 配置**上游**与**转发**（`validation` 验证入口 → `production` 正式入口）
 2. **本机应用**：Panel「配置应用」或 `relaygate reload`（首次全量用 `apply`）
-3. **机群发布**（主控）：Panel「发布到机群」或 `relaygate fleet publish`（确认词：`确认` / `Confirm`）；节点 agent 自行拉取并应用
+3. **机群发布**（主控）：`relaygate fleet publish`（确认词：`确认` / `Confirm`；Panel 配置应用页不再提供发布）；节点 agent 自行拉取并应用。某台需立即对齐：机群页该节点「同步」或 `relaygate fleet sync <name>`（仅该节点）
 4. **安全**：名单与防护在 `security.access` / `security.protections`（Panel「安全策略」）；改防火墙后 `relaygate firewall apply`；内核相关用 `relaygate security apply-kernel`。四域与落地顺序见 [security-domains](docs/security-domains.md)
 
 | 改了什么 | 怎么落地 |
 |----------|----------|
-| 上游 / 转发 / 网关侧策略 | `reload`（本机）或 `fleet publish`（机群） |
+| 上游 / 转发 / 网关侧策略 | `reload`（本机）或 `fleet publish`（机群）；单节点立即对齐用 `fleet sync <name>` |
 | 防火墙名单 / 主机防火墙策略 | `firewall apply` |
 | 二进制 / packaging | `upgrade` / `install.sh upgrade` |
 
@@ -72,7 +72,7 @@ relaygate reload                 # 优先热更新
 relaygate reload --hard          # 硬重启（会断连）
 relaygate firewall check|apply
 relaygate security list|verify
-relaygate fleet status|publish|join|leave
+relaygate fleet status|publish|sync|join|leave
 relaygate drain fail|ok|status
 relaygate upgrade [--drain]
 relaygate smoke [HOST]

@@ -4,7 +4,7 @@ import type { SecurityPreview } from "@/lib/types"
 export type PreviewKv = { key: string; value: string }
 
 export type ComponentPreviewSummary = {
-  id: "kernel" | "firewall" | "gateway"
+  id: "kernel" | "nic" | "firewall" | "gateway"
   enabled: boolean
   params: PreviewKv[]
   applyPathKey: string
@@ -35,6 +35,37 @@ export function buildComponentSummaries(
     ? parseKernelParams(preview.kernel?.content)
     : [{ key: "kernel_syn", value: disabledLabel }]
 
+  const egressPolicy = policyById(state, "nic_egress_shape")
+  const ingressPolicy = policyById(state, "nic_ingress_police")
+  const egressOn = Boolean(preview.nic?.egress_enabled && egressPolicy?.enabled)
+  const ingressOn = Boolean(preview.nic?.ingress_enabled && ingressPolicy?.enabled)
+  const nicEnabled = Boolean(preview.nic?.enabled && (egressOn || ingressOn))
+  const nicParams: PreviewKv[] = []
+  if (egressOn) {
+    nicParams.push({
+      key: "egress.device",
+      value: String(preview.nic?.device ?? egressPolicy?.params.device ?? "auto"),
+    })
+    nicParams.push({
+      key: "egress.rate",
+      value: String(preview.nic?.rate ?? egressPolicy?.params.rate ?? "—"),
+    })
+  } else {
+    nicParams.push({ key: "nic_egress_shape", value: disabledLabel })
+  }
+  if (ingressOn) {
+    nicParams.push({
+      key: "ingress.device",
+      value: String(preview.nic?.ingress_device ?? ingressPolicy?.params.device ?? "auto"),
+    })
+    nicParams.push({
+      key: "ingress.rate",
+      value: String(preview.nic?.ingress_rate ?? ingressPolicy?.params.rate ?? "—"),
+    })
+  } else {
+    nicParams.push({ key: "nic_ingress_police", value: disabledLabel })
+  }
+
   const access = state.access
   const fwLimit = policyById(state, "firewall_new_conn_limit")
   const udpLimit = policyById(state, "firewall_udp_limit")
@@ -56,7 +87,7 @@ export function buildComponentSummaries(
 
   if (fwLimit?.enabled) {
     firewallEnabled = true
-    firewallParams.push({ key: "tcp_per_ip", value: fwLimit.params.tcp_per_ip ?? "—" })
+    firewallParams.push({ key: "tcp_per_ip", value: String(fwLimit.params.tcp_per_ip ?? "—") })
     firewallParams.push({ key: "burst", value: String(fwLimit.params.burst ?? 0) })
   } else {
     firewallParams.push({ key: "firewall_new_conn_limit", value: disabledLabel })
@@ -64,7 +95,7 @@ export function buildComponentSummaries(
 
   if (udpLimit?.enabled) {
     firewallEnabled = true
-    firewallParams.push({ key: "udp_pps_per_ip", value: udpLimit.params.udp_pps_per_ip ?? "—" })
+    firewallParams.push({ key: "udp_pps_per_ip", value: String(udpLimit.params.udp_pps_per_ip ?? "—") })
     firewallParams.push({ key: "udp_burst", value: String(udpLimit.params.udp_burst ?? 0) })
   } else {
     firewallParams.push({ key: "firewall_udp_limit", value: disabledLabel })
@@ -100,6 +131,12 @@ export function buildComponentSummaries(
       enabled: kernelEnabled,
       params: kernelParams,
       applyPathKey: "security.preview_apply_kernel",
+    },
+    {
+      id: "nic",
+      enabled: nicEnabled,
+      params: nicParams,
+      applyPathKey: "security.preview_apply_nic",
     },
     {
       id: "firewall",

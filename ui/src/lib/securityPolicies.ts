@@ -4,6 +4,8 @@
 
 export type SecurityPolicyId =
   | "kernel_syn"
+  | "nic_egress_shape"
+  | "nic_ingress_police"
   | "firewall_new_conn_limit"
   | "gateway_new_conn_limit"
   | "gateway_conn_limit"
@@ -11,8 +13,8 @@ export type SecurityPolicyId =
 
 export type SecurityPolicyType = SecurityPolicyId
 
-/** Product domain (kernel / firewall / gateway). Not an execution component name. */
-export type SecurityPolicyLayer = "kernel" | "firewall" | "gateway"
+/** Product domain (kernel / nic / firewall / gateway). Not an execution component name. */
+export type SecurityPolicyLayer = "kernel" | "nic" | "firewall" | "gateway"
 
 /** Open params bag — keys/values shown raw (no per-field i18n). */
 export type PolicyParams = Record<string, string | number | boolean>
@@ -45,6 +47,8 @@ export type SecurityPolicyCatalogEntry = {
 
 export const SECURITY_POLICY_IDS: SecurityPolicyId[] = [
   "kernel_syn",
+  "nic_egress_shape",
+  "nic_ingress_police",
   "firewall_new_conn_limit",
   "gateway_new_conn_limit",
   "gateway_conn_limit",
@@ -54,6 +58,8 @@ export const SECURITY_POLICY_IDS: SecurityPolicyId[] = [
 /** Built-in catalog aligned with Go `SecurityPolicyCatalog` (type≡id; one instance per type). */
 export const SECURITY_POLICY_CATALOG: SecurityPolicyCatalogEntry[] = [
   { id: "kernel_syn", type: "kernel_syn", layer: "kernel", attack_tags: ["T1"] },
+  { id: "nic_egress_shape", type: "nic_egress_shape", layer: "nic", attack_tags: ["T7"] },
+  { id: "nic_ingress_police", type: "nic_ingress_police", layer: "nic", attack_tags: ["T7"] },
   {
     id: "firewall_new_conn_limit",
     type: "firewall_new_conn_limit",
@@ -90,6 +96,8 @@ const DEFAULT_PARAMS: Record<SecurityPolicyId, PolicyParams> = {
     tcp_syn_retries: 3,
     tcp_abort_on_overflow: 0,
   },
+  nic_egress_shape: { device: "", rate: "3mbit" },
+  nic_ingress_police: { device: "", rate: "3mbit" },
   firewall_new_conn_limit: { tcp_per_ip: "30/second", burst: 60 },
   gateway_new_conn_limit: { per_sec: 200, burst: 400 },
   gateway_conn_limit: { max_connections: 1024 },
@@ -101,7 +109,8 @@ export function defaultProtection(id: SecurityPolicyId): SecurityPolicy {
   return {
     id,
     type: meta.type,
-    enabled: true,
+    // Align with Go DefaultSecurity: nic shaping/police stay off unless operator/profile enables them.
+    enabled: id !== "nic_egress_shape" && id !== "nic_ingress_police",
     attack_tags: [...meta.attack_tags],
     params: { ...DEFAULT_PARAMS[id] },
   }
@@ -469,20 +478,6 @@ function pickRaw(obj: Record<string, unknown>, ...keys: string[]): unknown {
   return undefined
 }
 
-function pickStr(obj: Record<string, unknown>, ...keys: string[]): string | undefined {
-  const v = pickRaw(obj, ...keys)
-  if (v == null) return undefined
-  const s = String(v).trim()
-  return s === "" ? undefined : s
-}
-
-function pickNum(obj: Record<string, unknown>, ...keys: string[]): number | undefined {
-  const v = pickRaw(obj, ...keys)
-  if (v == null || v === "") return undefined
-  const n = typeof v === "number" ? v : Number(v)
-  return Number.isFinite(n) ? n : undefined
-}
-
 function pickBool(obj: Record<string, unknown>, ...keys: string[]): boolean | undefined {
   const v = pickRaw(obj, ...keys)
   if (typeof v === "boolean") return v
@@ -639,22 +634,56 @@ export function validateAccess(access: SecurityAccess): string | null {
   return null
 }
 
-/** @deprecated Params are open JSON; UI no longer field-validates. Always null. */
+/** @deprecated Params are open key/value bags; UI does not field-validate. Always null. */
 export function validatePolicyParams(_p: SecurityPolicy): string | null {
   return null
 }
 
-export function stringifyPolicyParams(params: PolicyParams): string {
-  return JSON.stringify(params ?? {}, null, 2)
+/** One editable params row (key/value as plain text; keys are not i18n'd). */
+export type PolicyParamRow = { key: string; value: string }
+
+export function formatParamValue(v: string | number | boolean): string {
+  if (typeof v === "boolean") return v ? "true" : "false"
+  return String(v)
 }
 
-/** Parse params JSON object; returns null when not a plain object of scalars. */
-export function parsePolicyParamsJson(raw: string): PolicyParams | null {
-  try {
-    const v = JSON.parse(raw) as unknown
-    if (!v || typeof v !== "object" || Array.isArray(v)) return null
-    return coerceParams(v as Record<string, unknown>)
-  } catch {
-    return null
+/** Coerce a row value to a scalar (bool / int / float / string). */
+export function parseParamValue(raw: string): string | number | boolean {
+  const t = raw.trim()
+  if (t === "true") return true
+  if (t === "false") return false
+  if (/^-?\d+$/.test(t)) return Number.parseInt(t, 10)
+  if (/^-?\d+\.\d+$/.test(t)) return Number.parseFloat(t)
+  return raw
+}
+
+export function paramsToRows(params: PolicyParams): PolicyParamRow[] {
+  return Object.entries(params ?? {}).map(([key, value]) => ({
+    key,
+    value: formatParamValue(value),
+  }))
+}
+
+/**
+ * Build PolicyParams from rows. Empty keys are skipped.
+ * On duplicate keys, keeps the first and reports `duplicateKey`.
+ */
+export function rowsToParams(rows: PolicyParamRow[]): {
+  params: PolicyParams
+  duplicateKey: string | null
+} {
+  const params: PolicyParams = {}
+  const seen = new Set<string>()
+  let duplicateKey: string | null = null
+  for (const row of rows) {
+    const key = row.key.trim()
+    if (!key) continue
+    if (seen.has(key)) {
+      if (duplicateKey == null) duplicateKey = key
+      continue
+    }
+    seen.add(key)
+    params[key] = parseParamValue(row.value)
   }
+  return { params, duplicateKey }
 }

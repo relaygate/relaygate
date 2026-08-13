@@ -29,6 +29,7 @@ import {
   getFleetStatus,
   opsFleetJoin,
   opsFleetLeave,
+  opsFleetSync,
   type FleetNode,
   type FleetNodeStatus,
   type FleetOverview,
@@ -38,7 +39,7 @@ import { copyText } from "@/lib/clipboard"
 import { matchesConfirm } from "@/lib/confirm"
 import { cn } from "@/lib/utils"
 
-type BusyKey = "join" | "leave" | null
+type BusyKey = "join" | "leave" | "sync" | null
 
 function fleetStatusLabel(t: (key: string) => string, status: FleetNodeStatus["status"]): string {
   switch (status) {
@@ -80,7 +81,7 @@ function fleetRoleLabel(t: (key: string) => string, role?: string): string {
   }
 }
 
-function isRetirableGateway(node: FleetNode): boolean {
+function isGatewayNode(node: FleetNode): boolean {
   return node.role !== "control"
 }
 
@@ -140,6 +141,10 @@ export function FleetPage() {
   const [joinHint, setJoinHint] = useState("")
   const [joinCommand, setJoinCommand] = useState("")
   const [joinToken, setJoinToken] = useState("")
+
+  const [syncName, setSyncName] = useState("")
+  const [syncConfirm, setSyncConfirm] = useState("")
+  const [syncOpen, setSyncOpen] = useState(false)
 
   const [leaveName, setLeaveName] = useState("")
   const [leaveConfirm, setLeaveConfirm] = useState("")
@@ -207,6 +212,33 @@ export function FleetPage() {
       toast.success(t("fleet.toast_copy_ok"))
     } else {
       toast.error(t("fleet.toast_copy_err"))
+    }
+  }
+
+  function openSync(name: string) {
+    setSyncName(name)
+    setSyncConfirm("")
+    setSyncOpen(true)
+  }
+
+  async function runSync() {
+    if (!matchesConfirm(syncConfirm) || !syncName) return
+    setBusy("sync")
+    try {
+      const res = await opsFleetSync({ confirm: syncConfirm.trim(), name: syncName })
+      if (res.ok) {
+        toast.success(t("fleet.toast_sync_ok"))
+        setSyncOpen(false)
+        setSyncConfirm("")
+        setSyncName("")
+        await loadFleet()
+      } else {
+        toast.error(apiErrorDetail(res, t("fleet.toast_sync_err")))
+      }
+    } catch (err) {
+      toast.error(apiErrorDetail(err, t("fleet.toast_sync_err")))
+    } finally {
+      setBusy(null)
     }
   }
 
@@ -299,30 +331,46 @@ export function FleetPage() {
               <tbody>
                 {fleet.nodes.map((node: FleetNode) => {
                   const st = statusByName[node.name]
-                  const canRetire = isRetirableGateway(node)
+                  const canAct = isGatewayNode(node)
+                  const alignLabel = st?.sync_pending
+                    ? `${fleetStatusLabel(t, st?.status ?? "unknown")} · ${t("fleet.status_sync_pending")}`
+                    : fleetStatusLabel(t, st?.status ?? "unknown")
                   return (
                     <tr key={node.name} className="border-t border-border/40">
                       <td className="px-2 py-1.5 font-mono">{node.name}</td>
                       <td className="px-2 py-1.5">{fleetRoleLabel(t, node.role)}</td>
                       <td className={cn("px-2 py-1.5 font-medium", fleetStatusClass(st?.status ?? "unknown"))}>
-                        {fleetStatusLabel(t, st?.status ?? "unknown")}
+                        {alignLabel}
                       </td>
                       <td className="px-2 py-1.5 font-mono text-muted-foreground">
                         {st?.applied_version || node.applied_version || "—"}
                       </td>
                       <td className="px-2 py-1.5 text-right">
-                        {canRetire ? (
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => openLeave(node.name)}
-                            disabled={standby || anyBusy}
-                          >
-                            {busy === "leave" && leaveName === node.name ? (
-                              <Spinner data-icon="inline-start" />
-                            ) : null}
-                            {t("fleet.leave_run")}
-                          </Button>
+                        {canAct ? (
+                          <div className="flex flex-wrap items-center justify-end gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="caution"
+                              onClick={() => openSync(node.name)}
+                              disabled={standby || anyBusy}
+                            >
+                              {busy === "sync" && syncName === node.name ? (
+                                <Spinner data-icon="inline-start" />
+                              ) : null}
+                              {t("fleet.sync_run")}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => openLeave(node.name)}
+                              disabled={standby || anyBusy}
+                            >
+                              {busy === "leave" && leaveName === node.name ? (
+                                <Spinner data-icon="inline-start" />
+                              ) : null}
+                              {t("fleet.leave_run")}
+                            </Button>
+                          </div>
                         ) : null}
                       </td>
                     </tr>
@@ -397,6 +445,63 @@ export function FleetPage() {
             >
               {busy === "join" ? <Spinner data-icon="inline-start" /> : null}
               {t("fleet.join_run")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={syncOpen}
+        onOpenChange={(open) => {
+          if (!open && busy !== "sync") {
+            setSyncOpen(false)
+            setSyncConfirm("")
+            setSyncName("")
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("fleet.sync_confirm_title")}</DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>{syncName ? tf("fleet.sync_confirm_body", syncName) : ""}</p>
+                <p className="text-destructive">{t("fleet.sync_confirm_disconnect")}</p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="sync-confirm">{t("common.confirm_typed_label")}</FieldLabel>
+              <Input
+                id="sync-confirm"
+                value={syncConfirm}
+                onChange={(e) => setSyncConfirm(e.target.value)}
+                disabled={standby || busy === "sync"}
+                autoComplete="off"
+                placeholder={confirmPlaceholder}
+              />
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setSyncOpen(false)
+                setSyncConfirm("")
+                setSyncName("")
+              }}
+              disabled={busy === "sync"}
+            >
+              {t("ops.cancel")}
+            </Button>
+            <Button
+              variant="caution"
+              onClick={() => void runSync()}
+              disabled={standby || busy === "sync" || !matchesConfirm(syncConfirm)}
+            >
+              {busy === "sync" ? <Spinner data-icon="inline-start" /> : null}
+              {t("fleet.sync_run")}
             </Button>
           </DialogFooter>
         </DialogContent>

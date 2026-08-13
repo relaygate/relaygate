@@ -251,6 +251,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/ops/fleet", s.withAuthReadonly(s.apiFleet))
 	mux.HandleFunc("/api/ops/fleet/status", s.withAuthReadonly(s.apiFleetStatus))
 	mux.HandleFunc("/api/ops/fleet/publish", s.withAuth(s.apiFleetPublish))
+	mux.HandleFunc("/api/ops/fleet/sync", s.withAuth(s.apiFleetSync))
 	mux.HandleFunc("/api/ops/fleet/join", s.withAuth(s.apiFleetJoin))
 	mux.HandleFunc("/api/ops/fleet/leave", s.withAuth(s.apiFleetLeave))
 	mux.HandleFunc("/api/agent/config", s.apiAgentConfig)

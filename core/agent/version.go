@@ -74,7 +74,7 @@ func Publish(root string) (*PublishResult, error) {
 	src := config.ResolvePaths(root).Resources
 	if _, err := os.Stat(src); err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("未找到业务配置。请先在配置编辑中保存意图，再发布到机群")
+			return nil, fmt.Errorf("未找到业务配置。请先在配置编辑中保存意图，再执行 relaygate fleet publish")
 		}
 		return nil, err
 	}
@@ -153,7 +153,7 @@ func ReadPublishedResources(root, version string) (ver string, data []byte, err 
 			return "", nil, err
 		}
 		if version == "" {
-			return "", nil, fmt.Errorf("尚无已发布的配置版本。请先在主控执行发布到机群")
+			return "", nil, fmt.Errorf("尚无已发布的配置版本。请先在主控执行 relaygate fleet publish")
 		}
 	}
 	path := filepath.Join(VersionsDir(root), version, "resources.yaml")

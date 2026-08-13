@@ -22,7 +22,7 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { useStandby } from "@/context/SessionContext"
-import { ApiError, applyConfig, applyFirewall, getApplyPreview, opsFleetPublish } from "@/lib/api"
+import { ApiError, applyConfig, applyFirewall, getApplyPreview } from "@/lib/api"
 import { matchesConfirm } from "@/lib/confirm"
 
 export function ApplyPage() {
@@ -39,13 +39,10 @@ export function ApplyPage() {
   const [loading, setLoading] = useState(true)
   const [applyingConfig, setApplyingConfig] = useState(false)
   const [applyingSecurityFirewall, setApplyingSecurityFirewall] = useState(false)
-  const [publishing, setPublishing] = useState(false)
   const [fwOpen, setFwOpen] = useState(false)
   const [fwConfirm, setFwConfirm] = useState("")
   const [reloadOpen, setReloadOpen] = useState(false)
   const [reloadConfirm, setReloadConfirm] = useState("")
-  const [publishOpen, setPublishOpen] = useState(false)
-  const [publishConfirm, setPublishConfirm] = useState("")
 
   async function loadPreview() {
     try {
@@ -130,31 +127,7 @@ export function ApplyPage() {
     }
   }
 
-  async function handlePublish() {
-    if (standby || !matchesConfirm(publishConfirm)) return
-    setPublishing(true)
-    setError(false)
-    try {
-      const res = await opsFleetPublish(publishConfirm.trim())
-      if (!res.ok) {
-        throw new ApiError(res.error || t("apply.toast_publish_fail"), 500, res)
-      }
-      const out = res.output ?? t("apply.toast_publish_ok")
-      setResult(out)
-      toast.success(t("apply.toast_publish_ok"))
-      setPublishOpen(false)
-      setPublishConfirm("")
-    } catch (err) {
-      setError(true)
-      const msg = err instanceof ApiError ? err.message : t("apply.toast_publish_fail")
-      setResult(msg)
-      toast.error(msg)
-    } finally {
-      setPublishing(false)
-    }
-  }
-
-  const busy = applyingConfig || applyingSecurityFirewall || publishing
+  const busy = applyingConfig || applyingSecurityFirewall
   const configBtnVariant = applyMode === "hard" ? "destructive" : "caution"
   const configDialogVariant = applyMode === "hard" ? "destructive" : "caution"
 
@@ -203,18 +176,6 @@ export function ApplyPage() {
               title={t("apply.hint_security_firewall")}
             >
               {t("apply.submit_security_firewall")}
-            </Button>
-            <Button
-              variant="caution"
-              onClick={() => {
-                setPublishConfirm("")
-                setPublishOpen(true)
-              }}
-              disabled={standby || busy}
-              title={t("apply.hint_publish")}
-            >
-              {publishing ? <Spinner data-icon="inline-start" /> : null}
-              {t("apply.submit_publish")}
             </Button>
           </div>
         }
@@ -365,53 +326,6 @@ export function ApplyPage() {
             >
               {applyingSecurityFirewall ? <Spinner data-icon="inline-start" /> : null}
               {t("apply.submit_security_firewall")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={publishOpen}
-        onOpenChange={(open) => {
-          if (!publishing) {
-            setPublishOpen(open)
-            if (!open) setPublishConfirm("")
-          }
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{t("apply.publish_confirm_title")}</DialogTitle>
-            <DialogDescription asChild>
-              <div className="space-y-2 text-sm text-muted-foreground">
-                <p>{t("apply.publish_confirm_body")}</p>
-                <p className="text-destructive">{t("apply.publish_confirm_disconnect")}</p>
-              </div>
-            </DialogDescription>
-          </DialogHeader>
-          <FieldGroup>
-            <Field>
-              <FieldLabel>{confirmLabel}</FieldLabel>
-              <Input
-                value={publishConfirm}
-                onChange={(e) => setPublishConfirm(e.target.value)}
-                disabled={standby || publishing}
-                autoComplete="off"
-                placeholder={confirmPlaceholder}
-              />
-            </Field>
-          </FieldGroup>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setPublishOpen(false)} disabled={publishing}>
-              {t("ops.cancel")}
-            </Button>
-            <Button
-              variant="caution"
-              onClick={() => void handlePublish()}
-              disabled={standby || publishing || !matchesConfirm(publishConfirm)}
-            >
-              {publishing ? <Spinner data-icon="inline-start" /> : null}
-              {t("apply.submit_publish")}
             </Button>
           </DialogFooter>
         </DialogContent>

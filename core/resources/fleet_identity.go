@@ -9,7 +9,6 @@ func StripFleetNodeIdentity(r *Resources) {
 	if r == nil {
 		return
 	}
-	r.Meta.GatewayName = ""
 	r.Gateway.Name = ""
 	r.Gateway.PublicIP = ""
 }
@@ -22,7 +21,6 @@ func ApplyLocalNodeIdentity(r *Resources, gatewayName, publicIP string) {
 		return
 	}
 	if name := strings.TrimSpace(gatewayName); name != "" {
-		r.Meta.GatewayName = name
 		r.Gateway.Name = name
 	}
 	if ip := strings.TrimSpace(publicIP); ip != "" {

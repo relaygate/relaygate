@@ -46,9 +46,6 @@ func RenderBootstrap(r *resources.Resources, opt BootstrapOptions) (map[string]a
 	}
 	nodeID := strings.TrimSpace(opt.NodeID)
 	if nodeID == "" {
-		nodeID = strings.TrimSpace(r.Meta.GatewayName)
-	}
-	if nodeID == "" {
 		nodeID = strings.TrimSpace(r.Gateway.Name)
 	}
 	if nodeID == "" {

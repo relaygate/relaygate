@@ -135,6 +135,16 @@ export interface SecurityPreview {
     apply_script?: string
     content?: string
   }
+  nic?: {
+    enabled: boolean
+    apply_script?: string
+    device?: string
+    rate?: string
+    egress_enabled?: boolean
+    ingress_enabled?: boolean
+    ingress_device?: string
+    ingress_rate?: string
+  }
   firewall?: {
     forward_ports: string
     gateway_excerpt: string
@@ -348,6 +358,7 @@ export function normalizeSecurityPreview(raw: unknown): SecurityPreview {
   const orderRaw = field<unknown[]>(o, "execution_order") ?? []
   const surfacesRaw = field<unknown[]>(o, "surfaces") ?? []
   const kernelRaw = field<Record<string, unknown>>(o, "kernel")
+  const nicRaw = field<Record<string, unknown>>(o, "nic")
   const firewallRaw = field<Record<string, unknown>>(o, "firewall")
   const gatewayRaw = field<Record<string, unknown>>(o, "gateway")
   return {
@@ -375,6 +386,18 @@ export function normalizeSecurityPreview(raw: unknown): SecurityPreview {
           enabled: asBool(field(kernelRaw, "enabled")),
           apply_script: asString(field(kernelRaw, "apply_script")) || undefined,
           content: asString(field(kernelRaw, "content")) || undefined,
+        }
+      : undefined,
+    nic: nicRaw
+      ? {
+          enabled: asBool(field(nicRaw, "enabled")),
+          apply_script: asString(field(nicRaw, "apply_script")) || undefined,
+          device: asString(field(nicRaw, "device")) || undefined,
+          rate: asString(field(nicRaw, "rate")) || undefined,
+          egress_enabled: asBool(field(nicRaw, "egress_enabled")),
+          ingress_enabled: asBool(field(nicRaw, "ingress_enabled")),
+          ingress_device: asString(field(nicRaw, "ingress_device")) || undefined,
+          ingress_rate: asString(field(nicRaw, "ingress_rate")) || undefined,
         }
       : undefined,
     firewall: firewallRaw

@@ -1,53 +1,76 @@
-# TCP 长连接安全策略（小包交互基线）
+# TCP 长连接安全策略（低带宽主机示例 · 约 3 Mbps）
 #
-# 流量特征依据见 docs/packet-size-traffic-analysis.md：
-#   · 正常：0–199 字节主导（established 上心跳/短载荷常见）→ 勿对已建会话做 PPS
-#   · 攻击：近 MTU（约 1400–1499）单峰体量 → 本机限速减负；清洗走云高防（T7 out of scope）
+# 流量特征见 docs/packet-size-traffic-analysis.md：
+#   · 正常：0–199 字节主导（established 心跳/短载荷）→ 勿对已建会话做 PPS
+#   · 攻击：近 MTU 大包单峰 → 本机减负；体量清洗走云高防（T7 out of scope）
 #
-# 相对 default-l4：拉长 idle、提高并发；相对旧版「过紧新建」适当放宽 new 余量，
-# 以容纳断线重连潮，同时仍低于 tcp-short-burst 的握手洪泛档。
-# 不写 access：合并时保留节点当前名单
+# 带宽假设（示例）：主机真实出/入口约 3 Mbps；高防口或达约 10 Mbps，
+# 但出口整形/入向 police 应对齐主机 3M，勿按高防 10M 放开。执行面默认 nftables（过滤/限速）+ tc（整形/police）；XDP 不作默认。
+#
+# 长连接特点：高 idle、稳态新建不高，但会出现多客户端同时重连、发布/同步后短暂抖动、
+# 校验口+生产口、TCP+UDP 同业务。策略原则：带宽阀（tc 出/入向）可跟 3M；连接/包率
+# **稳态可偏紧，短时 burst 须留余量**，勿按「极严防扫」一刀切误杀正常重连。
+# 不写 access：合并时保留节点当前运维名单（profile 缺省 access 键不覆盖）
 name: tcp-longlived
 scenario: tcp_longlived
-description: TCP 长连接场景安全策略；按小包主导业务放宽 idle/并发与新建余量，established 先放行
+description: TCP 长连接（低带宽约 3 Mbps）；宽 idle/并发、出口/入向 3mbit；新建/UDP 稳态偏紧但 burst 留重连余量
 
 defaults:
   default_upstream_tcp_port: 7777
   default_upstream_udp_port: 7778
-  # 稀疏小包心跳下会话仍存活；过短 idle 会误杀长连（T3）
+  # 稀疏心跳下会话仍存活；过短 idle 会误杀长连
   tcp_idle_timeout: 14400s
-  udp_idle_timeout: 120s
+  udp_idle_timeout: 180s
+  # 稳态新建不高，但重连潮需要一点 pending 缓冲
   max_pending_requests: 1024
   health_check:
-    timeout: 2s
-    interval: 10s
+    # 薄链路略放宽超时、拉长间隔，减少探测占用
+    timeout: 3s
+    interval: 15s
     unhealthy_threshold: 3
     healthy_threshold: 2
 
 security:
   protections:
-    # 仅 ct state new；小包业务 PPS 走 established，不受本条限制
+    # 仅 ct state new；小包业务走 established，不受本条限制。
+    # 每 IP：稳态低于 default-l4；burst 覆盖 NAT 多客户端短时重连（校验+生产口）
     - id: firewall_new_conn_limit
       type: firewall_new_conn_limit
       enabled: true
       params:
-        tcp_per_ip: 40/second
+        tcp_per_ip: 20/second
         burst: 80
+    # 本机 listener 令牌桶（每转发入口独立）；对齐薄链路稳态，burst 覆盖发布后重连潮
     - id: gateway_new_conn_limit
       type: gateway_new_conn_limit
       enabled: true
       params:
-        per_sec: 150
-        burst: 300
-    # 长连接并发槽位；调高后请核对 Prometheus EnvoyConnectionsNearLimit（约 80%）
+        per_sec: 80
+        burst: 160
+    # 长连接 idle 占槽位为主；宽并发（勿无依据砍太狠），不按突发吞吐堆高
     - id: gateway_conn_limit
       type: gateway_conn_limit
       enabled: true
       params:
         max_connections: 4096
+    # UDP 小包/心跳：按 3M 估算 PPS 上限并留余量（约 250×100B ≈ 0.2Mbps/IP），勿低到心跳打满
     - id: firewall_udp_limit
       type: firewall_udp_limit
       enabled: true
       params:
-        udp_pps_per_ip: 500/second
-        udp_burst: 1000
+        udp_pps_per_ip: 250/second
+        udp_burst: 500
+    # 口级出口整形（tc）；过滤仍主要 nft。device 空=探测默认路由口；rate 对齐主机约 3mbit
+    - id: nic_egress_shape
+      type: nic_egress_shape
+      enabled: true
+      params:
+        device: ""
+        rate: 3mbit
+    # 口级入向 police（tc ingress）；管入向带宽，不替代高防；大包洪水主防仍在高防
+    - id: nic_ingress_police
+      type: nic_ingress_police
+      enabled: true
+      params:
+        device: ""
+        rate: 3mbit

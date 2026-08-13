@@ -19,7 +19,7 @@ func TestResolveCanaryPortsPrefersValidationThenProduction(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := &resources.Resources{
-		Meta: resources.Meta{GatewayName: "gw"},
+		Gateway: resources.Gateway{Name: "gw"},
 		Upstreams: []resources.Upstream{
 			{Name: "server-01", Address: "10.0.0.11", TCP: resources.ProtoPortOf(7777), Enabled: true},
 		},
@@ -61,7 +61,7 @@ func TestResolveCanaryPortsNoEnabledEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := &resources.Resources{
-		Meta: resources.Meta{GatewayName: "gw"},
+		Gateway: resources.Gateway{Name: "gw"},
 		Upstreams: []resources.Upstream{
 			{Name: "server-01", Address: "10.0.0.11", TCP: resources.ProtoPortOf(7777), Enabled: true},
 		},

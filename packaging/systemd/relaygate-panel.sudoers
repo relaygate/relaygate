@@ -1,5 +1,5 @@
 # Allow relaygate user to run ONLY the privileged helper (no shell, no docker.sock).
 # Installed as /etc/sudoers.d/relaygate-panel (mode 0440).
-# Helper itself whitelists subcommands: reload | firewall-check | firewall-apply | rollback.
+# Helper itself whitelists subcommands: reload | firewall-check | firewall-apply | kernel-harden-apply | nic-shape-apply | rollback.
 # Defaults: no password; do not grant NOPASSWD for arbitrary binaries.
 relaygate ALL=(root) NOPASSWD: /usr/local/libexec/relaygate/apply

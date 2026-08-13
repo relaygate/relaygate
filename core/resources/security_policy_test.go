@@ -100,6 +100,8 @@ func TestPolicyApplySurfaces(t *testing.T) {
 		{"security.access", false, true},
 		{"security.access.enabled", false, true},
 		{"security.protections.kernel_syn", false, false},
+		{"security.protections.nic_egress_shape", false, false},
+		{"security.protections.nic_ingress_police", false, false},
 	}
 	for _, c := range cases {
 		r, f := PolicyApplySurfaces(c.field)

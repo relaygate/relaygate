@@ -6,6 +6,19 @@
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-08-14
+
+### Added
+
+- 网卡域：`nic_egress_shape`（tc **出口**整形）与 `nic_ingress_police`（tc **入向** police；params `device`/`rate`）；CLI `security apply-nic --verify` 可同时落地已启用的 `nic_*`；agent AfterPull 顺序内核→网卡（egress+ingress）→防火墙→网关；主控 `PANEL_ENABLED=1` 默认不自动 apply；文档明确不替代高防、手动回滚 root/ingress qdisc
+- 机群单节点同步：Panel 节点行「同步」/ `relaygate fleet sync <name>` / `POST /api/ops/fleet/sync`；心跳返回 `pull_now`，仅该节点立即拉取落地（无全局广播）
+
+### Changed
+
+- **破坏性：** 删除 `meta.gateway_name`（无双读）。节点身份只认 `GATEWAY_NAME` env 与（可选）`gateway.name`；机群发布继续剥离 `gateway.name` / `public_ip`。升级后请重新发布机群包；节点本机用安装 env 承接身份。旧 YAML 中的 `meta.gateway_name` 被忽略。
+- `tcp-longlived` 场景按低带宽主机（约 3 Mbps）收紧新建/UDP、宽 idle/并发，并默认启用口级出/入向 `3mbit`；其余场景显式保留 `nic_*` 关闭；文档与预览对齐四域落地顺序
+- 机群页强调逐台同步；发布仅提升 desired 版本；废除全局一键 sync 产品路径保持不变
+
 ## [0.1.13] - 2026-08-13
 
 ### Added

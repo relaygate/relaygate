@@ -4,7 +4,7 @@
 
 **产品边界（out of scope）：** 外部 **RLS / Redis 全局限速**；**带宽型 DDoS** 以云清洗为主。
 
-**Long-lived TCP：** 主机与 Envoy 限速仅针对 **新建连接（ct state new / local_ratelimit）**；**established** 须先放行，禁止对整会话做 PPS 限速。场景档位见 `packaging/profiles/tcp-longlived.yaml`（按小包主导业务放宽 idle/并发；流量对照 [packet-size-traffic-analysis.md](../../docs/packet-size-traffic-analysis.md)）。
+**Long-lived TCP：** 主机与 Envoy 限速仅针对 **新建连接（ct state new / local_ratelimit）**；**established** 须先放行，禁止对整会话做 PPS 限速。场景档位见 `packaging/profiles/tcp-longlived.yaml`（低带宽约 3 Mbps：宽 idle/并发、出口/入向 3mbit；新建/UDP 稳态偏紧但 burst 留重连余量，防误杀；流量对照 [packet-size-traffic-analysis.md](../../docs/packet-size-traffic-analysis.md)）。
 
 ---
 
@@ -15,6 +15,10 @@
 | ID | 中文名 | English | Threat | 领域 | 生效方式 |
 |----|--------|---------|--------|------|----------|
 | `kernel_syn` | SYN 洪泛加固 | SYN flood hardening | T1 | 内核 | `relaygate security apply-kernel --verify` |
+| `nic_egress_shape` | 网卡出口整形 | NIC egress shaping | T7 | 网卡 | `relaygate security apply-nic --verify` |
+| `nic_ingress_police` | 网卡入向限速 | NIC ingress police | T7 | 网卡 | `relaygate security apply-nic --verify` |
+
+> 网卡域：tc **出口**整形 + **入向** police；过滤仍主要 nft。无 XDP。入向 police 管入向带宽减负，**不替代**高防；大包洪水主防仍在高防。关闭策略不自动删除 qdisc/police，回滚见 [README.md](README.md#网卡整形--入向限速apply-nic运维)。
 | `firewall_new_conn_limit` | 防火墙新建连接限速 | Firewall new-connection rate limit | T1, T4 | 防火墙 | `firewall apply` |
 | `gateway_new_conn_limit` | 网关新建连接限速 | Gateway new-connection rate limit | T1, T4 | 网关 | `reload` |
 | `gateway_conn_limit` | 并发连接上限 | Connection limit | T2 | 网关 | `reload` |

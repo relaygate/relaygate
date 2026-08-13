@@ -55,10 +55,10 @@ func setupMinimalRoot(root string, xdsEnabled bool) {
 	_ = os.WriteFile(filepath.Join(root, "packaging", "compose.yaml"), []byte("services: {}"), 0o644)
 	res := `# minimal
 meta:
-  gateway_name: gw-test
   admin_port: 9901
   admin_address: 127.0.0.1
 gateway:
+  name: gw-test
   listen_address: 0.0.0.0
 defaults:
   max_connections: 100

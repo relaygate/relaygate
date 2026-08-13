@@ -22,6 +22,8 @@ var policyParamKnownKeys = map[string]struct{}{
 	"tcp_synack_retries":    {},
 	"tcp_syn_retries":       {},
 	"tcp_abort_on_overflow": {},
+	"device":                {},
+	"rate":                  {},
 }
 
 // IsZero reports whether p has no known fields and no Extra (for yaml omitempty).
@@ -37,6 +39,8 @@ func (p PolicyParams) IsZero() bool {
 		p.TcpSynackRetries == 0 &&
 		p.TcpSynRetries == 0 &&
 		p.TcpAbortOnOverflow == 0 &&
+		p.Device == "" &&
+		p.Rate == "" &&
 		len(p.Extra) == 0
 }
 
@@ -154,6 +158,18 @@ func (p *PolicyParams) fromMap(raw map[string]any) error {
 				return fmt.Errorf("params.%s: %w", k, err)
 			}
 			out.TcpAbortOnOverflow = n
+		case "device":
+			s, err := asString(v)
+			if err != nil {
+				return fmt.Errorf("params.%s: %w", k, err)
+			}
+			out.Device = s
+		case "rate":
+			s, err := asString(v)
+			if err != nil {
+				return fmt.Errorf("params.%s: %w", k, err)
+			}
+			out.Rate = s
 		}
 	}
 	if len(extra) > 0 {
@@ -197,6 +213,12 @@ func (p PolicyParams) toMap() map[string]any {
 	}
 	if p.TcpAbortOnOverflow != 0 {
 		m["tcp_abort_on_overflow"] = p.TcpAbortOnOverflow
+	}
+	if p.Device != "" {
+		m["device"] = p.Device
+	}
+	if p.Rate != "" {
+		m["rate"] = p.Rate
 	}
 	// Extra merges after known keys and never overrides them.
 	for k, v := range p.Extra {

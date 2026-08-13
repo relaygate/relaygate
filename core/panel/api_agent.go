@@ -22,7 +22,8 @@ func (s *Server) apiAgentConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := bearerToken(r)
-	if _, err := agent.LookupByToken(s.cfg.Root, token); err != nil {
+	node, err := agent.LookupByToken(s.cfg.Root, token)
+	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "未授权的代理令牌"})
 		return
 	}
@@ -31,6 +32,8 @@ func (s *Server) apiAgentConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 404, map[string]any{"error": err.Error()})
 		return
 	}
+	// Successful config fetch clears a pending per-node sync mark.
+	_ = agent.ClearSyncRequest(s.cfg.Root, node.Name)
 	writeJSON(w, 200, map[string]any{
 		"version":        ver,
 		"resources_yaml": string(data),
@@ -56,5 +59,6 @@ func (s *Server) apiAgentHeartbeat(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true})
+	pullNow, _ := agent.HasSyncRequest(s.cfg.Root, node.Name)
+	writeJSON(w, 200, map[string]any{"ok": true, "pull_now": pullNow})
 }

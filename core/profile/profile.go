@@ -152,6 +152,12 @@ func mergePolicyParams(dst *resources.PolicyParams, src resources.PolicyParams, 
 		if src.UDPBurst > 0 {
 			dst.UDPBurst = src.UDPBurst
 		}
+	case resources.PolicyNICEgressShape, resources.PolicyNICIngressPolice:
+		// Allow clearing device to "" (auto) when profile sets the key via typed field.
+		dst.Device = src.Device
+		if src.Rate != "" {
+			dst.Rate = src.Rate
+		}
 	}
 	resources.MergePolicyParamsExtra(dst, src)
 }

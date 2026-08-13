@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
-import { EyeIcon, PlusIcon, ShieldPlusIcon } from "lucide-react"
+import { EyeIcon, PlusIcon, ShieldPlusIcon, Trash2Icon } from "lucide-react"
 
 import { EmptyState } from "@/components/layout/EmptyState"
 import { Page, PageHeader } from "@/components/layout/PageParts"
@@ -44,16 +44,17 @@ import {
   cloneSecurityState,
   findInvalidAllowlistEntry,
   normalizeAllowlistEntries,
+  paramsToRows,
   parseAllowlistLines,
-  parsePolicyParamsJson,
   parseSecurityPolicies,
   patchSecurityPolicies,
   policiesEqual,
   policyLayer,
+  rowsToParams,
   securityFromMerge,
-  stringifyPolicyParams,
   validateAccess,
   SECURITY_LOCAL_SOURCE,
+  type PolicyParamRow,
   type SecurityPolicy,
   type SecurityPolicyId,
   type SecurityState,
@@ -83,9 +84,9 @@ export function SecurityPage() {
   const [previewing, setPreviewing] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
   const [addSelected, setAddSelected] = useState<SecurityPolicyId | null>(null)
-  /** Local JSON text per protection id (open params editor). */
-  const [paramsText, setParamsText] = useState<Record<string, string>>({})
-  const [paramsInvalid, setParamsInvalid] = useState<Record<string, boolean>>({})
+  /** Local key/value rows per protection id (not JSON text). */
+  const [paramsRows, setParamsRows] = useState<Record<string, PolicyParamRow[]>>({})
+  const [paramsDup, setParamsDup] = useState<Record<string, string | null>>({})
 
   const dirty = useMemo(
     () =>
@@ -101,14 +102,14 @@ export function SecurityPage() {
   )
 
   function syncParamsEditors(state: SecurityState) {
-    const texts: Record<string, string> = {}
-    const invalid: Record<string, boolean> = {}
+    const rows: Record<string, PolicyParamRow[]> = {}
+    const dups: Record<string, string | null> = {}
     for (const p of state.protections) {
-      texts[p.id] = stringifyPolicyParams(p.params)
-      invalid[p.id] = false
+      rows[p.id] = paramsToRows(p.params)
+      dups[p.id] = null
     }
-    setParamsText(texts)
-    setParamsInvalid(invalid)
+    setParamsRows(rows)
+    setParamsDup(dups)
   }
 
   const loadSaved = useCallback(async () => {
@@ -185,15 +186,13 @@ export function SecurityPage() {
     setPreviewOpen(false)
   }
 
-  function handleParamsTextChange(id: SecurityPolicyId, text: string) {
-    setParamsText((prev) => ({ ...prev, [id]: text }))
-    const parsed = parsePolicyParamsJson(text)
-    if (!parsed) {
-      setParamsInvalid((prev) => ({ ...prev, [id]: true }))
-      return
+  function handleParamsRowsChange(id: SecurityPolicyId, nextRows: PolicyParamRow[]) {
+    setParamsRows((prev) => ({ ...prev, [id]: nextRows }))
+    const { params, duplicateKey } = rowsToParams(nextRows)
+    setParamsDup((prev) => ({ ...prev, [id]: duplicateKey }))
+    if (!duplicateKey) {
+      patchPolicy(id, { params })
     }
-    setParamsInvalid((prev) => ({ ...prev, [id]: false }))
-    patchPolicy(id, { params: parsed })
   }
 
   function openAddModal() {
@@ -216,9 +215,9 @@ export function SecurityPage() {
 
   async function savePolicies() {
     if (!draftPolicies || standby || !dirty) return
-    const badJson = draftPolicies.protections.find((p) => paramsInvalid[p.id])
-    if (badJson) {
-      toast.error(t("security.params_json_invalid"))
+    const badDup = draftPolicies.protections.find((p) => paramsDup[p.id])
+    if (badDup) {
+      toast.error(t("security.params_dup_key", { key: paramsDup[badDup.id] }))
       return
     }
     const nextState: SecurityState = {
@@ -369,24 +368,69 @@ export function SecurityPage() {
     )
   }
 
-  function renderParamsJson(p: SecurityPolicy) {
-    const text = paramsText[p.id] ?? stringifyPolicyParams(p.params)
-    const invalid = Boolean(paramsInvalid[p.id])
+  function renderParamsEditor(p: SecurityPolicy) {
+    const rows = paramsRows[p.id] ?? paramsToRows(p.params)
+    const dup = paramsDup[p.id]
+    const disabled = standby || saving || !p.enabled
     return (
-      <Field className="mt-2" data-invalid={invalid ? true : undefined}>
-        <FieldLabel htmlFor={`sec-params-${p.id}`}>{t("security.params_json_label")}</FieldLabel>
-        <FieldDescription>{t("security.params_json_hint")}</FieldDescription>
-        <Textarea
-          id={`sec-params-${p.id}`}
-          value={text}
-          disabled={standby || saving || !p.enabled}
-          className="min-h-28 font-mono text-xs"
-          aria-invalid={invalid ? true : undefined}
-          spellCheck={false}
-          onChange={(e) => handleParamsTextChange(p.id, e.target.value)}
-        />
-        {invalid ? <FieldError>{t("security.params_json_invalid")}</FieldError> : null}
-      </Field>
+      <div className="mt-2 space-y-2" data-invalid={dup ? true : undefined}>
+        {rows.map((row, idx) => (
+          <div key={`${p.id}-${idx}`} className="flex items-center gap-2">
+            <Input
+              value={row.key}
+              disabled={disabled}
+              spellCheck={false}
+              className="font-mono text-xs"
+              aria-label="key"
+              onChange={(e) => {
+                const next = rows.map((r, i) =>
+                  i === idx ? { ...r, key: e.target.value } : r,
+                )
+                handleParamsRowsChange(p.id, next)
+              }}
+            />
+            <Input
+              value={row.value}
+              disabled={disabled}
+              spellCheck={false}
+              className="font-mono text-xs"
+              aria-label="value"
+              onChange={(e) => {
+                const next = rows.map((r, i) =>
+                  i === idx ? { ...r, value: e.target.value } : r,
+                )
+                handleParamsRowsChange(p.id, next)
+              }}
+            />
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              disabled={disabled}
+              aria-label="remove"
+              onClick={() => {
+                handleParamsRowsChange(
+                  p.id,
+                  rows.filter((_, i) => i !== idx),
+                )
+              }}
+            >
+              <Trash2Icon />
+            </Button>
+          </div>
+        ))}
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="self-start"
+          disabled={disabled}
+          onClick={() => handleParamsRowsChange(p.id, [...rows, { key: "", value: "" }])}
+        >
+          <PlusIcon data-icon="inline-start" />
+        </Button>
+        {dup ? <FieldError>{t("security.params_dup_key", { key: dup })}</FieldError> : null}
+      </div>
     )
   }
 
@@ -520,7 +564,7 @@ export function SecurityPage() {
                   aria-label={t(`security.policy.${p.id}`)}
                 />
               </div>
-              {renderParamsJson(p)}
+              {renderParamsEditor(p)}
             </li>
           ))}
         </ul>

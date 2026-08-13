@@ -9,7 +9,7 @@ import (
 func TestRenderBootstrapMinimal(t *testing.T) {
 	t.Parallel()
 	r := testResources()
-	r.Meta.GatewayName = "gateway-01"
+	r.Gateway.Name = "gateway-01"
 
 	cfg, err := RenderBootstrap(r, BootstrapOptions{XDSPort: 18000})
 	if err != nil {
@@ -55,15 +55,14 @@ func TestRenderBootstrapMinimal(t *testing.T) {
 func TestBootstrapOptionsFromEnvPrefersLocalName(t *testing.T) {
 	t.Parallel()
 	r := testResources()
-	r.Meta.GatewayName = "gateway-01"
 	r.Gateway.Name = "gateway-01"
 	opt := BootstrapOptionsFromEnv("gateway-03", "18000", r)
 	if opt.NodeID != "gateway-03" || opt.NodeCluster != "gateway-03" {
-		t.Fatalf("local GATEWAY_NAME must win over fleet meta: %+v", opt)
+		t.Fatalf("local GATEWAY_NAME must win over fleet gateway.name: %+v", opt)
 	}
 	opt2 := BootstrapOptionsFromEnv("", "18000", r)
 	if opt2.NodeID != "gateway-01" {
-		t.Fatalf("empty env should fall back to meta: %+v", opt2)
+		t.Fatalf("empty env should fall back to gateway.name: %+v", opt2)
 	}
 }
 

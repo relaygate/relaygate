@@ -15,7 +15,6 @@ const minimalFleetResources = `meta:
   envoy_image: envoyproxy/envoy:v1.39.0
   admin_port: 9901
   admin_address: 127.0.0.1
-  gateway_name: gateway-01
 gateway:
   name: gateway-01
   public_ip: 203.0.113.10
@@ -75,7 +74,7 @@ func TestPublishJoinLeaveStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(body), "gateway_name: gateway-01") || strings.Contains(string(body), "name: gateway-01") {
+	if strings.Contains(string(body), "name: gateway-01") {
 		t.Fatalf("published package must strip control host identity:\n%s", body)
 	}
 	if !strings.Contains(string(body), "server-01") {
@@ -195,13 +194,13 @@ func TestPullDoesNotMarkAppliedUntilMarkApplied(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(resBody), "gateway_name: gateway-03") {
+	if !strings.Contains(string(resBody), "name: gateway-03") {
 		t.Fatalf("local identity not applied:\n%s", resBody)
 	}
 	if !strings.Contains(string(resBody), "public_ip: 203.0.113.33") {
 		t.Fatalf("local public_ip not applied:\n%s", resBody)
 	}
-	if strings.Contains(string(resBody), "gateway_name: gateway-01") || strings.Contains(string(resBody), "public_ip: 203.0.113.10") {
+	if strings.Contains(string(resBody), "name: gateway-01") || strings.Contains(string(resBody), "public_ip: 203.0.113.10") {
 		t.Fatalf("control identity leaked into node resources:\n%s", resBody)
 	}
 	if err := MarkApplied(root, ver); err != nil {
@@ -306,4 +305,107 @@ func TestLeaveRejectsControlRole(t *testing.T) {
 	if _, err := LeaveNode(root, "gateway-01"); err == nil {
 		t.Fatal("expected leave control role to fail")
 	}
+}
+
+func TestRequestNodeSyncClearsAfterConfigPull(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("RELAYGATE_DATA_DIR", filepath.Join(root, "data"))
+	data := filepath.Join(root, "data")
+	if err := os.MkdirAll(data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, "resources.yaml"), []byte(minimalFleetResources), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Publish(root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := JoinNode(root, "gateway-02", "http://203.0.113.10:9000"); err != nil {
+		t.Fatal(err)
+	}
+
+	sync, err := RequestNodeSync(root, "gateway-02")
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if sync.Name != "gateway-02" || sync.SyncRequestedAt == "" {
+		t.Fatalf("sync=%+v", sync)
+	}
+	pending, err := HasSyncRequest(root, "gateway-02")
+	if err != nil || !pending {
+		t.Fatalf("pending=%v err=%v", pending, err)
+	}
+	_, nodes, err := BuildStatus(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 1 || !nodes[0].SyncPending {
+		t.Fatalf("status=%+v", nodes)
+	}
+
+	if _, err := RequestNodeSync(root, "missing-node"); err == nil {
+		t.Fatal("expected missing node to fail")
+	}
+
+	reg, err := LoadRegistry(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg.Nodes = append(reg.Nodes, Node{Name: "control-host", Role: RoleControl})
+	if err := saveRegistry(root, reg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RequestNodeSync(root, "control-host"); err == nil {
+		t.Fatal("expected sync control role to fail")
+	}
+
+	if err := ClearSyncRequest(root, "gateway-02"); err != nil {
+		t.Fatal(err)
+	}
+	pending, err = HasSyncRequest(root, "gateway-02")
+	if err != nil || pending {
+		t.Fatalf("after clear pending=%v err=%v", pending, err)
+	}
+}
+
+func TestHeartbeatPullNowRoundTrip(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("RELAYGATE_DATA_DIR", filepath.Join(root, "data"))
+	data := filepath.Join(root, "data")
+	if err := os.MkdirAll(data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	join, err := JoinNode(root, "gateway-04", "http://127.0.0.1:9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RequestNodeSync(root, "gateway-04"); err != nil {
+		t.Fatal(err)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/agent/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+		pullNow, _ := HasSyncRequest(root, "gateway-04")
+		_ = RecordHeartbeat(root, "gateway-04", "")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"pull_now":` + boolJSON(pullNow) + `}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := &Client{ControlURL: srv.URL, Token: join.Token, HTTP: srv.Client()}
+	pullNow, err := client.Heartbeat("")
+	if err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
+	if !pullNow {
+		t.Fatal("expected pull_now")
+	}
+}
+
+func boolJSON(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
 }

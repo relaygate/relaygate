@@ -28,7 +28,6 @@ type Resources struct {
 }
 
 type Meta struct {
-	GatewayName  string `yaml:"gateway_name"`
 	ServiceName  string `yaml:"service_name"`
 	EnvoyImage   string `yaml:"envoy_image"`
 	AdminPort    int    `yaml:"admin_port"`

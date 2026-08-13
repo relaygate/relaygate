@@ -159,10 +159,10 @@ func TestChangeSummaryClassify(t *testing.T) {
 func TestDiffMetaHardReload(t *testing.T) {
 	t.Parallel()
 	before := &Resources{
-		Meta: Meta{AdminPort: 9901, AdminAddress: "127.0.0.1", EnvoyImage: "envoy:v1"},
+		Meta: Meta{AdminPort: 9901, AdminAddress: "127.0.0.1", EnvoyImage: "envoy:v1", ServiceName: "relay"},
 	}
 	after := &Resources{
-		Meta: Meta{AdminPort: 9902, AdminAddress: "127.0.0.1", EnvoyImage: "envoy:v1", GatewayName: "gw"},
+		Meta: Meta{AdminPort: 9902, AdminAddress: "127.0.0.1", EnvoyImage: "envoy:v1", ServiceName: "relay"},
 	}
 	sum := Diff(before, after)
 	if len(sum.MetaChanged) != 1 || sum.MetaChanged[0] != "admin_port 9901→9902" {
@@ -174,9 +174,9 @@ func TestDiffMetaHardReload(t *testing.T) {
 	}
 
 	after2 := &Resources{Meta: before.Meta}
-	after2.Meta.GatewayName = "renamed"
+	after2.Meta.ServiceName = "renamed"
 	sum2 := Diff(before, after2)
 	if len(sum2.MetaChanged) != 0 {
-		t.Fatalf("gateway_name should not appear in MetaChanged: %v", sum2.MetaChanged)
+		t.Fatalf("service_name should not appear in MetaChanged: %v", sum2.MetaChanged)
 	}
 }

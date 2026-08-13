@@ -22,8 +22,8 @@
 ## 稳态数据流
 
 1. 主控编辑业务配置并（建议）先本机应用
-2. **发布到机群**（确认「确认」/`Confirm`）
-3. 节点 Agent 拉取 → 落盘 → 本机 HotApply
+2. **`relaygate fleet publish`**（确认「确认」/`Confirm`；Panel 不提供全机群发布按钮）
+3. 节点 Agent 拉取 → 落盘 → 本机 HotApply；需立刻对齐某台时用机群页「同步」或 `fleet sync <name>`
 4. Envoy 只连本机 loopback ADS（`127.0.0.1`），不指远程主控
 
 配置变更与流量伸缩解耦：NLB/TG 增删目标由人工或 Terraform 完成。

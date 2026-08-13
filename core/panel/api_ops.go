@@ -84,6 +84,7 @@ func fleetProductHints() []string {
 	return []string{
 		"relaygate fleet status",
 		"relaygate fleet publish   # 输入 确认 或 Confirm",
+		"relaygate fleet sync <name>  # 单节点立即对齐；输入 确认 或 Confirm",
 		"relaygate fleet join <name>   # 生成一句话安装命令",
 		"relaygate fleet leave <name> # 输入 确认 或 Confirm",
 		"# 安装主控: " + agent.FormatControlInstallCommand(),
@@ -136,7 +137,38 @@ func (s *Server) apiFleetPublish(w http.ResponseWriter, r *http.Request) {
 		"ok":      true,
 		"version": res.Version,
 		"path":    res.Path,
-		"output":  "已发布配置版本 " + res.Version + "。网关节点将自行拉取并对齐。",
+		"output":  "已发布配置版本 " + res.Version + "。网关节点将自行拉取并对齐；可在机群页对单台节点点「同步」立即触发。",
+	})
+}
+
+func (s *Server) apiFleetSync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	var body struct {
+		Confirm string `json:"confirm"`
+		Name    string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, 400, map[string]any{"error": err.Error()})
+		return
+	}
+	if !confirm.Match(body.Confirm) {
+		writeJSON(w, 400, map[string]any{"error": s.t(r, "error.confirm_typed")})
+		return
+	}
+	res, err := agent.RequestNodeSync(s.cfg.Root, body.Name)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	s.appendAudit("fleet.sync", res.Name)
+	writeJSON(w, 200, map[string]any{
+		"ok":                true,
+		"name":              res.Name,
+		"sync_requested_at": res.SyncRequestedAt,
+		"output":            "已标记节点 " + res.Name + " 立即对齐到当前已发布版本；该节点将在下次心跳时拉取并本机落地，不影响其他节点。",
 	})
 }
 
