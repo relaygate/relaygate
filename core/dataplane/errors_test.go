@@ -36,3 +36,10 @@ func TestUserFacingErrorDrainHealthcheck(t *testing.T) {
 		t.Fatalf("ok got %q", ok)
 	}
 }
+
+func TestUserFacingErrorReadOnly(t *testing.T) {
+	got := UserFacingError(errors.New(`open /root/nft-backup.nft: read-only file system`))
+	if !strings.Contains(got, "备份") && !strings.Contains(got, "只读") {
+		t.Fatalf("got %q", got)
+	}
+}

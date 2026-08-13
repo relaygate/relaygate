@@ -132,28 +132,32 @@ func firewallExec(root string, apply bool, skipConfirm bool) error {
 		}
 	}
 
+	backups := config.ResolvePaths(root).Backups
+	if err := os.MkdirAll(backups, 0o755); err != nil {
+		return fmt.Errorf("无法创建防火墙备份目录 %s: %w", backups, err)
+	}
 	stamp := time.Now().Format("20060102-150405")
-	backup := filepath.Join("/root", "nft-backup-"+stamp+".nft")
+	// Under DataDir/backups (not /root): Panel systemd uses ProtectHome=yes, so /root is
+	// read-only even after sudo into the privileged helper (same mount namespace).
+	backup := filepath.Join(backups, "nft-backup-"+stamp+".nft")
 	out, err := RunCmdCapture(root, "nft", "list", "ruleset")
 	if err != nil {
-		return fmt.Errorf("备份 nft ruleset: %w", err)
+		return fmt.Errorf("备份当前防火墙规则失败: %w", err)
 	}
 	if err := os.WriteFile(backup, []byte(out), 0o600); err != nil {
-		return err
+		return fmt.Errorf("无法写入防火墙规则备份（%s）: %w", backup, err)
 	}
 	restore := strings.TrimSuffix(backup, ".nft") + "-restore.sh"
 	script := fmt.Sprintf("#!/usr/bin/env bash\nset -e\nnft -f %q\n", backup)
 	if err := os.WriteFile(restore, []byte(script), 0o700); err != nil {
-		return err
+		return fmt.Errorf("无法写入防火墙恢复脚本（%s）: %w", restore, err)
 	}
-	backups := config.ResolvePaths(root).Backups
-	_ = os.MkdirAll(backups, 0o755)
 	_ = os.WriteFile(filepath.Join(backups, "firewall-latest"), []byte(restore+"\n"), 0o600)
 	fmt.Printf("旧规则备份: %s\n", backup)
 	fmt.Printf("恢复命令: %s\n", restore)
 
 	if err := RunCmd(fwDir, "nft", "-f", filepath.Base(runtimeRuleset)); err != nil {
-		return err
+		return fmt.Errorf("应用防火墙规则失败（nft）: %w", err)
 	}
 	_ = RunCmd(root, "nft", "list", "ruleset")
 	fmt.Printf("请立即新开终端测试 SSH: ssh -p %s root@<公网IP>\n", sshPort)

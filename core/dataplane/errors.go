@@ -42,6 +42,10 @@ func UserFacingError(err error) string {
 		}
 	case strings.Contains(msg, "standby"):
 		return "当前节点为只读，禁止写操作。请到主控执行。"
+	case strings.Contains(low, "read-only file system"):
+		return "无法写入防火墙备份（目录只读）。请确认数据目录可写后重试；不要把备份落到 /root（Panel 加固下该路径只读）。"
+	case strings.Contains(msg, "应用防火墙规则失败"):
+		return "应用防火墙规则失败。请查看下方输出中的 nft 详情，确认规则语法与权限后重试。"
 	case strings.Contains(low, "exit status"):
 		return "操作未成功完成。请查看下方输出或运维日志中的详细信息后重试。"
 	}

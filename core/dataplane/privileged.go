@@ -1,10 +1,12 @@
 package dataplane
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 // maybePrivilegedReexec re-execs via RELAYGATE_PRIVILEGED_HELPER when non-root.
@@ -20,10 +22,21 @@ func maybePrivilegedReexec(stdout, stderr io.Writer, args ...string) (bool, erro
 	}
 	cmd := exec.Command("sudo", append([]string{"-n", helper}, args...)...)
 	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+	var errBuf bytes.Buffer
+	if stderr != nil {
+		cmd.Stderr = io.MultiWriter(stderr, &errBuf)
+	} else {
+		cmd.Stderr = &errBuf
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Env = os.Environ()
-	return true, cmd.Run()
+	if err := cmd.Run(); err != nil {
+		if detail := strings.TrimSpace(errBuf.String()); detail != "" {
+			return true, fmt.Errorf("%s: %w", detail, err)
+		}
+		return true, err
+	}
+	return true, nil
 }
 
 // errNeedRootOrHelper is returned when an op requires root and no helper is configured.

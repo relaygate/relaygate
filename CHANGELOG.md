@@ -6,6 +6,13 @@
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-08-14
+
+### Fixed
+
+- 防火墙 apply：nft 规则备份从硬编码 `/root` 改为 `DataDir/backups`。Panel 在 `ProtectHome=yes` 下即便经 sudo helper 提升，`/root` 仍为只读，原先会报 `read-only file system` 且对外只剩 `exit status 1`
+- 特权 helper 失败时把 stderr 并入错误，避免 Panel 只看到 `exit status 1`
+
 ## [0.1.15] - 2026-08-14
 
 ### Fixed
