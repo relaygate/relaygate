@@ -27,12 +27,12 @@ const (
 
 // Node is one entry in the node registry (nodes.yaml).
 type Node struct {
-	Name         string    `yaml:"name" json:"name"`
-	Role         NodeRole  `yaml:"role" json:"role"`
-	TokenHash    string    `yaml:"token_hash,omitempty" json:"-"`
-	AppliedVer   string    `yaml:"applied_version,omitempty" json:"applied_version,omitempty"`
+	Name          string   `yaml:"name" json:"name"`
+	Role          NodeRole `yaml:"role" json:"role"`
+	TokenHash     string   `yaml:"token_hash,omitempty" json:"-"`
+	AppliedVer    string   `yaml:"applied_version,omitempty" json:"applied_version,omitempty"`
 	LastHeartbeat string   `yaml:"last_heartbeat,omitempty" json:"last_heartbeat,omitempty"`
-	CreatedAt    string    `yaml:"created_at,omitempty" json:"created_at,omitempty"`
+	CreatedAt     string   `yaml:"created_at,omitempty" json:"created_at,omitempty"`
 }
 
 // Registry is the on-disk node name book under DataDir/nodes.yaml.
@@ -144,7 +144,7 @@ func FormatControlInstallCommand() string {
 }
 
 // FormatUpgradeCommand is the one-line upgrade for an existing install.
-// Preserves .env / DataDir; role (Panel vs agent) is taken from the existing .env.
+// Preserves .env / DataDir; install role (control vs node) comes from the existing .env.
 func FormatUpgradeCommand() string {
 	return fmt.Sprintf(
 		"curl -fsSL %s | sudo bash -s -- upgrade",

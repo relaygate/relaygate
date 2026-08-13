@@ -8,21 +8,21 @@ import (
 type AlignStatus string
 
 const (
-	StatusAligned    AlignStatus = "aligned"
-	StatusDrifted    AlignStatus = "drifted"
-	StatusOffline    AlignStatus = "offline"
+	StatusAligned      AlignStatus = "aligned"
+	StatusDrifted      AlignStatus = "drifted"
+	StatusOffline      AlignStatus = "offline"
 	StatusUnauthorized AlignStatus = "unauthorized"
-	StatusUnknown    AlignStatus = "unknown"
+	StatusUnknown      AlignStatus = "unknown"
 )
 
 // NodeStatus is one row for fleet status UI/CLI.
 type NodeStatus struct {
-	Name            string      `json:"name"`
-	Role            NodeRole    `json:"role"`
-	Status          AlignStatus `json:"status"`
-	AppliedVersion  string      `json:"applied_version,omitempty"`
-	PublishedVersion string     `json:"published_version,omitempty"`
-	LastHeartbeat   string      `json:"last_heartbeat,omitempty"`
+	Name             string      `json:"name"`
+	Role             NodeRole    `json:"role"`
+	Status           AlignStatus `json:"status"`
+	AppliedVersion   string      `json:"applied_version,omitempty"`
+	PublishedVersion string      `json:"published_version,omitempty"`
+	LastHeartbeat    string      `json:"last_heartbeat,omitempty"`
 }
 
 // OfflineAfter is how long without heartbeat before a node is offline.

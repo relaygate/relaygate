@@ -15,13 +15,13 @@ func TestChangeSummaryClassify(t *testing.T) {
 	}{
 		{name: "empty", summary: ChangeSummary{}},
 		{
-			name:    "acl only",
-			summary: ChangeSummary{ACLChanged: []string{"+deny 1.2.3.4/32"}},
+			name:    "source allowlist only",
+			summary: ChangeSummary{SecurityChanged: []string{"+deny 1.2.3.4/32"}},
 			wantFW:  true,
 		},
 		{
-			name:    "nftables defaults only",
-			summary: ChangeSummary{DefaultsChanged: []string{"nftables.tcp_new_conn_per_ip 30/second→60/second"}},
+			name:    "security policy nft params firewall only",
+			summary: ChangeSummary{SecurityChanged: []string{"security.policies.firewall_new_conn_limit.params.tcp_per_ip 30/second→60/second"}},
 			wantFW:  true,
 		},
 		{
@@ -32,7 +32,7 @@ func TestChangeSummaryClassify(t *testing.T) {
 		},
 		{
 			name:       "server change",
-			summary:    ChangeSummary{ServersChanged: []string{"server-01: address a→b"}},
+			summary:    ChangeSummary{UpstreamsChanged: []string{"server-01: address a→b"}},
 			wantReload: true,
 			wantHot:    true,
 		},
@@ -45,29 +45,29 @@ func TestChangeSummaryClassify(t *testing.T) {
 		},
 		{
 			name:       "enabled rule added both",
-			summary:    ChangeSummary{RulesAdded: []string{"forward-a (prod TCP/10001 → server-01, enabled)"}},
+			summary:    ChangeSummary{ForwardsAdded: []string{"forward-a (prod TCP/10001 → server-01, enabled)"}},
 			wantReload: true,
 			wantFW:     true,
 			wantHot:    true,
 		},
 		{
 			name:       "disabled rule added reload only",
-			summary:    ChangeSummary{RulesAdded: []string{"forward-a (prod TCP/10001 → server-01, disabled)"}},
+			summary:    ChangeSummary{ForwardsAdded: []string{"forward-a (prod TCP/10001 → server-01, disabled)"}},
 			wantReload: true,
 			wantHot:    true,
 		},
 		{
 			name:       "rule toggled both",
-			summary:    ChangeSummary{RulesToggled: []string{"forward-a off→on"}},
+			summary:    ChangeSummary{ForwardsToggled: []string{"forward-a off→on"}},
 			wantReload: true,
 			wantFW:     true,
 			wantHot:    true,
 		},
 		{
-			name: "mixed acl and server",
+			name: "mixed allowlist and upstream",
 			summary: ChangeSummary{
-				ServersAdded: []string{"server-02"},
-				ACLChanged:   []string{"+allow 10.0.0.0/8"},
+				UpstreamsAdded:    []string{"server-02"},
+				SecurityChanged: []string{"+allow 10.0.0.0/8"},
 			},
 			wantReload: true,
 			wantFW:     true,
@@ -76,11 +76,8 @@ func TestChangeSummaryClassify(t *testing.T) {
 		{
 			name: "first snapshot summarizeDefaults",
 			summary: ChangeSummary{
-				DefaultsChanged: []string{"tcp_rl=100/20 max_conn=1000 nftables.tcp=30/second nftables.udp=500/second"},
+				DefaultsChanged: []string{"tcp_idle=3600s udp_idle=120s"},
 			},
-			wantReload: true,
-			wantFW:     true,
-			wantHot:    true,
 		},
 		{
 			name: "admin_port hard only",
@@ -101,11 +98,21 @@ func TestChangeSummaryClassify(t *testing.T) {
 		{
 			name: "server plus admin_port forces hard",
 			summary: ChangeSummary{
-				ServersChanged: []string{"server-01: address a→b"},
+				UpstreamsChanged: []string{"server-01: address a→b"},
 				MetaChanged:    []string{"admin_address 127.0.0.1→0.0.0.0"},
 			},
 			wantReload: true,
 			wantHard:   true,
+		},
+		{
+			name:    "security policy nft disabled firewall only",
+			summary: ChangeSummary{SecurityChanged: []string{"security.policies.firewall_new_conn_limit.enabled true→false"}},
+			wantFW:  true,
+		},
+		{
+			name:    "security policy allowlist firewall only",
+			summary: ChangeSummary{SecurityChanged: []string{"security.policies.allowlist.enabled true→false"}},
+			wantFW:  true,
 		},
 	}
 
@@ -140,7 +147,6 @@ func TestDiffMetaHardReload(t *testing.T) {
 		t.Fatalf("Classify()=%+v", plan)
 	}
 
-	// gateway_name alone must not force hard reload
 	after2 := &Resources{Meta: before.Meta}
 	after2.Meta.GatewayName = "renamed"
 	sum2 := Diff(before, after2)

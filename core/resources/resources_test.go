@@ -7,17 +7,18 @@ import (
 
 func sampleResources() *Resources {
 	return &Resources{
-		Servers: []Server{
+		Security: DefaultSecurity(),
+		Upstreams: []Upstream{
 			{Name: "server-01", Address: "10.0.0.11", TCP: ProtoPortOf(7777), UDP: ProtoPortOf(7778), Enabled: true},
 			{Name: "server-02", Address: "10.0.0.12", TCP: ProtoPortOf(7777), UDP: ProtoPortOf(7778), Enabled: true},
 		},
-		Rules: []Rule{
-			{Name: "forward-server-01-validation-tcp", Entry: "validation", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
-			{Name: "forward-server-01-validation-udp", Entry: "validation", Server: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
-			{Name: "forward-server-01-production-tcp", Entry: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
-			{Name: "forward-server-01-production-udp", Entry: "production", Server: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
-			{Name: "forward-server-02-production-tcp", Entry: "production", Server: "server-02", Protocol: "TCP", ListenPort: 10002, Enabled: false},
-			{Name: "forward-server-02-production-udp", Entry: "production", Server: "server-02", Protocol: "UDP", ListenPort: 10002, Enabled: false},
+		Forwards: []Forward{
+			{Name: "forward-server-01-validation-tcp", Entry: "validation", Upstream: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
+			{Name: "forward-server-01-validation-udp", Entry: "validation", Upstream: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
+			{Name: "forward-server-01-production-tcp", Entry: "production", Upstream: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
+			{Name: "forward-server-01-production-udp", Entry: "production", Upstream: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
+			{Name: "forward-server-02-production-tcp", Entry: "production", Upstream: "server-02", Protocol: "TCP", ListenPort: 10002, Enabled: false},
+			{Name: "forward-server-02-production-udp", Entry: "production", Upstream: "server-02", Protocol: "UDP", ListenPort: 10002, Enabled: false},
 		},
 	}
 }
@@ -32,48 +33,48 @@ func TestForwardName(t *testing.T) {
 	}
 }
 
-func TestAddServerUpstreamOnly(t *testing.T) {
+func TestAddUpstreamUpstreamOnly(t *testing.T) {
 	r := sampleResources()
-	rulesBefore := len(r.Rules)
-	err := r.AddServer(Server{
+	rulesBefore := len(r.Forwards)
+	err := r.AddUpstream(Upstream{
 		Name: "server-11", Address: "10.0.0.21",
 		TCP: ProtoPortOf(7777), UDP: ProtoPortOf(7778), Enabled: true,
 	})
 	if err != nil {
-		t.Fatalf("AddServer: %v", err)
+		t.Fatalf("AddUpstream: %v", err)
 	}
-	if len(r.Servers) != 3 {
-		t.Fatalf("servers len=%d", len(r.Servers))
+	if len(r.Upstreams) != 3 {
+		t.Fatalf("upstreams len=%d", len(r.Upstreams))
 	}
-	if len(r.Rules) != rulesBefore {
-		t.Fatalf("AddServer must not create rules; rules=%d want %d", len(r.Rules), rulesBefore)
+	if len(r.Forwards) != rulesBefore {
+		t.Fatalf("AddUpstream must not create rules; forwards=%d want %d", len(r.Forwards), rulesBefore)
 	}
 }
 
 func TestAddEntriesValidationAndProduction(t *testing.T) {
 	r := sampleResources()
-	if err := r.AddServer(Server{
+	if err := r.AddUpstream(Upstream{
 		Name: "server-14", Address: "10.0.0.24",
 		TCP: ProtoPortOf(7777), UDP: ProtoPortOf(7778), Enabled: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	created, err := r.AddEntries(AddEntryOptions{
-		Server: "server-14", Entry: EntryValidation, Protocols: []string{"TCP", "UDP"},
+		Upstream: "server-14", Entry: EntryValidation, Protocols: []string{"TCP", "UDP"},
 	})
 	if err != nil {
 		t.Fatalf("AddEntries validation: %v", err)
 	}
 	if len(created) != 2 {
-		t.Fatalf("expected 2 validation rules, got %d", len(created))
+		t.Fatalf("expected 2 validation forwards, got %d", len(created))
 	}
-	for _, rule := range created {
-		if rule.Entry != EntryValidation || rule.ListenPort != 11014 || !rule.Enabled {
-			t.Fatalf("unexpected validation rule: %+v", rule)
+	for _, fwd := range created {
+		if fwd.Entry != EntryValidation || fwd.ListenPort != 11014 || !fwd.Enabled {
+			t.Fatalf("unexpected validation forward: %+v", fwd)
 		}
 	}
 	prod, err := r.AddEntries(AddEntryOptions{
-		Server: "server-14", Entry: EntryProduction, Protocols: []string{"TCP", "UDP"},
+		Upstream: "server-14", Entry: EntryProduction, Protocols: []string{"TCP", "UDP"},
 	})
 	if err != nil {
 		t.Fatalf("AddEntries production: %v", err)
@@ -81,14 +82,14 @@ func TestAddEntriesValidationAndProduction(t *testing.T) {
 	if len(prod) != 2 {
 		t.Fatalf("expected 2 production, got %d", len(prod))
 	}
-	for _, rule := range prod {
-		if rule.Entry != EntryProduction || rule.ListenPort != 10014 || rule.Enabled {
-			t.Fatalf("unexpected production rule: %+v", rule)
+	for _, fwd := range prod {
+		if fwd.Entry != EntryProduction || fwd.ListenPort != 10014 || fwd.Enabled {
+			t.Fatalf("unexpected production forward: %+v", fwd)
 		}
 	}
 	// Idempotent
 	again, err := r.AddEntries(AddEntryOptions{
-		Server: "server-14", Entry: EntryValidation, Protocols: []string{"TCP"},
+		Upstream: "server-14", Entry: EntryValidation, Protocols: []string{"TCP"},
 	})
 	if err != nil || len(again) != 0 {
 		t.Fatalf("idempotent: %+v err=%v", again, err)
@@ -98,7 +99,7 @@ func TestAddEntriesValidationAndProduction(t *testing.T) {
 func TestAddEntriesRejectsBadProtocols(t *testing.T) {
 	r := sampleResources()
 	_, err := r.AddEntries(AddEntryOptions{
-		Server: "server-01", Entry: EntryProduction, Protocols: []string{"NOPE"},
+		Upstream: "server-01", Entry: EntryProduction, Protocols: []string{"NOPE"},
 	})
 	if err == nil || !strings.Contains(err.Error(), "protocols") {
 		t.Fatalf("expected protocols error, got %v", err)
@@ -121,9 +122,9 @@ func TestPortMapAndCSV(t *testing.T) {
 	}
 }
 
-func TestAddServerRejectsDuplicateName(t *testing.T) {
+func TestAddUpstreamRejectsDuplicateName(t *testing.T) {
 	r := sampleResources()
-	err := r.AddServer(Server{
+	err := r.AddUpstream(Upstream{
 		Name: "server-01", Address: "10.0.0.99",
 		TCP: ProtoPortOf(7777), UDP: ProtoPortOf(7778), Enabled: true,
 	})
@@ -132,42 +133,42 @@ func TestAddServerRejectsDuplicateName(t *testing.T) {
 	}
 }
 
-func TestAddServerRejectsInvalidFields(t *testing.T) {
+func TestAddUpstreamRejectsInvalidFields(t *testing.T) {
 	r := sampleResources()
-	if err := r.AddServer(Server{Name: "", Address: "10.0.0.21", TCP: ProtoPortOf(7777), UDP: ProtoPortOf(7778)}); err == nil {
+	if err := r.AddUpstream(Upstream{Name: "", Address: "10.0.0.21", TCP: ProtoPortOf(7777), UDP: ProtoPortOf(7778)}); err == nil {
 		t.Fatal("expected empty name error")
 	}
-	if err := r.AddServer(Server{Name: "bad name", Address: "10.0.0.21", TCP: ProtoPortOf(7777), UDP: ProtoPortOf(7778)}); err == nil {
+	if err := r.AddUpstream(Upstream{Name: "bad name", Address: "10.0.0.21", TCP: ProtoPortOf(7777), UDP: ProtoPortOf(7778)}); err == nil {
 		t.Fatal("expected invalid name error")
 	}
-	if err := r.AddServer(Server{Name: "server-99", Address: "not-an-ip", TCP: ProtoPortOf(7777), UDP: ProtoPortOf(7778)}); err == nil {
+	if err := r.AddUpstream(Upstream{Name: "server-99", Address: "not-an-ip", TCP: ProtoPortOf(7777), UDP: ProtoPortOf(7778)}); err == nil {
 		t.Fatal("expected invalid address error")
 	}
-	if err := r.AddServer(Server{Name: "server-99", Address: "10.0.0.21", UDP: ProtoPortOf(7778), Enabled: true}); err != nil {
-		t.Fatalf("udp-only AddServer: %v", err)
+	if err := r.AddUpstream(Upstream{Name: "server-99", Address: "10.0.0.21", UDP: ProtoPortOf(7778), Enabled: true}); err != nil {
+		t.Fatalf("udp-only AddUpstream: %v", err)
 	}
-	if r.Servers[len(r.Servers)-1].HasTCP() {
+	if r.Upstreams[len(r.Upstreams)-1].HasTCP() {
 		t.Fatal("expected TCP to stay unset")
 	}
-	if err := r.AddServer(Server{Name: "server-98", Address: "10.0.0.22"}); err == nil {
+	if err := r.AddUpstream(Upstream{Name: "server-98", Address: "10.0.0.22"}); err == nil {
 		t.Fatal("expected port error when no protocols enabled")
 	}
 }
 
 func TestAddEntriesAllocatesNextPortWhenPreferredTaken(t *testing.T) {
 	r := sampleResources()
-	r.Rules = append(r.Rules, Rule{
-		Name: "forward-extra", Entry: "production", Server: "server-02",
+	r.Forwards = append(r.Forwards, Forward{
+		Name: "forward-extra", Entry: "production", Upstream: "server-02",
 		Protocol: "TCP", ListenPort: 10003, Enabled: false,
 	})
-	if err := r.AddServer(Server{
+	if err := r.AddUpstream(Upstream{
 		Name: "server-03", Address: "10.0.0.13",
 		TCP: ProtoPortOf(7777), UDP: ProtoPortOf(7778), Enabled: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	created, err := r.AddEntries(AddEntryOptions{
-		Server: "server-03", Entry: EntryProduction, Protocols: []string{"TCP"},
+		Upstream: "server-03", Entry: EntryProduction, Protocols: []string{"TCP"},
 	})
 	if err != nil {
 		t.Fatalf("AddEntries: %v", err)
@@ -180,38 +181,38 @@ func TestAddEntriesAllocatesNextPortWhenPreferredTaken(t *testing.T) {
 	}
 }
 
-func TestDeleteServerRemovesAssociatedRules(t *testing.T) {
+func TestDeleteUpstreamRemovesAssociatedForwards(t *testing.T) {
 	r := sampleResources()
-	removed, err := r.DeleteServer("server-01")
+	removed, err := r.DeleteUpstream("server-01")
 	if err != nil {
-		t.Fatalf("DeleteServer: %v", err)
+		t.Fatalf("DeleteUpstream: %v", err)
 	}
 	if removed != 4 {
-		t.Fatalf("expected 4 removed rules (2 validation + 2 production), got %d", removed)
+		t.Fatalf("expected 4 removed forwards (2 validation + 2 production), got %d", removed)
 	}
-	if len(r.Servers) != 1 || r.Servers[0].Name != "server-02" {
-		t.Fatalf("unexpected servers: %+v", r.Servers)
+	if len(r.Upstreams) != 1 || r.Upstreams[0].Name != "server-02" {
+		t.Fatalf("unexpected upstreams: %+v", r.Upstreams)
 	}
-	for _, rule := range r.Rules {
-		if rule.Server == "server-01" {
-			t.Fatalf("orphan rule left: %+v", rule)
+	for _, fwd := range r.Forwards {
+		if fwd.Upstream == "server-01" {
+			t.Fatalf("orphan forward left: %+v", fwd)
 		}
 	}
-	if len(r.Rules) != 2 {
-		t.Fatalf("rules len=%d", len(r.Rules))
+	if len(r.Forwards) != 2 {
+		t.Fatalf("forwards len=%d", len(r.Forwards))
 	}
 }
 
 func TestDeleteServerRejectsLastAndMissing(t *testing.T) {
 	r := sampleResources()
-	if _, err := r.DeleteServer("server-01"); err != nil {
+	if _, err := r.DeleteUpstream("server-01"); err != nil {
 		t.Fatalf("first delete: %v", err)
 	}
-	_, err := r.DeleteServer("server-02")
+	_, err := r.DeleteUpstream("server-02")
 	if err == nil || !strings.Contains(err.Error(), "最后一台") {
 		t.Fatalf("expected last-server error, got %v", err)
 	}
-	_, err = r.DeleteServer("missing")
+	_, err = r.DeleteUpstream("missing")
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("expected not found, got %v", err)
 	}
@@ -219,7 +220,7 @@ func TestDeleteServerRejectsLastAndMissing(t *testing.T) {
 
 func TestValidateDetectsDuplicateServerNames(t *testing.T) {
 	r := sampleResources()
-	r.Servers = append(r.Servers, Server{
+	r.Upstreams = append(r.Upstreams, Upstream{
 		Name: "server-01", Address: "10.0.0.99",
 		TCP: ProtoPortOf(7777), UDP: ProtoPortOf(7778), Enabled: true,
 	})
@@ -237,21 +238,21 @@ func TestValidatePassesSample(t *testing.T) {
 
 func TestValidateRejectsUnknownServerOnDisabledRule(t *testing.T) {
 	r := sampleResources()
-	r.Rules = append(r.Rules, Rule{
-		Name: "orphan", Entry: "production", Server: "missing",
+	r.Forwards = append(r.Forwards, Forward{
+		Name: "orphan", Entry: "production", Upstream: "missing",
 		Protocol: "TCP", ListenPort: 12000, Enabled: false,
 	})
 	err := r.Validate()
-	if err == nil || !strings.Contains(err.Error(), "未知 server") {
-		t.Fatalf("expected unknown server error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "未知 upstream") {
+		t.Fatalf("expected unknown upstream error, got %v", err)
 	}
 }
 
 func TestValidateRejectsValidationProductionPortOverlap(t *testing.T) {
 	r := sampleResources()
-	for i := range r.Rules {
-		if r.Rules[i].Name == "forward-server-01-production-tcp" {
-			r.Rules[i].ListenPort = 11001
+	for i := range r.Forwards {
+		if r.Forwards[i].Name == "forward-server-01-production-tcp" {
+			r.Forwards[i].ListenPort = 11001
 		}
 	}
 	err := r.Validate()
@@ -262,7 +263,7 @@ func TestValidateRejectsValidationProductionPortOverlap(t *testing.T) {
 
 func TestValidateRejectsInvalidEntry(t *testing.T) {
 	r := sampleResources()
-	r.Rules[0].Entry = "experimental"
+	r.Forwards[0].Entry = "experimental"
 	err := r.Validate()
 	if err == nil || !strings.Contains(err.Error(), "entry") {
 		t.Fatalf("expected entry error, got %v", err)
@@ -275,7 +276,7 @@ func TestLifecycleStatus(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("rows=%d", len(rows))
 	}
-	var s01 ServerLifecycle
+	var s01 UpstreamLifecycle
 	for _, lc := range rows {
 		if lc.Name == "server-01" {
 			s01 = lc
@@ -293,12 +294,12 @@ func TestLifecycleStatus(t *testing.T) {
 		t.Fatalf("expected no enabled production ports, got tcp=%d udp=%d", ptcp, pudp)
 	}
 	// Enable one production rule and confirm ProductionListenPorts.
-	for i := range r.Rules {
-		if r.Rules[i].Name == "forward-server-01-production-tcp" {
-			r.Rules[i].Enabled = true
+	for i := range r.Forwards {
+		if r.Forwards[i].Name == "forward-server-01-production-tcp" {
+			r.Forwards[i].Enabled = true
 		}
-		if r.Rules[i].Name == "forward-server-01-production-udp" {
-			r.Rules[i].Enabled = true
+		if r.Forwards[i].Name == "forward-server-01-production-udp" {
+			r.Forwards[i].Enabled = true
 		}
 	}
 	ptcp, pudp = r.ProductionListenPorts()
@@ -309,36 +310,36 @@ func TestLifecycleStatus(t *testing.T) {
 
 func TestUpdateServerCascadesDisable(t *testing.T) {
 	r := sampleResources()
-	result, err := r.UpdateServer("server-01", "10.0.0.11", ProtoPortOf(7777), ProtoPortOf(7778), false)
+	result, err := r.UpdateUpstream("server-01", "10.0.0.11", ProtoPortOf(7777), ProtoPortOf(7778), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.CascadedRules < 2 {
-		t.Fatalf("expected cascaded rules, got %d", result.CascadedRules)
+	if result.CascadedForwards < 2 {
+		t.Fatalf("expected cascaded forwards, got %d", result.CascadedForwards)
 	}
-	for _, rule := range r.Rules {
-		if rule.Server == "server-01" && rule.Enabled {
-			t.Fatalf("rule still enabled: %+v", rule)
+	for _, fwd := range r.Forwards {
+		if fwd.Upstream == "server-01" && fwd.Enabled {
+			t.Fatalf("forward still enabled: %+v", fwd)
 		}
 	}
-	if err := r.Validate(); err == nil || !strings.Contains(err.Error(), "没有启用的 rules") {
+	if err := r.Validate(); err == nil || !strings.Contains(err.Error(), "没有启用的 forwards") {
 		// server-02 production is disabled; all enabled were on server-01
 		if err == nil {
-			t.Fatal("expected validate fail with no enabled rules")
+			t.Fatal("expected validate fail with no enabled forwards")
 		}
 	}
 }
 
 func TestEnableProductionCreatesWhenMissing(t *testing.T) {
 	r := &Resources{
-		Servers: []Server{
+		Upstreams: []Upstream{
 			{Name: "server-40", Address: "10.0.0.40", TCP: ProtoPortOf(7777), Enabled: true},
 		},
-		Rules: []Rule{
-			{Name: "forward-server-40-validation-tcp", Entry: "validation", Server: "server-40", Protocol: "TCP", ListenPort: 11040, Enabled: true},
+		Forwards: []Forward{
+			{Name: "forward-server-40-validation-tcp", Entry: "validation", Upstream: "server-40", Protocol: "TCP", ListenPort: 11040, Enabled: true},
 		},
 	}
-	changed, err := r.EnableProductionForServer("server-40", true)
+	changed, err := r.EnableProductionForUpstream("server-40", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,38 +347,38 @@ func TestEnableProductionCreatesWhenMissing(t *testing.T) {
 		t.Fatalf("expected created+enabled, changed=%d", changed)
 	}
 	found := false
-	for _, rule := range r.Rules {
-		if rule.Entry == EntryProduction && rule.Server == "server-40" && rule.Enabled {
+	for _, fwd := range r.Forwards {
+		if fwd.Entry == EntryProduction && fwd.Upstream == "server-40" && fwd.Enabled {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("production not created/enabled: %+v", r.Rules)
+		t.Fatalf("production not created/enabled: %+v", r.Forwards)
 	}
 }
 
 func TestDiffDetectsToggleAndPortChange(t *testing.T) {
 	before := sampleResources()
 	after := sampleResources()
-	for i := range after.Rules {
-		if after.Rules[i].Name == "forward-server-01-production-tcp" {
-			after.Rules[i].Enabled = true
-			after.Rules[i].ListenPort = 10099
+	for i := range after.Forwards {
+		if after.Forwards[i].Name == "forward-server-01-production-tcp" {
+			after.Forwards[i].Enabled = true
+			after.Forwards[i].ListenPort = 10099
 		}
 	}
-	after.Servers = append(after.Servers, Server{
+	after.Upstreams = append(after.Upstreams, Upstream{
 		Name: "server-03", Address: "10.0.0.13",
 		TCP: ProtoPortOf(7777), UDP: ProtoPortOf(7778), Enabled: true,
 	})
 	sum := Diff(before, after)
-	if len(sum.ServersAdded) != 1 || sum.ServersAdded[0] != "server-03" {
-		t.Fatalf("servers added: %+v", sum.ServersAdded)
+	if len(sum.UpstreamsAdded) != 1 || sum.UpstreamsAdded[0] != "server-03" {
+		t.Fatalf("upstreams added: %+v", sum.UpstreamsAdded)
 	}
-	if len(sum.RulesToggled) == 0 && len(sum.PortChanges) == 0 {
+	if len(sum.ForwardsToggled) == 0 && len(sum.PortChanges) == 0 {
 		t.Fatalf("expected toggle or port change, got %+v", sum)
 	}
 	text := sum.String()
-	if !strings.Contains(text, "+ server") && !strings.Contains(text, "~ rule") && !strings.Contains(text, "~ port") {
+	if !strings.Contains(text, "+ upstream") && !strings.Contains(text, "~ forward") && !strings.Contains(text, "~ port") {
 		t.Fatalf("summary text: %s", text)
 	}
 	if strings.Contains(text, "变更摘要") || strings.Contains(text, "相对备份") {
@@ -399,75 +400,61 @@ func TestChangeSummaryStringEmpty(t *testing.T) {
 	}
 }
 
-func TestDiffDefaultsAndACL(t *testing.T) {
+func TestDiffDefaultsAndSecurity(t *testing.T) {
 	before := sampleResources()
-	before.Defaults.TCPLocalRateLimitPerSec = 200
-	before.Defaults.Nftables.UDPPPSPerIP = "500/second"
+	before.Security.PolicyByID(PolicyGatewayNewConnLimit).Params.PerSec = 200
+	before.Security.PolicyByID(PolicyUDPLimit).Params.UDPPPSPerIP = "500/second"
 	after := sampleResources()
-	after.Defaults = before.Defaults
-	after.Defaults.TCPLocalRateLimitPerSec = 400
-	after.Defaults.Nftables.UDPPPSPerIP = "1200/second"
-	after.ACL.Deny = []string{"1.2.3.4/32"}
+	after.Security.PolicyByID(PolicyGatewayNewConnLimit).Params.PerSec = 400
+	after.Security.PolicyByID(PolicyUDPLimit).Params.UDPPPSPerIP = "1200/second"
+	after.Security.PolicyByID(PolicyAllowlist).Params.Deny = []string{"1.2.3.4/32"}
 	sum := Diff(before, after)
-	if len(sum.DefaultsChanged) == 0 {
-		t.Fatalf("expected defaults change: %+v", sum)
-	}
-	if len(sum.ACLChanged) == 0 {
-		t.Fatalf("expected acl change: %+v", sum)
+	if len(sum.SecurityChanged) == 0 {
+		t.Fatalf("expected security change: %+v", sum)
 	}
 	text := sum.String()
-	if !strings.Contains(text, "defaults") || !strings.Contains(text, "acl") {
+	if !strings.Contains(text, "security") {
 		t.Fatalf("summary: %s", text)
 	}
 }
 
-func TestACLNormalizeAndCRUD(t *testing.T) {
+func TestAllowlistNormalize(t *testing.T) {
 	r := sampleResources()
-	c, err := r.AddACLEntry("deny", "8.8.8.8")
-	if err != nil || c != "8.8.8.8/32" {
-		t.Fatalf("add deny: %v %q", err, c)
-	}
-	if _, err := r.AddACLEntry("deny", "8.8.8.8/32"); err == nil {
-		t.Fatal("expected duplicate")
-	}
-	if _, err := r.AddACLEntry("allow", "10.0.0.0/8"); err != nil {
-		t.Fatal(err)
-	}
+	p := r.Security.PolicyByID(PolicyAllowlist)
+	p.Params.Deny = append(p.Params.Deny, "8.8.8.8")
+	p.Params.Allow = append(p.Params.Allow, "10.0.0.0/8")
 	if err := r.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := r.RemoveACLEntry("deny", "8.8.8.8"); err != nil {
-		t.Fatal(err)
+	if p.Params.Deny[0] != "8.8.8.8/32" {
+		t.Fatalf("deny normalized: %+v", p.Params.Deny)
 	}
-	if len(r.ACL.Deny) != 0 {
-		t.Fatalf("deny should be empty: %+v", r.ACL.Deny)
+	p.Params.Deny = nil
+	if err := r.Validate(); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := NormalizeCIDR("not-a-cidr"); err == nil {
 		t.Fatal("expected invalid cidr")
 	}
 }
 
-func TestApplyNftablesDefaults(t *testing.T) {
-	d := Defaults{}
-	d.ApplyNftablesDefaults()
-	if d.Nftables.TCPNewConnPerIP != "30/second" || d.Nftables.TCPBurst != 60 {
-		t.Fatalf("unexpected defaults: %+v", d.Nftables)
-	}
-	d.Nftables.TCPBurst = 99
-	d.ApplyNftablesDefaults()
-	if d.Nftables.TCPBurst != 99 {
-		t.Fatal("should preserve explicit burst")
+func TestEnsureSecurityDefaults(t *testing.T) {
+	s := Security{}
+	s.EnsureSecurityDefaults()
+	n := s.EffectiveFirewallRates()
+	if n.TCPNewConnPerIP != "30/second" || n.TCPBurst != 60 {
+		t.Fatalf("unexpected defaults: %+v", n)
 	}
 }
 
 func TestEnsureEntriesAddsMissingProtocol(t *testing.T) {
 	r := &Resources{
-		Servers: []Server{
+		Upstreams: []Upstream{
 			{Name: "server-30", Address: "10.0.0.30", TCP: ProtoPortOf(7777), UDP: ProtoPortOf(7777), Enabled: true},
 		},
-		Rules: []Rule{
-			{Name: "forward-server-30-validation-tcp", Entry: "validation", Server: "server-30", Protocol: "TCP", ListenPort: 11030, Enabled: true},
-			{Name: "forward-server-30-production-tcp", Entry: "production", Server: "server-30", Protocol: "TCP", ListenPort: 10030, Enabled: false},
+		Forwards: []Forward{
+			{Name: "forward-server-30-validation-tcp", Entry: "validation", Upstream: "server-30", Protocol: "TCP", ListenPort: 11030, Enabled: true},
+			{Name: "forward-server-30-production-tcp", Entry: "production", Upstream: "server-30", Protocol: "TCP", ListenPort: 10030, Enabled: false},
 		},
 	}
 	created, err := r.EnsureEntries("server-30", EntryValidation, []string{"UDP"}, true)
@@ -487,9 +474,9 @@ func TestEnsureEntriesAddsMissingProtocol(t *testing.T) {
 	}
 }
 
-func TestEnsureEntriesNoRulesCreatesProduction(t *testing.T) {
+func TestEnsureEntriesNoForwardsCreatesProduction(t *testing.T) {
 	r := &Resources{
-		Servers: []Server{
+		Upstreams: []Upstream{
 			{Name: "server-31", Address: "10.0.0.31", TCP: ProtoPortOf(7777), UDP: ProtoPortOf(7778), Enabled: true},
 		},
 	}

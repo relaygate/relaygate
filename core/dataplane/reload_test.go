@@ -13,7 +13,7 @@ import (
 func TestApplyMode(t *testing.T) {
 	t.Parallel()
 	env := Env{XDSEnabled: true}
-	summary := resources.ChangeSummary{ServersChanged: []string{"s1"}}
+	summary := resources.ChangeSummary{UpstreamsChanged: []string{"s1"}}
 	if got := ApplyMode(env, summary); got != "hot" {
 		t.Fatalf("got %q want hot", got)
 	}

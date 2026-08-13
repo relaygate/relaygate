@@ -34,17 +34,17 @@ import { Textarea } from "@/components/ui/textarea"
 import { useStandby } from "@/context/SessionContext"
 import {
   ApiError,
-  createServer,
-  createServerEntries,
-  createServersBatch,
-  deleteServer,
-  getServers,
-  promoteServer,
-  updateServer,
-  type BatchServerResult,
+  createUpstream,
+  createUpstreamEntries,
+  createUpstreamsBatch,
+  deleteUpstream,
+  getUpstreams,
+  promoteUpstream,
+  updateUpstream,
+  type BatchUpstreamResult,
 } from "@/lib/api"
 import { ENTRIES, entryLabel, type EntryKind } from "@/lib/entry"
-import type { Server, ServerLifecycle } from "@/lib/types"
+import type { Upstream, UpstreamLifecycle } from "@/lib/types"
 import { tf } from "@/i18n"
 
 const emptyForm = {
@@ -71,10 +71,10 @@ function resolveUpstreams(tcpPort: number, udpPort: number): ResolvedUpstreams |
   }
 }
 
-function serverProtocols(server: Server): string[] {
+function upstreamProtocols(upstream: Upstream): string[] {
   const protocols: string[] = []
-  if (server.tcp?.port) protocols.push("TCP")
-  if (server.udp?.port) protocols.push("UDP")
+  if (upstream.tcp?.port) protocols.push("TCP")
+  if (upstream.udp?.port) protocols.push("UDP")
   return protocols
 }
 
@@ -105,7 +105,7 @@ const emptyQuickDefaults: QuickDefaults = {
 }
 
 type EntryDraft = {
-  server: string
+  upstream: string
   entry: EntryKind
   protocols: string[]
 }
@@ -151,8 +151,8 @@ function parseServerList(text: string): QuickRow[] {
 export function ServersPage({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation()
   const standby = useStandby()
-  const [servers, setServers] = useState<Server[]>([])
-  const [lifecycle, setLifecycle] = useState<Record<string, ServerLifecycle>>({})
+  const [upstreams, setUpstreams] = useState<Upstream[]>([])
+  const [lifecycle, setLifecycle] = useState<Record<string, UpstreamLifecycle>>({})
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState(emptyForm)
   const [addOpen, setAddOpen] = useState(false)
@@ -165,7 +165,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
   const [quickDone, setQuickDone] = useState<{
     succeeded: number
     failed: number
-    results: BatchServerResult[]
+    results: BatchUpstreamResult[]
   } | null>(null)
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
   const [saving, setSaving] = useState(false)
@@ -179,8 +179,8 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
 
   const load = useCallback(async () => {
     try {
-      const data = await getServers()
-      setServers(data.servers)
+      const data = await getUpstreams()
+      setUpstreams(data.upstreams)
       setLifecycle(data.lifecycle)
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : t("common.toast_load_fail"))
@@ -196,12 +196,12 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
     if (standby) return
     const upstreams = resolveUpstreams(Number(form.tcp_port) || 0, Number(form.udp_port) || 0)
     if (!upstreams) {
-      toast.error(t("servers.need_ports"))
+      toast.error(t("upstreams.need_ports"))
       return
     }
     setAdding(true)
     try {
-      await createServer({
+      await createUpstream({
         name: form.name.trim(),
         address: form.address.trim(),
         tcp: upstreams.tcp,
@@ -211,7 +211,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
       await load()
       setForm(emptyForm)
       setAddOpen(false)
-      toast.success(tf("servers.toast_added", form.name.trim()))
+      toast.success(tf("upstreams.toast_added", form.name.trim()))
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : t("apply.toast_fail"))
     } finally {
@@ -229,11 +229,11 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
   function applyQuickPaste() {
     const parsed = parseServerList(quickPaste)
     if (!parsed.length) {
-      toast.error(t("servers.quick_paste_empty"))
+      toast.error(t("upstreams.quick_paste_empty"))
       return
     }
     setQuickRows(parsed)
-    toast.success(tf("servers.quick_paste_ok", parsed.length))
+    toast.success(tf("upstreams.quick_paste_ok", parsed.length))
   }
 
   function toggleQuickEntry(entry: EntryKind, checked: boolean) {
@@ -248,7 +248,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
   async function handleQuick(e: React.FormEvent) {
     e.preventDefault()
     if (standby) return
-    const servers = quickRows
+    const batchUpstreams = quickRows
       .map((row) => {
         const name = row.name.trim()
         const address = row.address.trim()
@@ -263,14 +263,14 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
         }
       })
       .filter((s): s is NonNullable<typeof s> => s !== null)
-    if (!servers.length) {
-      toast.error(t("servers.quick_need_rows"))
+    if (!batchUpstreams.length) {
+      toast.error(t("upstreams.quick_need_rows"))
       return
     }
     setQuicking(true)
     try {
-      const res = await createServersBatch({
-        servers,
+      const res = await createUpstreamsBatch({
+        upstreams: batchUpstreams,
         entries: quickDefaults.entries.length ? quickDefaults.entries : undefined,
         enable_production: quickDefaults.enable_production || undefined,
       })
@@ -283,9 +283,9 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
       setQuickRows([newQuickRow()])
       setQuickPaste("")
       if (res.failed > 0 && res.succeeded > 0) {
-        toast.message(tf("servers.quick_done_summary", res.succeeded, res.failed))
+        toast.message(tf("upstreams.quick_done_summary", res.succeeded, res.failed))
       } else if (res.succeeded === 0) {
-        toast.error(tf("servers.quick_done_summary", res.succeeded, res.failed))
+        toast.error(tf("upstreams.quick_done_summary", res.succeeded, res.failed))
       }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : t("apply.toast_fail"))
@@ -294,20 +294,20 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
     }
   }
 
-  function startEdit(server: Server) {
+  function startEdit(upstream: Upstream) {
     setEditDraft({
-      name: server.name,
-      address: server.address,
-      tcp_port: server.tcp?.port ?? 0,
-      udp_port: server.udp?.port ?? 0,
-      enabled: server.enabled,
+      name: upstream.name,
+      address: upstream.address,
+      tcp_port: upstream.tcp?.port ?? 0,
+      udp_port: upstream.udp?.port ?? 0,
+      enabled: upstream.enabled,
     })
   }
 
-  function startAddEntry(server: Server) {
-    const protocols = serverProtocols(server)
+  function startAddEntry(upstream: Upstream) {
+    const protocols = upstreamProtocols(upstream)
     setEntryDraft({
-      server: server.name,
+      upstream: upstream.name,
       entry: "validation",
       protocols: [...protocols],
     })
@@ -318,19 +318,19 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
     if (!editDraft || standby) return
     const upstreams = resolveUpstreams(editDraft.tcp_port, editDraft.udp_port)
     if (!upstreams) {
-      toast.error(t("servers.need_ports"))
+      toast.error(t("upstreams.need_ports"))
       return
     }
     setSaving(true)
     try {
-      await updateServer(editDraft.name, {
+      await updateUpstream(editDraft.name, {
         address: editDraft.address,
         tcp: upstreams.tcp,
         udp: upstreams.udp,
         enabled: editDraft.enabled,
       })
       await load()
-      toast.success(tf("servers.toast_saved", editDraft.name))
+      toast.success(tf("upstreams.toast_saved", editDraft.name))
       setEditDraft(null)
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : t("apply.toast_fail"))
@@ -343,26 +343,26 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
     e.preventDefault()
     if (!entryDraft || standby) return
     if (!entryDraft.protocols.length) {
-      toast.error(t("servers.quick_need_proto"))
+      toast.error(t("upstreams.quick_need_proto"))
       return
     }
     setAddingEntry(true)
     try {
-      const res = await createServerEntries(entryDraft.server, {
+      const res = await createUpstreamEntries(entryDraft.upstream, {
         entry: entryDraft.entry,
         protocols: entryDraft.protocols,
       })
       await load()
-      if (res.rules?.length) {
+      if (res.forwards?.length) {
         toast.success(
           tf(
             "servers.toast_entry_added",
-            entryDraft.server,
-            res.rules.map((r) => r.name).join(", "),
+            entryDraft.upstream,
+            res.forwards.map((r) => r.name).join(", "),
           ),
         )
       } else {
-        toast.message(tf("servers.toast_entry_none", entryDraft.server))
+        toast.message(tf("upstreams.toast_entry_none", entryDraft.upstream))
       }
       setEntryDraft(null)
     } catch (err) {
@@ -372,31 +372,31 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
     }
   }
 
-  async function toggleEnabled(server: Server, enabled: boolean) {
+  async function toggleEnabled(upstream: Upstream, enabled: boolean) {
     if (standby) return
-    setToggling(server.name)
-    setServers((prev) =>
-      prev.map((s) => (s.name === server.name ? { ...s, enabled } : s)),
+    setToggling(upstream.name)
+    setUpstreams((prev) =>
+      prev.map((s) => (s.name === upstream.name ? { ...s, enabled } : s)),
     )
     try {
-      const res = await updateServer(server.name, {
-        address: server.address,
-        tcp: server.tcp ?? null,
-        udp: server.udp ?? null,
+      const res = await updateUpstream(upstream.name, {
+        address: upstream.address,
+        tcp: upstream.tcp ?? null,
+        udp: upstream.udp ?? null,
         enabled,
       })
-      if (!enabled && typeof res.cascaded_rules === "number") {
-        toast.success(tf("servers.toast_cascaded", server.name, res.cascaded_rules))
+      if (!enabled && typeof res.cascaded_forwards === "number") {
+        toast.success(tf("upstreams.toast_cascaded", upstream.name, res.cascaded_forwards))
       } else {
         toast.success(
           enabled
-            ? tf("servers.toast_enabled", server.name)
-            : tf("servers.toast_disabled", server.name),
+            ? tf("upstreams.toast_enabled", upstream.name)
+            : tf("upstreams.toast_disabled", upstream.name),
         )
       }
     } catch (err) {
-      setServers((prev) =>
-        prev.map((s) => (s.name === server.name ? { ...s, enabled: server.enabled } : s)),
+      setUpstreams((prev) =>
+        prev.map((s) => (s.name === upstream.name ? { ...s, enabled: upstream.enabled } : s)),
       )
       toast.error(err instanceof ApiError ? err.message : t("apply.toast_fail"))
     } finally {
@@ -408,9 +408,9 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
     if (!deleteTarget || standby) return
     setDeleting(true)
     try {
-      const res = await deleteServer(deleteTarget)
+      const res = await deleteUpstream(deleteTarget)
       await load()
-      toast.success(tf("servers.toast_deleted", deleteTarget, res.removed_rules ?? 0))
+      toast.success(tf("upstreams.toast_deleted", deleteTarget, res.removed_forwards ?? 0))
       setDeleteTarget(null)
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : t("apply.toast_fail"))
@@ -423,9 +423,9 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
     if (!promoteTarget || standby) return
     setPromoting(true)
     try {
-      const res = await promoteServer(promoteTarget)
+      const res = await promoteUpstream(promoteTarget)
       await load()
-      toast.success(tf("servers.toast_promoted", promoteTarget, res.changed ?? 0))
+      toast.success(tf("upstreams.toast_promoted", promoteTarget, res.changed ?? 0))
       setPromoteTarget(null)
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : t("apply.toast_fail"))
@@ -439,7 +439,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
     if (!lc) return null
     return (
       <div className="flex flex-wrap gap-1">
-        {lc.validation_rule_count > 0 ? (
+        {lc.validation_forward_count > 0 ? (
           <Badge variant={lc.validation_enabled ? "default" : "secondary"} className="text-[10px]">
             {entryLabel("validation")}
             {lc.validation_enabled && lc.validation_ports.length
@@ -447,7 +447,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
               : ""}
           </Badge>
         ) : null}
-        {lc.production_rule_count > 0 ? (
+        {lc.production_forward_count > 0 ? (
           <Badge variant={lc.production_enabled ? "default" : "outline"} className="text-[10px]">
             {entryLabel("production")}
             {lc.production_enabled && lc.production_ports.length
@@ -465,26 +465,26 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
         size="sm"
         variant="outline"
         disabled={standby}
-        title={t("servers.add")}
+        title={t("upstreams.add")}
         onClick={() => {
           setForm(emptyForm)
           setAddOpen(true)
         }}
       >
         <PlusIcon data-icon="inline-start" />
-        {t("servers.add")}
+        {t("upstreams.add")}
       </Button>
       <Button
         size="sm"
         disabled={standby}
-        title={t("servers.quick")}
+        title={t("upstreams.quick")}
         onClick={() => {
           resetQuickForm()
           setQuickOpen(true)
         }}
       >
         <RocketIcon data-icon="inline-start" />
-        {t("servers.quick")}
+        {t("upstreams.quick")}
       </Button>
     </>
   )
@@ -497,12 +497,12 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>{t("servers.name")}</TableHead>
-              <TableHead>{t("servers.address")}</TableHead>
-              <TableHead>{t("servers.tcp")}</TableHead>
-              <TableHead>{t("servers.udp")}</TableHead>
-              <TableHead>{t("servers.enabled")}</TableHead>
-              <TableHead>{t("servers.rule_shortcuts")}</TableHead>
+              <TableHead>{t("upstreams.name")}</TableHead>
+              <TableHead>{t("upstreams.address")}</TableHead>
+              <TableHead>{t("upstreams.tcp")}</TableHead>
+              <TableHead>{t("upstreams.udp")}</TableHead>
+              <TableHead>{t("upstreams.enabled")}</TableHead>
+              <TableHead>{t("upstreams.rule_shortcuts")}</TableHead>
               <TableHead className="text-right">{t("shell.actions")}</TableHead>
             </TableRow>
           </TableHeader>
@@ -517,18 +517,18 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                   ))}
                 </TableRow>
               ))
-            ) : servers.length === 0 ? (
+            ) : upstreams.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={7} className="p-2">
                   <EmptyState
                     icon={ServerIcon}
-                    title={t("servers.empty")}
-                    description={t("servers.empty_hint")}
+                    title={t("upstreams.empty")}
+                    description={t("upstreams.empty_hint")}
                   />
                 </TableCell>
               </TableRow>
             ) : (
-              servers.map((srv) => {
+              upstreams.map((srv) => {
                 const tcpPort = srv.tcp?.port
                 const udpPort = srv.udp?.port
                 return (
@@ -542,8 +542,8 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                         checked={srv.enabled}
                         disabled={standby || toggling === srv.name}
                         onCheckedChange={(v) => toggleEnabled(srv, v)}
-                        aria-label={t("servers.enabled")}
-                        title={t("servers.enabled")}
+                        aria-label={t("upstreams.enabled")}
+                        title={t("upstreams.enabled")}
                       />
                     </TableCell>
                     <TableCell>{lifecycleBadges(srv.name)}</TableCell>
@@ -555,25 +555,25 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                           onClick={() => startEdit(srv)}
                           disabled={standby}
                         >
-                          {t("servers.edit")}
+                          {t("upstreams.edit")}
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={() => startAddEntry(srv)}
-                          disabled={standby || !serverProtocols(srv).length}
-                          title={t("servers.add_entry")}
+                          disabled={standby || !upstreamProtocols(srv).length}
+                          title={t("upstreams.add_entry")}
                         >
-                          {t("servers.add_entry")}
+                          {t("upstreams.add_entry")}
                         </Button>
                         <Button
                           size="sm"
                           variant="caution"
                           onClick={() => setPromoteTarget(srv.name)}
                           disabled={standby}
-                          title={t("servers.promote_hint")}
+                          title={t("upstreams.promote_hint")}
                         >
-                          {t("servers.promote")}
+                          {t("upstreams.promote")}
                         </Button>
                         <Button
                           size="sm"
@@ -581,7 +581,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                           onClick={() => setDeleteTarget(srv.name)}
                           disabled={standby}
                         >
-                          {t("servers.delete")}
+                          {t("upstreams.delete")}
                         </Button>
                       </div>
                     </TableCell>
@@ -606,10 +606,10 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
           {quickDone ? (
             <>
               <DialogHeader>
-                <DialogTitle>{t("servers.quick_done_title")}</DialogTitle>
+                <DialogTitle>{t("upstreams.quick_done_title")}</DialogTitle>
                 <DialogDescription>
-                  {tf("servers.quick_done_summary", quickDone.succeeded, quickDone.failed)}.{" "}
-                  {t("servers.quick_done_body")}
+                  {tf("upstreams.quick_done_summary", quickDone.succeeded, quickDone.failed)}.{" "}
+                  {t("upstreams.quick_done_body")}
                 </DialogDescription>
               </DialogHeader>
               <div className="flex max-h-[50vh] flex-col gap-3 overflow-y-auto text-sm">
@@ -622,19 +622,19 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                       {item.name || "—"}
                       {!item.ok ? (
                         <span className="ml-2 text-xs font-normal text-destructive">
-                          {t("servers.quick_failed")}
+                          {t("upstreams.quick_failed")}
                         </span>
                       ) : null}
                     </p>
-                    {item.ok && item.rules?.length ? (
+                    {item.ok && item.forwards?.length ? (
                       <ul className="mt-2 space-y-1 text-xs">
-                        <li className="mb-1 text-muted-foreground">{t("servers.quick_created")}</li>
-                        {item.rules.map((rule) => (
-                          <li key={rule.name} className="flex flex-wrap gap-x-2 gap-y-0.5 font-mono">
-                            <span>{rule.name}</span>
+                        <li className="mb-1 text-muted-foreground">{t("upstreams.quick_created")}</li>
+                        {item.forwards.map((fwd) => (
+                          <li key={fwd.name} className="flex flex-wrap gap-x-2 gap-y-0.5 font-mono">
+                            <span>{fwd.name}</span>
                             <span className="text-muted-foreground">
-                              :{rule.listen_port} {rule.protocol} · {entryLabel(rule.entry)}
-                              {rule.enabled ? "" : " · off"}
+                              :{fwd.listen_port} {fwd.protocol} · {entryLabel(fwd.entry)}
+                              {fwd.enabled ? "" : " · off"}
                             </span>
                           </li>
                         ))}
@@ -655,7 +655,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                     resetQuickForm()
                   }}
                 >
-                  {t("servers.quick_close")}
+                  {t("upstreams.quick_close")}
                 </Button>
                 <Button
                   type="button"
@@ -663,7 +663,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                   disabled={quickDone.succeeded === 0}
                   render={
                     <Link
-                      to="/rules"
+                      to="/forwards"
                       onClick={() => {
                         setQuickOpen(false)
                         resetQuickForm()
@@ -671,7 +671,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                     />
                   }
                 >
-                  {t("servers.quick_goto_rules")}
+                  {t("upstreams.quick_goto_forwards")}
                 </Button>
                 <Button
                   render={
@@ -684,19 +684,19 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                     />
                   }
                 >
-                  {t("servers.quick_goto_apply")}
+                  {t("upstreams.quick_goto_apply")}
                 </Button>
               </DialogFooter>
             </>
           ) : (
             <>
               <DialogHeader>
-                <DialogTitle>{t("servers.quick_heading")}</DialogTitle>
-                <DialogDescription>{t("servers.quick_description")}</DialogDescription>
+                <DialogTitle>{t("upstreams.quick_heading")}</DialogTitle>
+                <DialogDescription>{t("upstreams.quick_description")}</DialogDescription>
               </DialogHeader>
               <form onSubmit={handleQuick} className="flex flex-col gap-4">
                 <Field>
-                  <FieldLabel htmlFor="quick-paste">{t("servers.quick_paste")}</FieldLabel>
+                  <FieldLabel htmlFor="quick-paste">{t("upstreams.quick_paste")}</FieldLabel>
                   <Textarea
                     id="quick-paste"
                     value={quickPaste}
@@ -706,7 +706,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                     className="min-h-20 font-mono text-xs"
                   />
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs text-muted-foreground">{t("servers.quick_paste_hint")}</p>
+                    <p className="text-xs text-muted-foreground">{t("upstreams.quick_paste_hint")}</p>
                     <Button
                       type="button"
                       size="sm"
@@ -714,7 +714,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                       disabled={standby || quicking || !quickPaste.trim()}
                       onClick={applyQuickPaste}
                     >
-                      {t("servers.quick_paste_apply")}
+                      {t("upstreams.quick_paste_apply")}
                     </Button>
                   </div>
                 </Field>
@@ -727,7 +727,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                     >
                       <Field>
                         {idx === 0 ? (
-                          <FieldLabel htmlFor={`quick-name-${row.id}`}>{t("servers.alias")}</FieldLabel>
+                          <FieldLabel htmlFor={`quick-name-${row.id}`}>{t("upstreams.alias")}</FieldLabel>
                         ) : null}
                         <Input
                           id={`quick-name-${row.id}`}
@@ -746,7 +746,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                       <Field>
                         {idx === 0 ? (
                           <FieldLabel htmlFor={`quick-addr-${row.id}`}>
-                            {t("servers.address")}
+                            {t("upstreams.address")}
                           </FieldLabel>
                         ) : null}
                         <Input
@@ -765,7 +765,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                       </Field>
                       <Field>
                         {idx === 0 ? (
-                          <FieldLabel htmlFor={`quick-tcp-${row.id}`}>{t("servers.tcp")}</FieldLabel>
+                          <FieldLabel htmlFor={`quick-tcp-${row.id}`}>{t("upstreams.tcp")}</FieldLabel>
                         ) : null}
                         <Input
                           id={`quick-tcp-${row.id}`}
@@ -784,7 +784,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                       </Field>
                       <Field>
                         {idx === 0 ? (
-                          <FieldLabel htmlFor={`quick-udp-${row.id}`}>{t("servers.udp")}</FieldLabel>
+                          <FieldLabel htmlFor={`quick-udp-${row.id}`}>{t("upstreams.udp")}</FieldLabel>
                         ) : null}
                         <Input
                           id={`quick-udp-${row.id}`}
@@ -807,7 +807,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                         variant="ghost"
                         className="mb-0.5"
                         disabled={standby || quicking || quickRows.length <= 1}
-                        title={t("servers.quick_remove_row")}
+                        title={t("upstreams.quick_remove_row")}
                         onClick={() =>
                           setQuickRows((rows) => rows.filter((r) => r.id !== row.id))
                         }
@@ -816,7 +816,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                       </Button>
                     </div>
                   ))}
-                  <p className="text-xs text-muted-foreground">{t("servers.port_enable_hint")}</p>
+                  <p className="text-xs text-muted-foreground">{t("upstreams.port_enable_hint")}</p>
                   <Button
                     type="button"
                     size="sm"
@@ -826,13 +826,13 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                     onClick={() => setQuickRows((rows) => [...rows, newQuickRow()])}
                   >
                     <PlusIcon data-icon="inline-start" />
-                    {t("servers.quick_add_row")}
+                    {t("upstreams.quick_add_row")}
                   </Button>
                 </div>
 
                 <FieldGroup className="grid gap-3 sm:grid-cols-2">
                   <Field>
-                    <FieldLabel>{t("servers.quick_entries")}</FieldLabel>
+                    <FieldLabel>{t("upstreams.quick_entries")}</FieldLabel>
                     <div className="flex flex-col gap-2 text-sm">
                       <label className="flex items-center gap-1.5">
                         <input
@@ -841,7 +841,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                           onChange={(e) => toggleQuickEntry("production", e.target.checked)}
                           disabled={standby || quicking}
                         />
-                        {t("servers.quick_entry_production")}
+                        {t("upstreams.quick_entry_production")}
                       </label>
                       <label className="flex items-center gap-1.5">
                         <input
@@ -850,13 +850,13 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                           onChange={(e) => toggleQuickEntry("validation", e.target.checked)}
                           disabled={standby || quicking}
                         />
-                        {t("servers.quick_entry_validation")}
+                        {t("upstreams.quick_entry_validation")}
                       </label>
                     </div>
                   </Field>
                   <Field>
                     <FieldLabel htmlFor="quick-enable-prod">
-                      {t("servers.quick_enable_production")}
+                      {t("upstreams.quick_enable_production")}
                     </FieldLabel>
                     <div className="flex h-8 items-center">
                       <Switch
@@ -868,7 +868,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                         disabled={
                           standby || quicking || !quickDefaults.entries.includes("production")
                         }
-                        aria-label={t("servers.quick_enable_production")}
+                        aria-label={t("upstreams.quick_enable_production")}
                       />
                     </div>
                   </Field>
@@ -880,11 +880,11 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                     onClick={() => setQuickOpen(false)}
                     disabled={quicking}
                   >
-                    {t("servers.cancel")}
+                    {t("upstreams.cancel")}
                   </Button>
                   <Button type="submit" disabled={standby || quicking}>
                     {quicking ? <Spinner data-icon="inline-start" /> : null}
-                    {t("servers.quick_submit")}
+                    {t("upstreams.quick_submit")}
                   </Button>
                 </DialogFooter>
               </form>
@@ -904,13 +904,13 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{t("servers.add_heading")}</DialogTitle>
-            <DialogDescription>{t("servers.add_description")}</DialogDescription>
+            <DialogTitle>{t("upstreams.add_heading")}</DialogTitle>
+            <DialogDescription>{t("upstreams.add_description")}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAdd} className="flex flex-col gap-4">
             <FieldGroup className="grid gap-3 sm:grid-cols-2">
               <Field>
-                <FieldLabel htmlFor="srv-name">{t("servers.name")}</FieldLabel>
+                <FieldLabel htmlFor="srv-name">{t("upstreams.name")}</FieldLabel>
                 <Input
                   id="srv-name"
                   value={form.name}
@@ -920,7 +920,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="srv-addr">{t("servers.address")}</FieldLabel>
+                <FieldLabel htmlFor="srv-addr">{t("upstreams.address")}</FieldLabel>
                 <Input
                   id="srv-addr"
                   value={form.address}
@@ -930,44 +930,44 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="srv-tcp">{t("servers.tcp_upstream")}</FieldLabel>
+                <FieldLabel htmlFor="srv-tcp">{t("upstreams.tcp_upstream")}</FieldLabel>
                 <Input
                   id="srv-tcp"
                   type="number"
                   value={form.tcp_port}
                   onChange={(e) => setForm((f) => ({ ...f, tcp_port: e.target.value }))}
                   disabled={standby || adding}
-                  placeholder={t("servers.port_optional")}
+                  placeholder={t("upstreams.port_optional")}
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="srv-udp">{t("servers.udp_upstream")}</FieldLabel>
+                <FieldLabel htmlFor="srv-udp">{t("upstreams.udp_upstream")}</FieldLabel>
                 <Input
                   id="srv-udp"
                   type="number"
                   value={form.udp_port}
                   onChange={(e) => setForm((f) => ({ ...f, udp_port: e.target.value }))}
                   disabled={standby || adding}
-                  placeholder={t("servers.port_optional")}
+                  placeholder={t("upstreams.port_optional")}
                 />
               </Field>
               <p className="sm:col-span-2 text-xs text-muted-foreground">
-                {t("servers.port_enable_hint")}
+                {t("upstreams.port_enable_hint")}
               </p>
               {!form.tcp_port.trim() ? (
                 <p className="sm:col-span-2 text-xs text-muted-foreground">
-                  {t("servers.health_no_tcp")}
+                  {t("upstreams.health_no_tcp")}
                 </p>
               ) : null}
               <Field>
-                <FieldLabel htmlFor="srv-enabled">{t("servers.enabled")}</FieldLabel>
+                <FieldLabel htmlFor="srv-enabled">{t("upstreams.enabled")}</FieldLabel>
                 <div className="flex h-8 items-center">
                   <Switch
                     id="srv-enabled"
                     checked={form.enabled}
                     onCheckedChange={(v) => setForm((f) => ({ ...f, enabled: v }))}
                     disabled={standby || adding}
-                    aria-label={t("servers.enabled")}
+                    aria-label={t("upstreams.enabled")}
                   />
                 </div>
               </Field>
@@ -979,11 +979,11 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                 onClick={() => setAddOpen(false)}
                 disabled={adding}
               >
-                {t("servers.cancel")}
+                {t("upstreams.cancel")}
               </Button>
               <Button type="submit" disabled={standby || adding}>
                 {adding ? <Spinner data-icon="inline-start" /> : null}
-                {t("servers.add")}
+                {t("upstreams.add")}
               </Button>
             </DialogFooter>
           </form>
@@ -999,7 +999,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              {t("servers.edit")}
+              {t("upstreams.edit")}
               {editDraft ? ` — ${editDraft.name}` : ""}
             </DialogTitle>
           </DialogHeader>
@@ -1007,7 +1007,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
             <form onSubmit={saveEdit} className="flex flex-col gap-4">
               <FieldGroup className="grid gap-3 sm:grid-cols-2">
                 <Field className="sm:col-span-2">
-                  <FieldLabel htmlFor="edit-addr">{t("servers.address")}</FieldLabel>
+                  <FieldLabel htmlFor="edit-addr">{t("upstreams.address")}</FieldLabel>
                   <Input
                     id="edit-addr"
                     value={editDraft.address}
@@ -1019,7 +1019,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                   />
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="edit-tcp">{t("servers.tcp_upstream")}</FieldLabel>
+                  <FieldLabel htmlFor="edit-tcp">{t("upstreams.tcp_upstream")}</FieldLabel>
                   <Input
                     id="edit-tcp"
                     type="number"
@@ -1030,11 +1030,11 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                       )
                     }
                     disabled={standby || saving}
-                    placeholder={t("servers.port_optional")}
+                    placeholder={t("upstreams.port_optional")}
                   />
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="edit-udp">{t("servers.udp_upstream")}</FieldLabel>
+                  <FieldLabel htmlFor="edit-udp">{t("upstreams.udp_upstream")}</FieldLabel>
                   <Input
                     id="edit-udp"
                     type="number"
@@ -1045,19 +1045,19 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                       )
                     }
                     disabled={standby || saving}
-                    placeholder={t("servers.port_optional")}
+                    placeholder={t("upstreams.port_optional")}
                   />
                 </Field>
                 <p className="sm:col-span-2 text-xs text-muted-foreground">
-                  {t("servers.port_enable_hint")}
+                  {t("upstreams.port_enable_hint")}
                 </p>
                 {!editDraft.tcp_port ? (
                   <p className="sm:col-span-2 text-xs text-muted-foreground">
-                    {t("servers.health_no_tcp")}
+                    {t("upstreams.health_no_tcp")}
                   </p>
                 ) : null}
                 <Field>
-                  <FieldLabel htmlFor="edit-enabled">{t("servers.enabled")}</FieldLabel>
+                  <FieldLabel htmlFor="edit-enabled">{t("upstreams.enabled")}</FieldLabel>
                   <div className="flex h-8 items-center">
                     <Switch
                       id="edit-enabled"
@@ -1066,7 +1066,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                         setEditDraft((d) => (d ? { ...d, enabled: v } : d))
                       }
                       disabled={standby || saving}
-                      aria-label={t("servers.enabled")}
+                      aria-label={t("upstreams.enabled")}
                     />
                   </div>
                 </Field>
@@ -1078,11 +1078,11 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                   onClick={() => setEditDraft(null)}
                   disabled={saving}
                 >
-                  {t("servers.cancel")}
+                  {t("upstreams.cancel")}
                 </Button>
                 <Button type="submit" disabled={standby || saving}>
                   {saving ? <Spinner data-icon="inline-start" /> : null}
-                  {t("servers.save")}
+                  {t("upstreams.save")}
                 </Button>
               </DialogFooter>
             </form>
@@ -1098,17 +1098,17 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{t("servers.add_entry_heading")}</DialogTitle>
+            <DialogTitle>{t("upstreams.add_entry_heading")}</DialogTitle>
             <DialogDescription>
               {entryDraft
-                ? `${t("servers.add_entry_description")} (${entryDraft.server})`
-                : t("servers.add_entry_description")}
+                ? `${t("upstreams.add_entry_description")} (${entryDraft.upstream})`
+                : t("upstreams.add_entry_description")}
             </DialogDescription>
           </DialogHeader>
           {entryDraft ? (
             <form onSubmit={handleAddEntry} className="flex flex-col gap-4">
               <Field>
-                <FieldLabel>{t("servers.entry_type")}</FieldLabel>
+                <FieldLabel>{t("upstreams.entry_type")}</FieldLabel>
                 <div className="flex h-8 items-center gap-3 text-sm">
                   {ENTRIES.map((entry) => (
                     <label key={entry} className="flex items-center gap-1.5">
@@ -1125,11 +1125,11 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                 </div>
               </Field>
               <Field>
-                <FieldLabel>{t("servers.quick_protocols")}</FieldLabel>
+                <FieldLabel>{t("upstreams.quick_protocols")}</FieldLabel>
                 <div className="flex h-8 items-center gap-3 text-sm">
                   {(["TCP", "UDP"] as const).map((proto) => {
                     const available = (() => {
-                      const srv = servers.find((s) => s.name === entryDraft.server)
+                      const srv = upstreams.find((s) => s.name === entryDraft.upstream)
                       if (!srv) return false
                       return proto === "TCP" ? !!srv.tcp?.port : !!srv.udp?.port
                     })()
@@ -1162,11 +1162,11 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
                   onClick={() => setEntryDraft(null)}
                   disabled={addingEntry}
                 >
-                  {t("servers.cancel")}
+                  {t("upstreams.cancel")}
                 </Button>
                 <Button type="submit" disabled={standby || addingEntry}>
                   {addingEntry ? <Spinner data-icon="inline-start" /> : null}
-                  {t("servers.add_entry")}
+                  {t("upstreams.add_entry")}
                 </Button>
               </DialogFooter>
             </form>
@@ -1177,18 +1177,18 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t("servers.confirm")}</DialogTitle>
+            <DialogTitle>{t("upstreams.confirm")}</DialogTitle>
             <DialogDescription>
-              {deleteTarget ? tf("servers.confirm_body", deleteTarget) : ""}
+              {deleteTarget ? tf("upstreams.confirm_body", deleteTarget) : ""}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setDeleteTarget(null)} disabled={deleting}>
-              {t("servers.cancel")}
+              {t("upstreams.cancel")}
             </Button>
             <Button variant="destructive" onClick={confirmDelete} disabled={standby || deleting}>
               {deleting ? <Spinner data-icon="inline-start" /> : null}
-              {t("servers.delete")}
+              {t("upstreams.delete")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1197,18 +1197,18 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
       <Dialog open={!!promoteTarget} onOpenChange={(open) => !open && !promoting && setPromoteTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t("servers.promote_title")}</DialogTitle>
+            <DialogTitle>{t("upstreams.promote_title")}</DialogTitle>
             <DialogDescription>
-              {promoteTarget ? tf("servers.promote_confirm", promoteTarget) : ""}
+              {promoteTarget ? tf("upstreams.promote_confirm", promoteTarget) : ""}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setPromoteTarget(null)} disabled={promoting}>
-              {t("servers.cancel")}
+              {t("upstreams.cancel")}
             </Button>
             <Button variant="caution" onClick={confirmPromote} disabled={standby || promoting}>
               {promoting ? <Spinner data-icon="inline-start" /> : null}
-              {t("servers.promote")}
+              {t("upstreams.promote")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1222,7 +1222,7 @@ export function ServersPage({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <Page>
-      <PageHeader title={t("servers.title")} description={t("servers.desc")} actions={headerActions} />
+      <PageHeader title={t("upstreams.title")} description={t("upstreams.desc")} actions={headerActions} />
       {main}
     </Page>
   )

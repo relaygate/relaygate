@@ -1,15 +1,14 @@
 import {
-  normalizeACL,
   normalizeChangeEntries,
   normalizeEnvoy,
   normalizeLifecycle,
   normalizeProfiles,
-  normalizeRule,
-  normalizeRules,
-  normalizeServers,
+  normalizeSecurityPreview,
+  normalizeForward,
+  normalizeForwards,
+  normalizeUpstreams,
   normalizeSession,
   normalizeTraffic,
-  type ACL,
   type ApplyPreview,
   type ChangeDetail,
   type ChangeEntry,
@@ -17,9 +16,11 @@ import {
   type OpsResult,
   type Profile,
   type RollbackPreview,
-  type Rule,
-  type Server,
-  type ServerLifecycle,
+  type SecurityPreview,
+  type SecurityProfileMerge,
+  type Forward,
+  type Upstream,
+  type UpstreamLifecycle,
   type Session,
   type EnvoyStatus,
   type TrafficStatus,
@@ -164,36 +165,36 @@ export async function setLang(lang: "en" | "zh-CN"): Promise<void> {
   await api.post("/api/lang", { lang })
 }
 
-export async function getServers(): Promise<{
-  servers: Server[]
-  lifecycle: Record<string, ServerLifecycle>
+export async function getUpstreams(): Promise<{
+  upstreams: Upstream[]
+  lifecycle: Record<string, UpstreamLifecycle>
 }> {
-  const data = await api.get<unknown>("/api/servers")
+  const data = await api.get<unknown>("/api/upstreams")
   if (Array.isArray(data)) {
-    return { servers: normalizeServers(data), lifecycle: {} }
+    return { upstreams: normalizeUpstreams(data), lifecycle: {} }
   }
   const obj = (data ?? {}) as Record<string, unknown>
   return {
-    servers: normalizeServers(obj.servers ?? obj.Servers),
+    upstreams: normalizeUpstreams(obj.upstreams ?? obj.Upstreams),
     lifecycle: normalizeLifecycle(obj.lifecycle ?? obj.Lifecycle),
   }
 }
 
-export async function createServer(body: {
+export async function createUpstream(body: {
   name: string
   address: string
   tcp?: { port: number } | null
   udp?: { port: number } | null
   enabled?: boolean
 }): Promise<{ ok: boolean }> {
-  const data = await api.post<unknown>("/api/servers", body)
+  const data = await api.post<unknown>("/api/upstreams", body)
   const o = (data ?? {}) as Record<string, unknown>
   return {
     ok: o.ok === true || o.Ok === true,
   }
 }
 
-export type BatchServerItem = {
+export type BatchUpstreamItem = {
   name: string
   address: string
   tcp?: { port: number } | null
@@ -202,30 +203,30 @@ export type BatchServerItem = {
   entries?: string[]
 }
 
-export type BatchServerResult = {
+export type BatchUpstreamResult = {
   name: string
   ok: boolean
   error?: string
-  rules?: Rule[]
+  forwards?: Forward[]
 }
 
-export async function createServersBatch(body: {
-  servers: BatchServerItem[]
+export async function createUpstreamsBatch(body: {
+  upstreams: BatchUpstreamItem[]
   entries?: string[]
   enable_production?: boolean
 }): Promise<{
   ok: boolean
   succeeded: number
   failed: number
-  results: BatchServerResult[]
+  results: BatchUpstreamResult[]
 }> {
   const normalize = (data: unknown) => {
     const o = (data ?? {}) as Record<string, unknown>
     const raw = o.results ?? o.Results
-    const results: BatchServerResult[] = Array.isArray(raw)
+    const results: BatchUpstreamResult[] = Array.isArray(raw)
       ? raw.map((item) => {
           const row = (item ?? {}) as Record<string, unknown>
-          const rulesRaw = row.rules ?? row.Rules
+          const rulesRaw = row.forwards ?? row.Forwards
           return {
             name: String(row.name ?? row.Name ?? ""),
             ok: row.ok === true || row.Ok === true,
@@ -235,8 +236,8 @@ export async function createServersBatch(body: {
                 : typeof row.Error === "string"
                   ? row.Error
                   : undefined,
-            rules: Array.isArray(rulesRaw)
-              ? rulesRaw.map((r) => normalizeRule(r))
+            forwards: Array.isArray(rulesRaw)
+              ? rulesRaw.map((r) => normalizeForward(r))
               : undefined,
           }
         })
@@ -249,7 +250,7 @@ export async function createServersBatch(body: {
     }
   }
   try {
-    const data = await api.post<unknown>("/api/servers/batch", body)
+    const data = await api.post<unknown>("/api/upstreams/batch", body)
     return normalize(data)
   } catch (err) {
     if (err instanceof ApiError && err.status === 400 && err.body) {
@@ -260,7 +261,7 @@ export async function createServersBatch(body: {
   }
 }
 
-export async function updateServer(
+export async function updateUpstream(
   name: string,
   body: {
     address: string
@@ -268,88 +269,73 @@ export async function updateServer(
     udp?: { port: number } | null
     enabled: boolean
   },
-): Promise<{ ok: boolean; cascaded_rules?: number }> {
-  const data = await api.put<unknown>(`/api/servers/${encodeURIComponent(name)}`, body)
+): Promise<{ ok: boolean; cascaded_forwards?: number }> {
+  const data = await api.put<unknown>(`/api/upstreams/${encodeURIComponent(name)}`, body)
   const o = (data ?? {}) as Record<string, unknown>
-  const cascaded = o.cascaded_rules ?? o.CascadedRules
+  const cascaded = o.cascaded_forwards ?? o.CascadedForwards
   return {
     ok: o.ok === true || o.Ok === true,
-    cascaded_rules: typeof cascaded === "number" ? cascaded : undefined,
+    cascaded_forwards: typeof cascaded === "number" ? cascaded : undefined,
   }
 }
 
-export async function createRule(body: {
-  server: string
+export async function createForward(body: {
+  upstream: string
   entry: "validation" | "production"
   protocols?: string[]
   enabled?: boolean
-}): Promise<{ ok: boolean; rules?: Rule[]; server?: string }> {
-  const data = await api.post<unknown>("/api/rules", body)
+}): Promise<{ ok: boolean; forwards?: Forward[]; upstream?: string }> {
+  const data = await api.post<unknown>("/api/forwards", body)
   const o = (data ?? {}) as Record<string, unknown>
-  const rulesRaw = o.rules ?? o.Rules
+  const forwardsRaw = o.forwards ?? o.Forwards
   return {
     ok: o.ok === true || o.Ok === true,
-    rules: Array.isArray(rulesRaw) ? rulesRaw.map((r) => normalizeRule(r)) : undefined,
-    server: typeof o.server === "string" ? o.server : undefined,
+    forwards: Array.isArray(forwardsRaw) ? forwardsRaw.map((r) => normalizeForward(r)) : undefined,
+    upstream: typeof o.upstream === "string" ? o.upstream : undefined,
   }
 }
 
-export async function createServerEntries(
+export async function createUpstreamEntries(
   name: string,
   body: {
     entry: "validation" | "production"
     protocols?: string[]
     enabled?: boolean
   },
-): Promise<{ ok: boolean; rules?: Rule[] }> {
+): Promise<{ ok: boolean; forwards?: Forward[] }> {
   const data = await api.post<unknown>(
-    `/api/servers/${encodeURIComponent(name)}/entries`,
+    `/api/upstreams/${encodeURIComponent(name)}/entries`,
     body,
   )
   const o = (data ?? {}) as Record<string, unknown>
-  const rulesRaw = o.rules ?? o.Rules
+  const forwardsRaw = o.forwards ?? o.Forwards
   return {
     ok: o.ok === true || o.Ok === true,
-    rules: Array.isArray(rulesRaw) ? rulesRaw.map((r) => normalizeRule(r)) : undefined,
+    forwards: Array.isArray(forwardsRaw) ? forwardsRaw.map((r) => normalizeForward(r)) : undefined,
   }
 }
 
-export async function deleteServer(name: string): Promise<{ removed_rules?: number }> {
-  const data = await api.delete<Record<string, unknown>>(`/api/servers/${encodeURIComponent(name)}`)
-  const removed = data.removed_rules ?? data.RemovedRules
-  return { removed_rules: typeof removed === "number" ? removed : undefined }
+export async function deleteUpstream(name: string): Promise<{ removed_forwards?: number }> {
+  const data = await api.delete<Record<string, unknown>>(`/api/upstreams/${encodeURIComponent(name)}`)
+  const removed = data.removed_forwards ?? data.RemovedForwards
+  return { removed_forwards: typeof removed === "number" ? removed : undefined }
 }
 
-export async function promoteServer(name: string): Promise<{ changed?: number }> {
+export async function promoteUpstream(name: string): Promise<{ changed?: number }> {
   const data = await api.post<Record<string, unknown>>(
-    `/api/servers/${encodeURIComponent(name)}/promote`,
+    `/api/upstreams/${encodeURIComponent(name)}/promote`,
   )
   const changed = data.changed ?? data.Changed
   return { changed: typeof changed === "number" ? changed : undefined }
 }
 
-export async function getRules(): Promise<Rule[]> {
-  const data = await api.get<unknown>("/api/rules")
-  return normalizeRules(data)
+export async function getForwards(): Promise<Forward[]> {
+  const data = await api.get<unknown>("/api/forwards")
+  return normalizeForwards(data)
 }
 
-export async function patchRule(name: string, enabled: boolean): Promise<void> {
-  await api.patch(`/api/rules/${encodeURIComponent(name)}`, { enabled })
-}
-
-export async function getACL(): Promise<ACL> {
-  const data = await api.get<unknown>("/api/acl")
-  return normalizeACL(data)
-}
-
-export async function addACL(list: "deny" | "allow", cidr: string): Promise<ACL> {
-  const data = await api.post<Record<string, unknown>>("/api/acl", { list, cidr })
-  return normalizeACL(data.acl ?? data.ACL ?? data)
-}
-
-export async function removeACL(list: "deny" | "allow", cidr: string): Promise<ACL> {
-  const data = await api.delete<Record<string, unknown>>("/api/acl", { list, cidr })
-  return normalizeACL(data.acl ?? data.ACL ?? data)
+export async function patchForward(name: string, enabled: boolean): Promise<void> {
+  await api.patch(`/api/forwards/${encodeURIComponent(name)}`, { enabled })
 }
 
 /** Panel returns localized 「尚无」/ "None" when there is no last apply. */
@@ -431,6 +417,28 @@ export async function rollback(stamp: string, confirm: string): Promise<OpsResul
 export async function getProfiles(): Promise<Profile[]> {
   const data = await api.get<unknown>("/api/profiles")
   return normalizeProfiles(data)
+}
+
+export async function getSecurityProfiles(): Promise<Profile[]> {
+  const data = await api.get<unknown>("/api/security/profiles")
+  return normalizeProfiles(data)
+}
+
+export async function previewSecurity(policies?: unknown[]): Promise<SecurityPreview> {
+  if (policies && policies.length > 0) {
+    return normalizeSecurityPreview(await api.post("/api/security/preview", { policies }))
+  }
+  return normalizeSecurityPreview(await api.get("/api/security/preview"))
+}
+
+export async function mergeSecurityProfile(name: string): Promise<SecurityProfileMerge> {
+  const data = await api.post<Record<string, unknown>>("/api/security/profile-apply", { name })
+  return {
+    name: pickString(data, "name", "Name") || name,
+    description: pickString(data, "description", "Description"),
+    scenario: pickString(data, "scenario", "Scenario") || undefined,
+    policies: (data.policies as unknown[]) ?? (data.Policies as unknown[]) ?? [],
+  }
 }
 
 export async function opsDoctor(): Promise<OpsResult> {
@@ -756,14 +764,14 @@ export async function exportConfigPack(): Promise<void> {
 }
 
 export type PortMapRow = {
-  server: string
+  upstream: string
   entry: string
   protocol: string
   listen_port: number
-  backend_address: string
-  backend_port: number
+  upstream_address: string
+  upstream_port: number
   enabled: boolean
-  rule_name: string
+  forward_name: string
 }
 
 export async function getPortMap(): Promise<{
@@ -776,14 +784,14 @@ export async function getPortMap(): Promise<{
     ? rowsRaw.map((item) => {
         const o = (item ?? {}) as Record<string, unknown>
         return {
-          server: String(o.server ?? o.Server ?? ""),
+          upstream: String(o.upstream ?? o.Upstream ?? ""),
           entry: String(o.entry ?? o.Entry ?? ""),
           protocol: String(o.protocol ?? o.Protocol ?? ""),
           listen_port: Number(o.listen_port ?? o.ListenPort ?? 0) || 0,
-          backend_address: String(o.backend_address ?? o.BackendAddress ?? ""),
-          backend_port: Number(o.backend_port ?? o.BackendPort ?? 0) || 0,
+          upstream_address: String(o.upstream_address ?? o.UpstreamAddress ?? ""),
+          upstream_port: Number(o.upstream_port ?? o.UpstreamPort ?? 0) || 0,
           enabled: o.enabled === true || o.Enabled === true,
-          rule_name: String(o.rule_name ?? o.RuleName ?? ""),
+          forward_name: String(o.forward_name ?? o.ForwardName ?? ""),
         }
       })
     : []

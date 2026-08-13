@@ -14,8 +14,8 @@ Envoy → ${RELAYGATE_DATA_DIR}/envoy/logs/tcp-access.json
 
 | 角色 | COMPOSE_PROFILES | 说明 |
 |------|------------------|------|
-| 主管理节点 | `with-grafana,with-loki,with-logs` | 本机 Loki + 采集 + Grafana |
-| 从节点 / 边缘 | `with-logs` | 仅 Fluent Bit；`LOKI_HOST=<中心私网>` |
+| 主控 | `with-grafana,with-loki,with-logs` | 本机 Loki + 采集 + Grafana |
+| 节点 / 边缘 | `with-logs` | 仅 Fluent Bit；`LOKI_HOST=<中心私网>` |
 | 专用可观测主机 | 见 `packaging/observability` + profile `with-loki` | 边缘推中心 |
 
 ## 启用
@@ -24,7 +24,7 @@ Envoy → ${RELAYGATE_DATA_DIR}/envoy/logs/tcp-access.json
 
 ```bash
 COMPOSE_PROFILES=with-grafana,with-loki,with-logs
-# 同机可省略；从节点必填中心地址
+# 同机可省略；节点必填中心地址
 # LOKI_HOST=127.0.0.1
 # LOKI_PORT=3100
 # LOKI_RETENTION_PERIOD=168h   # 对照 packaging/loki/loki-config.yml retention_period
@@ -173,7 +173,7 @@ Explore 深链（经 Panel 反代）：`/grafana/explore?...`（运维在 Grafan
 
 ## 多机
 
-从节点 `.env`：
+节点 `.env`：
 
 ```bash
 COMPOSE_PROFILES=with-logs

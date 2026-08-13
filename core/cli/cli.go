@@ -12,12 +12,12 @@ import (
 	"github.com/relaygate/relaygate/core/agent"
 	"github.com/relaygate/relaygate/core/config"
 	"github.com/relaygate/relaygate/core/confirm"
-	"github.com/relaygate/relaygate/core/diag"
-	"github.com/relaygate/relaygate/core/render"
-	"github.com/relaygate/relaygate/core/host"
 	"github.com/relaygate/relaygate/core/dataplane"
+	"github.com/relaygate/relaygate/core/diag"
+	"github.com/relaygate/relaygate/core/host"
 	"github.com/relaygate/relaygate/core/panel"
 	"github.com/relaygate/relaygate/core/profile"
+	"github.com/relaygate/relaygate/core/render"
 	"github.com/relaygate/relaygate/core/resources"
 	"github.com/relaygate/relaygate/core/setup"
 	"github.com/relaygate/relaygate/core/xds"
@@ -70,8 +70,8 @@ func Run(args []string) int {
 		return exitErr(dataplane.Canary(mustRoot(), hostArg))
 	case "firewall":
 		return runFirewall(args[1:])
-	case "acl":
-		return runACL(args[1:])
+	case "security":
+		return runSecurity(args[1:])
 	case "changes":
 		return runChanges(args[1:])
 	case "profile":
@@ -161,7 +161,7 @@ func runUpgrade(args []string) int {
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "usage: relaygate upgrade [--drain]")
 		fmt.Fprintln(fs.Output(), "  二进制/packaging 升级：委托 install.sh upgrade（默认最新 Release；可设 RELAYGATE_VERSION / RELAYGATE_TAR）")
-		fmt.Fprintln(fs.Output(), "  ACL/nftables → firewall apply；resources/Envoy → reload；本命令仅用于产物升级")
+		fmt.Fprintln(fs.Output(), "  ACL/防火墙 → firewall apply；resources/网关 → reload；本命令仅用于产物升级")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -193,8 +193,8 @@ func runFirewall(args []string) int {
 			_ = os.Setenv("APPLY_FIREWALL", "1")
 		case "-h", "--help", "help":
 			fmt.Fprintln(os.Stderr, "usage: relaygate firewall [check|apply]")
-			fmt.Fprintln(os.Stderr, "  check  渲染并校验 nftables（默认，不改主机规则）")
-			fmt.Fprintln(os.Stderr, "  apply  应用规则（需 root；非交互另需 FIREWALL_CONFIRM=Confirm）")
+			fmt.Fprintln(os.Stderr, "  check  渲染并校验防火墙（默认，不改主机规则）")
+			fmt.Fprintln(os.Stderr, "  apply  应用防火墙规则（需 root；非交互另需 FIREWALL_CONFIRM=Confirm）")
 			return 2
 		default:
 			if os.Getenv("APPLY_FIREWALL") == "1" {
@@ -209,11 +209,10 @@ func runFirewall(args []string) int {
 	return exitErr(dataplane.Firewall(mustRoot(), apply))
 }
 
-func runACL(args []string) int {
+func runSecurity(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: relaygate acl list")
-		fmt.Fprintln(os.Stderr, "       relaygate acl add deny|allow CIDR")
-		fmt.Fprintln(os.Stderr, "       relaygate acl remove deny|allow CIDR")
+		fmt.Fprintln(os.Stderr, "usage: relaygate security list|kernel-conf|apply-kernel|verify")
+		fmt.Fprintln(os.Stderr, "  名单与参数编辑 security.policies；防火墙用 sudo relaygate firewall apply")
 		return 2
 	}
 	root := mustRoot()
@@ -224,55 +223,78 @@ func runACL(args []string) int {
 		if err != nil {
 			return exitErr(err)
 		}
-		_ = res.ACL.NormalizeACL()
-		fmt.Println("deny:")
-		if len(res.ACL.Deny) == 0 {
-			fmt.Println("  (empty)")
+		res.Security.EnsureSecurityDefaults()
+		for _, p := range res.Security.Policies {
+			state := "on"
+			if !p.Enabled {
+				state = "off"
+			}
+			tags := strings.Join(p.AttackTags, ",")
+			fmt.Printf("%s (%s) [%s] %s\n", p.ID, p.Type, tags, state)
+			if p.ID == resources.PolicyAllowlist {
+				for _, c := range p.Params.Deny {
+					fmt.Printf("  deny: %s\n", c)
+				}
+				for _, c := range p.Params.Allow {
+					fmt.Printf("  allow: %s\n", c)
+				}
+			}
+			if p.ID == resources.PolicyKernelSyn && p.Enabled {
+				fmt.Printf("  tcp_syncookies=%d tcp_max_syn_backlog=%d\n",
+					p.Params.TcpSyncookies, p.Params.TcpMaxSynBacklog)
+			}
 		}
-		for _, c := range res.ACL.Deny {
-			fmt.Printf("  - %s\n", c)
-		}
-		fmt.Println("allow:")
-		if len(res.ACL.Allow) == 0 {
-			fmt.Println("  (empty — 非严格模式)")
-		} else {
-			fmt.Println("  (strict — 仅下列 CIDR 可进转发口)")
-		}
-		for _, c := range res.ACL.Allow {
-			fmt.Printf("  - %s\n", c)
-		}
-		fmt.Println("变更分流：ACL → validate + sudo relaygate firewall apply（无需 reload Envoy）")
+		fmt.Println("防火墙策略生效: validate + sudo relaygate firewall apply；网关策略: reload；内核(kernel_syn): relaygate security apply-kernel --verify")
+		fmt.Println("节点 agent 拉取后默认自动应用主机侧（ENABLE_PANEL=0）；主控默认不自动应用（见 SECURITY_AUTO_APPLY）")
 		return 0
-	case "add", "remove":
-		if len(args) != 3 {
-			fmt.Fprintf(os.Stderr, "usage: relaygate acl %s deny|allow CIDR\n", args[0])
-			return 2
-		}
-		list, cidr := args[1], args[2]
+	case "kernel-conf":
 		res, err := resources.Load(resPath)
 		if err != nil {
 			return exitErr(err)
 		}
-		var canonical string
-		if args[0] == "add" {
-			canonical, err = res.AddACLEntry(list, cidr)
-		} else {
-			canonical, err = res.RemoveACLEntry(list, cidr)
+		fmt.Print(resources.RenderKernelHardenConf(&res.Security))
+		return 0
+	case "apply-kernel":
+		verify := false
+		rest := args[1:]
+		for _, a := range rest {
+			switch a {
+			case "--verify":
+				verify = true
+			case "-h", "--help", "help":
+				fmt.Fprintln(os.Stderr, "usage: relaygate security apply-kernel [--verify]")
+				fmt.Fprintln(os.Stderr, "  内核（sysctl）：按 resources.yaml 的 kernel_syn 写入主机内核参数（需 root）")
+				fmt.Fprintln(os.Stderr, "  --verify  应用后校验键值是否生效")
+				return 2
+			default:
+				fmt.Fprintf(os.Stderr, "未知参数: %s\n", a)
+				return 2
+			}
 		}
+		if err := requireConfirm("将按当前配置写入内核参数叠加并应用。"); err != nil {
+			return exitErr(err)
+		}
+		if err := dataplane.ApplyKernelHardenFromResources(root); err != nil {
+			return exitErr(err)
+		}
+		if verify {
+			if err := dataplane.VerifyKernelHarden(root); err != nil {
+				return exitErr(err)
+			}
+			fmt.Println("内核校验通过")
+		}
+		return 0
+	case "verify":
+		env, err := dataplane.LoadEnv(root)
 		if err != nil {
 			return exitErr(err)
 		}
-		if err := resources.Save(resPath, res); err != nil {
-			return exitErr(err)
-		}
-		fmt.Printf("%s %s %s → %s\n", args[0], list, canonical, resPath)
-		fmt.Println("变更分流：ACL → validate + sudo relaygate firewall apply（无需 reload Envoy）")
-		return 0
+		return exitErr(dataplane.VerifySecurityLayers(root, env, os.Stdout))
 	case "help", "-h", "--help":
-		fmt.Fprintln(os.Stderr, "usage: relaygate acl list|add|remove …")
+		fmt.Fprintln(os.Stderr, "usage: relaygate security list|kernel-conf|apply-kernel|verify")
 		return 2
 	default:
-		fmt.Fprintf(os.Stderr, "未知 acl 子命令: %s\n", args[0])
+		fmt.Fprintf(os.Stderr, "未知 security 子命令: %s\n", args[0])
 		return 2
 	}
 }
@@ -341,7 +363,7 @@ func runProfile(args []string) int {
 		}
 		fmt.Print(sum.String())
 		fmt.Println("已写入 defaults。请: relaygate validate && relaygate reload")
-		fmt.Println("若改了 nftables 档位，另需: sudo relaygate firewall apply")
+		fmt.Println("若改了防火墙档位，另需: sudo relaygate firewall apply")
 		return 0
 	case "help", "-h", "--help":
 		fmt.Fprintln(os.Stderr, "usage: relaygate profile list|show|apply")
@@ -480,12 +502,12 @@ func runServer(args []string) int {
 	}
 	changed := 0
 	matched := 0
-	for _, rule := range res.Rules {
-		if rule.Entry != "production" || (!*all && rule.Server != server) {
+	for _, fwd := range res.Forwards {
+		if fwd.Entry != "production" || (!*all && fwd.Upstream != server) {
 			continue
 		}
 		matched++
-		ok, err := resources.PatchRuleEnabledInPlace(resourcesPath, rule.Name, enabled)
+		ok, err := resources.PatchForwardEnabledInPlace(resourcesPath, fwd.Name, enabled)
 		if err != nil {
 			return exitErr(err)
 		}
@@ -495,7 +517,7 @@ func runServer(args []string) int {
 			if enabled {
 				state = "enabled"
 			}
-			fmt.Printf("%s: %s\n", state, rule.Name)
+			fmt.Printf("%s: %s\n", state, fwd.Name)
 		}
 	}
 	if matched == 0 {
@@ -537,11 +559,11 @@ func runServerStatus(args []string) int {
 		return exitErr(err)
 	}
 	fmt.Print(resources.FormatLifecycle(res))
-	enabled := res.EnabledRules()
+	enabled := res.EnabledForwards()
 	fmt.Printf("启用转发: %d\n", len(enabled))
-	for _, rule := range enabled {
+	for _, fwd := range enabled {
 		fmt.Printf("  - %s: %s/%d -> %s (%s)\n",
-			rule.Name, strings.ToUpper(rule.Protocol), rule.ListenPort, rule.Server, rule.Entry)
+			fwd.Name, strings.ToUpper(fwd.Protocol), fwd.ListenPort, fwd.Upstream, fwd.Entry)
 	}
 	return 0
 }
@@ -619,7 +641,10 @@ func usage(out *os.File) {
   relaygate server status
   relaygate server enable|disable <server-01>
   relaygate server enable --all-production
-  relaygate acl list|add|remove deny|allow CIDR
+  relaygate security list
+  relaygate security kernel-conf
+  relaygate security apply-kernel [--verify]
+  relaygate security verify
   relaygate profile list|show|apply NAME
   relaygate changes [--limit N]
 
@@ -638,7 +663,7 @@ func usage(out *os.File) {
   relaygate diag                # admin/drain/热更新/可选云入口清单
 
 防火墙 / Panel:
-  relaygate firewall [check|apply]   # ACL/nftables-only；默认 check
+  relaygate firewall [check|apply]   # 防火墙安全策略；默认 check
   relaygate panel                    # 前台运行管理面
   relaygate panel install|uninstall  # systemd（需 root）
 
@@ -648,7 +673,7 @@ func usage(out *os.File) {
   relaygate fleet join <name>          # 打印一句话节点安装命令
   relaygate fleet leave <name>         # 输入 确认 或 Confirm
 
-节点代理:
+节点 agent:
   relaygate agent run                  # 心跳 + 拉取（可内嵌本机 ADS）
   relaygate agent pull                 # 拉一次并落盘
   relaygate agent install              # systemd（需 root；一句话接入会自动调用）
@@ -659,8 +684,8 @@ func usage(out *os.File) {
   升级: curl …/install.sh | sudo bash -s -- upgrade
 
 变更分流:
-  ACL / nftables-only     → firewall apply
-  resources / Envoy 配置  → reload（本机）或 fleet publish（机群）
+  ACL / 仅防火墙          → firewall apply
+  resources / 网关配置    → reload（本机）或 fleet publish（机群）
   二进制 / packaging      → upgrade [--drain] 或 install.sh upgrade
 
   relaygate version`)
@@ -765,37 +790,25 @@ func runAgent(args []string) int {
 		if err != nil {
 			return exitErr(err)
 		}
-		fmt.Printf("已拉取并落盘版本 %s\n", ver)
-		fmt.Println("提示: 本机热更新请执行 relaygate reload（或由 agent run 的 AfterPull 触发）。")
+		fmt.Printf("已拉取并落盘版本 %s（applied 未更新）\n", ver)
+		fmt.Println("提示: 由 agent run 的 AfterPull 热更新成功后才会上报 applied；也可手动 relaygate reload。")
 		return 0
 	case "run":
-		env, err := dataplane.LoadEnv(root)
-		if err != nil {
+		if _, err := dataplane.LoadEnv(root); err != nil {
 			return exitErr(err)
 		}
-		after := func(r, _ string) error {
-			if !env.XDSEnabled {
-				fmt.Println("热更新已关闭：已落盘，请手动 reload --hard")
-				return nil
+		after := func(r, ver string) error {
+			e, err := dataplane.LoadEnv(r)
+			if err != nil {
+				return err
 			}
-			xds.SetDiskPublishHandler(func(nodeID string) (string, error) {
-				e, err := dataplane.LoadEnv(r)
-				if err != nil {
-					return "", err
-				}
-				srv := xds.Global().Server()
-				if srv == nil {
-					return "", fmt.Errorf("本机热更新服务未运行")
-				}
-				return dataplane.PublishSnapshotFromDisk(r, e, nodeID, srv.Publisher)
+			return dataplane.AfterPullApply(dataplane.PullApplyOptions{
+				Root:    r,
+				Version: ver,
+				Env:     e,
+				Stdout:  os.Stdout,
+				Stderr:  os.Stderr,
 			})
-			if xds.Global().Server() == nil {
-				if err := dataplane.PublishInitialSnapshot(r, env); err != nil {
-					fmt.Fprintf(os.Stderr, "启动本机热更新服务: %v（仍保留已拉取配置）\n", err)
-					return nil
-				}
-			}
-			return dataplane.HotApplyTo(r, env, os.Stdout, os.Stderr)
 		}
 		return exitErr(agent.Run(agent.RunOptions{Root: root, AfterPull: after}))
 	case "help", "-h", "--help":

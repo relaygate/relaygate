@@ -23,7 +23,7 @@ type ScalePlaybook struct {
 	Steps []ScalePlaybookStep `json:"steps"`
 }
 
-// BuildScalePlaybook returns join/leave checklist (mode: join|leave；兼容旧 expand|shrink 别名已废除，仅 join/leave).
+// BuildScalePlaybook returns join/leave checklist (mode: join|leave).
 func BuildScalePlaybook(root, mode string) (ScalePlaybook, error) {
 	_ = root
 	mode = strings.ToLower(strings.TrimSpace(mode))
@@ -67,7 +67,7 @@ func BuildScalePlaybook(root, mode string) (ScalePlaybook, error) {
 				{
 					ID:          "leave-registry",
 					Title:       "名册移除与吊销令牌",
-					Description: "从节点名册移除并吊销代理凭证。",
+					Description: "从节点名册移除并吊销 agent 令牌。",
 					Checklist:   []string{"已确认退役窗口"},
 					Commands:    []string{"relaygate fleet leave <name>  # 输入 确认 或 Confirm", "POST /api/ops/fleet/leave"},
 					Automated:   true,

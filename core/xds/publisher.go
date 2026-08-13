@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	cache "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
+	cache "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/resource/v3"
 )
 
@@ -20,7 +20,7 @@ type Snapshot struct {
 	Inner *cache.Snapshot
 }
 
-// Publisher is the HotApply-facing surface (Panel / CLI / thin Secondary agent).
+// Publisher is the HotApply-facing surface (Panel / CLI / node agent).
 type Publisher interface {
 	SetSnapshot(nodeID string, snap Snapshot) error
 	LastVersion(nodeID string) string

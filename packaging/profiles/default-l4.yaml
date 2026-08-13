@@ -1,0 +1,42 @@
+# 默认 L4：通用南北向四层网关，偏保守限速与并发
+name: default-l4
+scenario: default_l4
+description: 通用 L4 默认档；不明确业务特征时选用
+
+defaults:
+  default_upstream_tcp_port: 7777
+  default_upstream_udp_port: 7778
+  tcp_idle_timeout: 3600s
+  udp_idle_timeout: 120s
+  max_pending_requests: 256
+  health_check:
+    timeout: 2s
+    interval: 10s
+    unhealthy_threshold: 3
+    healthy_threshold: 2
+
+security:
+  policies:
+    - id: firewall_new_conn_limit
+      type: new_conn_limit_firewall
+      enabled: true
+      params:
+        tcp_per_ip: 30/second
+        burst: 60
+    - id: gateway_new_conn_limit
+      type: new_conn_limit_gateway
+      enabled: true
+      params:
+        per_sec: 200
+        burst: 400
+    - id: conn_limit
+      type: conn_limit
+      enabled: true
+      params:
+        max_connections: 1024
+    - id: udp_limit
+      type: udp_limit
+      enabled: true
+      params:
+        udp_pps_per_ip: 500/second
+        udp_burst: 1000

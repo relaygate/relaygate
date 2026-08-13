@@ -1,13 +1,10 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react"
-import { Link } from "react-router-dom"
+import { useEffect, useState, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 import {
   ActivityIcon,
   ArrowLeftRightIcon,
-  GaugeIcon,
   InboxIcon,
-  ShieldCheckIcon,
   SlidersHorizontalIcon,
   StethoscopeIcon,
   WrenchIcon,
@@ -16,7 +13,7 @@ import {
 import { OpsLogView } from "@/components/layout/OpsLogView"
 import { EmptyState } from "@/components/layout/EmptyState"
 import { Page, PageHeader } from "@/components/layout/PageParts"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -40,25 +37,16 @@ import {
   ApiError,
   apiErrorDetail,
   apiErrorOutput,
-  getConfigResources,
   getProfiles,
   opsCanary,
   opsDoctor,
   opsDrain,
-  opsFirewallCheck,
   opsProfileApply,
   opsProfilePreview,
   opsSmoke,
-  putConfigResources,
 } from "@/lib/api"
 import type { Profile } from "@/lib/types"
 import { tf } from "@/i18n"
-import {
-  parseRateLimitDefaults,
-  patchRateLimitDefaults,
-  validateRateLimitDefaults,
-  type RateLimitDefaults,
-} from "@/lib/resourcesDefaults"
 import { cn } from "@/lib/utils"
 import { matchesConfirm } from "@/lib/confirm"
 
@@ -73,10 +61,8 @@ type BusyKey =
   | "drain"
   | "smoke"
   | "canary"
-  | "firewall"
   | "preview"
   | "profile"
-  | "ratelimit"
   | null
 
 function OpsCard({
@@ -132,8 +118,6 @@ export function OpsPage() {
   const [drainErr, setDrainErr] = useState(false)
   const [probeOut, setProbeOut] = useState("")
   const [probeErr, setProbeErr] = useState(false)
-  const [firewallOut, setFirewallOut] = useState("")
-  const [firewallErr, setFirewallErr] = useState(false)
   const [host, setHost] = useState("127.0.0.1")
   const [drainAction, setDrainAction] = useState<"fail" | "ok" | null>(null)
   const [drainConfirm, setDrainConfirm] = useState("")
@@ -143,19 +127,6 @@ export function OpsPage() {
   const [profileErr, setProfileErr] = useState(false)
   const [profileConfirm, setProfileConfirm] = useState("")
   const [profileApplyOpen, setProfileApplyOpen] = useState(false)
-  const [rl, setRl] = useState<RateLimitDefaults | null>(null)
-  const [rlEtag, setRlEtag] = useState("")
-  const [rlMtime, setRlMtime] = useState("")
-  const [rlDirty, setRlDirty] = useState(false)
-  const [rlLoading, setRlLoading] = useState(true)
-
-  const loadRateLimits = useCallback(async () => {
-    const data = await getConfigResources()
-    setRl(parseRateLimitDefaults(data.content))
-    setRlEtag(data.etag)
-    setRlMtime(data.mtime)
-    setRlDirty(false)
-  }, [])
 
   useEffect(() => {
     getProfiles()
@@ -169,14 +140,6 @@ export function OpsPage() {
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load once
   }, [])
-
-  useEffect(() => {
-    loadRateLimits()
-      .catch((err) => {
-        toast.error(err instanceof ApiError ? err.message : t("ops.ratelimit_toast_load_fail"))
-      })
-      .finally(() => setRlLoading(false))
-  }, [loadRateLimits, t])
 
   async function runDoctor() {
     setBusy("doctor")
@@ -242,23 +205,6 @@ export function OpsPage() {
     }
   }
 
-  async function runFirewall() {
-    setBusy("firewall")
-    try {
-      const res = await opsFirewallCheck()
-      setFirewallErr(false)
-      setFirewallOut(res.output ?? res.error ?? t("error.no_output"))
-      toast.success(t("ops.toast_fw_ok"))
-    } catch (err) {
-      const msg = apiErrorDetail(err, t("ops.toast_fw_err"))
-      setFirewallErr(true)
-      setFirewallOut(apiErrorOutput(err, msg))
-      toast.error(msg)
-    } finally {
-      setBusy(null)
-    }
-  }
-
   async function runProfilePreview() {
     if (!profileName) return
     setBusy("preview")
@@ -287,50 +233,11 @@ export function OpsPage() {
       toast.success(t("ops.toast_profile_ok"))
       setProfileApplyOpen(false)
       setProfileConfirm("")
-      await loadRateLimits().catch(() => {})
     } catch (err) {
       const msg = apiErrorDetail(err, t("ops.toast_profile_err"))
       setProfileErr(true)
       setProfileOut(apiErrorOutput(err, msg))
       toast.error(msg)
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  function patchRl<K extends keyof RateLimitDefaults>(key: K, value: RateLimitDefaults[K]) {
-    setRl((prev) => (prev ? { ...prev, [key]: value } : prev))
-    setRlDirty(true)
-  }
-
-  async function saveRateLimits() {
-    if (standby || !rl || !rlDirty) return
-    const bad = validateRateLimitDefaults(rl)
-    if (bad) {
-      toast.error(t("ops.ratelimit_toast_invalid"))
-      return
-    }
-    setBusy("ratelimit")
-    try {
-      const current = await getConfigResources()
-      const content = patchRateLimitDefaults(current.content, rl)
-      const res = await putConfigResources({
-        content,
-        etag: current.etag || rlEtag,
-        mtime: current.mtime || rlMtime,
-      })
-      setRlEtag(res.etag)
-      setRlMtime(res.mtime)
-      setRlDirty(false)
-      setRl(parseRateLimitDefaults(content))
-      toast.success(t("ops.ratelimit_toast_save_ok"))
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        toast.error(t("ops.ratelimit_toast_conflict"))
-        await loadRateLimits().catch(() => {})
-        return
-      }
-      toast.error(err instanceof ApiError ? err.message : t("ops.ratelimit_toast_save_fail"))
     } finally {
       setBusy(null)
     }
@@ -417,281 +324,118 @@ export function OpsPage() {
           />
         </OpsCard>
 
-        <OpsCard
-          icon={<ActivityIcon className="size-4" />}
-          title={t("ops.smoke_canary")}
-          description={t("ops.probe_desc")}
-          actions={
-            <>
-              <Input
-                id="ops-host"
-                value={host}
-                onChange={(e) => setHost(e.target.value)}
-                disabled={anyBusy}
-                className="h-7 w-36 font-mono text-xs"
-                placeholder="127.0.0.1"
-                aria-label={t("ops.host")}
-              />
-              <Button size="sm" variant="outline" onClick={() => runProbe("smoke")} disabled={anyBusy}>
-                {busy === "smoke" ? <Spinner data-icon="inline-start" /> : null}
-                {t("ops.btn_smoke")}
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => runProbe("canary")} disabled={anyBusy}>
-                {busy === "canary" ? <Spinner data-icon="inline-start" /> : null}
-                {t("ops.btn_canary")}
-              </Button>
-            </>
-          }
-        >
-          <OpsLogView
-            value={probeOut}
-            error={probeErr}
-            placeholder={
-              <EmptyState
-                compact
-                icon={InboxIcon}
-                title={t("error.no_output")}
-                className="w-full border-0 bg-transparent"
-              />
-            }
-          />
-        </OpsCard>
-
-        <OpsCard
-          icon={<ShieldCheckIcon className="size-4" />}
-          title={t("ops.firewall")}
-          description={t("ops.fw_desc")}
-          actions={
-            <>
-              <Button size="sm" variant="outline" onClick={runFirewall} disabled={anyBusy}>
-                {busy === "firewall" ? <Spinner data-icon="inline-start" /> : null}
-                {t("ops.fw_check")}
-              </Button>
-              <Link
-                to="/apply"
-                className={buttonVariants({ size: "sm", variant: "secondary" })}
-              >
-                {t("ops.fw_apply_link")}
-              </Link>
-            </>
-          }
-        >
-          <OpsLogView
-            value={firewallOut}
-            error={firewallErr}
-            placeholder={
-              <EmptyState
-                compact
-                icon={InboxIcon}
-                title={t("error.no_output")}
-                className="w-full border-0 bg-transparent"
-              />
-            }
-          />
-        </OpsCard>
-
-        <OpsCard
-          icon={<GaugeIcon className="size-4" />}
-          title={t("ops.ratelimit")}
-          description={t("ops.ratelimit_desc")}
-          className="lg:col-span-2"
-          actions={
-            <>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setRlLoading(true)
-                  loadRateLimits()
-                    .catch((err) => {
-                      toast.error(
-                        err instanceof ApiError ? err.message : t("ops.ratelimit_toast_load_fail"),
-                      )
-                    })
-                    .finally(() => setRlLoading(false))
-                }}
-                disabled={anyBusy || rlLoading}
-              >
-                {t("ops.ratelimit_reload")}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={saveRateLimits}
-                disabled={standby || anyBusy || rlLoading || !rl || !rlDirty}
-              >
-                {busy === "ratelimit" ? <Spinner data-icon="inline-start" /> : null}
-                {t("ops.ratelimit_save")}
-              </Button>
-            </>
-          }
-        >
-          {rlLoading || !rl ? (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              <div className="h-14 animate-pulse rounded-md bg-muted" />
-              <div className="h-14 animate-pulse rounded-md bg-muted" />
-              <div className="h-14 animate-pulse rounded-md bg-muted" />
-            </div>
-          ) : (
-            <FieldGroup className="gap-3">
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <Field>
-                  <FieldLabel htmlFor="rl-tcp-rate">{t("ops.ratelimit_tcp_rate")}</FieldLabel>
-                  <Input
-                    id="rl-tcp-rate"
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={rl.tcpLocalRateLimitPerSec}
-                    disabled={standby || anyBusy}
-                    className="font-mono text-xs"
-                    onChange={(e) =>
-                      patchRl("tcpLocalRateLimitPerSec", Number.parseInt(e.target.value, 10) || 0)
-                    }
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="rl-tcp-burst">{t("ops.ratelimit_tcp_burst")}</FieldLabel>
-                  <Input
-                    id="rl-tcp-burst"
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={rl.tcpLocalRateLimitBurst}
-                    disabled={standby || anyBusy}
-                    className="font-mono text-xs"
-                    onChange={(e) =>
-                      patchRl("tcpLocalRateLimitBurst", Number.parseInt(e.target.value, 10) || 0)
-                    }
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="rl-nft-tcp">{t("ops.ratelimit_nft_tcp")}</FieldLabel>
-                  <Input
-                    id="rl-nft-tcp"
-                    value={rl.nftTcpNewConnPerIp}
-                    disabled={standby || anyBusy}
-                    className="font-mono text-xs"
-                    placeholder="30/second"
-                    onChange={(e) => patchRl("nftTcpNewConnPerIp", e.target.value)}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="rl-nft-udp">{t("ops.ratelimit_nft_udp")}</FieldLabel>
-                  <Input
-                    id="rl-nft-udp"
-                    value={rl.nftUdpPpsPerIp}
-                    disabled={standby || anyBusy}
-                    className="font-mono text-xs"
-                    placeholder="500/second"
-                    onChange={(e) => patchRl("nftUdpPpsPerIp", e.target.value)}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="rl-nft-tcp-burst">{t("ops.ratelimit_nft_tcp_burst")}</FieldLabel>
-                  <Input
-                    id="rl-nft-tcp-burst"
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={rl.nftTcpBurst}
-                    disabled={standby || anyBusy}
-                    className="font-mono text-xs"
-                    onChange={(e) =>
-                      patchRl("nftTcpBurst", Number.parseInt(e.target.value, 10) || 0)
-                    }
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="rl-nft-udp-burst">{t("ops.ratelimit_nft_udp_burst")}</FieldLabel>
-                  <Input
-                    id="rl-nft-udp-burst"
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={rl.nftUdpBurst}
-                    disabled={standby || anyBusy}
-                    className="font-mono text-xs"
-                    onChange={(e) =>
-                      patchRl("nftUdpBurst", Number.parseInt(e.target.value, 10) || 0)
-                    }
-                  />
-                </Field>
-              </div>
-              <p className="text-xs text-muted-foreground">{t("ops.ratelimit_save_hint")}</p>
-            </FieldGroup>
-          )}
-        </OpsCard>
-
-        <OpsCard
-          icon={<WrenchIcon className="size-4" />}
-          title={t("ops.profile")}
-          description={t("ops.profile_desc")}
-          className="lg:col-span-2"
-          actions={
-            profiles.length === 0 ? null : (
+        <div className="grid gap-3 lg:col-span-2 lg:grid-cols-2">
+          <OpsCard
+            icon={<ActivityIcon className="size-4" />}
+            title={t("ops.smoke_canary")}
+            description={t("ops.probe_desc")}
+            className="min-w-0"
+            actions={
               <>
-                <Select
-                  value={profileName}
-                  onValueChange={(v) => setProfileName(v ?? "")}
+                <Input
+                  id="ops-host"
+                  value={host}
+                  onChange={(e) => setHost(e.target.value)}
                   disabled={anyBusy}
-                >
-                  <SelectTrigger className="h-7 w-28 min-w-0 max-w-[7.5rem] text-[0.8rem]" size="sm">
-                    <SelectValue placeholder={t("ops.profile_select")} />
-                  </SelectTrigger>
-                  <SelectContent alignItemWithTrigger className="min-w-0 w-(--anchor-width)">
-                    {profiles.map((p) => (
-                      <SelectItem key={p.name} value={p.name} title={p.description || p.name}>
-                        <span className="truncate">{profileShortLabel(t, p.name)}</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={runProfilePreview}
-                  disabled={anyBusy || !profileName}
-                >
-                  {busy === "preview" ? <Spinner data-icon="inline-start" /> : null}
-                  {t("ops.profile_preview")}
+                  className="h-7 w-36 font-mono text-xs"
+                  placeholder="127.0.0.1"
+                  aria-label={t("ops.host")}
+                />
+                <Button size="sm" variant="outline" onClick={() => runProbe("smoke")} disabled={anyBusy}>
+                  {busy === "smoke" ? <Spinner data-icon="inline-start" /> : null}
+                  {t("ops.btn_smoke")}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="caution"
-                  onClick={() => {
-                    setProfileConfirm("")
-                    setProfileApplyOpen(true)
-                  }}
-                  disabled={standby || anyBusy || !profileName}
-                >
-                  {t("ops.profile_apply")}
+                <Button size="sm" variant="outline" onClick={() => runProbe("canary")} disabled={anyBusy}>
+                  {busy === "canary" ? <Spinner data-icon="inline-start" /> : null}
+                  {t("ops.btn_canary")}
                 </Button>
               </>
-            )
-          }
-        >
-          {profiles.length === 0 ? (
-            <EmptyState
-              compact
-              icon={SlidersHorizontalIcon}
-              title={t("ops.profile_empty")}
-              description={t("ops.profile_empty_hint")}
+            }
+          >
+            <OpsLogView
+              value={probeOut}
+              error={probeErr}
+              placeholder={
+                <EmptyState
+                  compact
+                  icon={InboxIcon}
+                  title={t("error.no_output")}
+                  className="w-full border-0 bg-transparent"
+                />
+              }
             />
-          ) : null}
-          <OpsLogView
-            value={profileOut}
-            error={profileErr}
-            placeholder={
+          </OpsCard>
+
+          <OpsCard
+            icon={<WrenchIcon className="size-4" />}
+            title={t("ops.profile")}
+            description={t("ops.profile_desc")}
+            className="min-w-0"
+            actions={
+              profiles.length === 0 ? null : (
+                <>
+                  <Select
+                    value={profileName}
+                    onValueChange={(v) => setProfileName(v ?? "")}
+                    disabled={anyBusy}
+                  >
+                    <SelectTrigger className="h-7 w-28 min-w-0 max-w-[7.5rem] text-[0.8rem]" size="sm">
+                      <SelectValue placeholder={t("ops.profile_select")} />
+                    </SelectTrigger>
+                    <SelectContent alignItemWithTrigger className="min-w-0 w-(--anchor-width)">
+                      {profiles.map((p) => (
+                        <SelectItem key={p.name} value={p.name} title={p.description || p.name}>
+                          <span className="truncate">{profileShortLabel(t, p.name)}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={runProfilePreview}
+                    disabled={anyBusy || !profileName}
+                  >
+                    {busy === "preview" ? <Spinner data-icon="inline-start" /> : null}
+                    {t("ops.profile_preview")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="caution"
+                    onClick={() => {
+                      setProfileConfirm("")
+                      setProfileApplyOpen(true)
+                    }}
+                    disabled={standby || anyBusy || !profileName}
+                  >
+                    {t("ops.profile_apply")}
+                  </Button>
+                </>
+              )
+            }
+          >
+            {profiles.length === 0 ? (
               <EmptyState
                 compact
-                icon={InboxIcon}
-                title={t("error.no_output")}
-                className="w-full border-0 bg-transparent"
+                icon={SlidersHorizontalIcon}
+                title={t("ops.profile_empty")}
+                description={t("ops.profile_empty_hint")}
               />
-            }
-          />
-        </OpsCard>
+            ) : null}
+            <OpsLogView
+              value={profileOut}
+              error={profileErr}
+              placeholder={
+                <EmptyState
+                  compact
+                  icon={InboxIcon}
+                  title={t("error.no_output")}
+                  className="w-full border-0 bg-transparent"
+                />
+              }
+            />
+          </OpsCard>
+        </div>
       </div>
 
       <Dialog

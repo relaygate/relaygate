@@ -14,7 +14,7 @@
 
 ## 明确不做
 
-多上游成员 LB · 默认 L7 业务网关 · TLS/SDS · ext_authz · WASM · Tracing · 完整服务网格 · 每节点完整 Panel
+多上游成员 LB · 默认 L7 业务网关 · TLS/SDS · ext_authz · WASM · Tracing · 完整服务网格 · 每节点完整 Panel · **外部全局限速（Redis / Rate Limit Service）**（行业可选，产品不接）
 
 ## 已知边界
 
@@ -22,5 +22,6 @@
 - 上游看到的是网关源 IP
 - Envoy 非抗 DDoS（大流量需云高防）
 - 默认 `PROXY_PROTOCOL=off`（公网直连；有云 LB 发 PROXY 时再开）
+- 主机准入与每 IP **新建**连接限速以 nftables 为真相源；TCP 长连接勿对已建立会话做 PPS 限速（见 `packaging/security/`）
 
-可选薄能力：少量 `defaults` 上的 outlier / 熔断档位（非策略引擎）。
+可选薄能力：少量 `defaults` 上的 outlier / 熔断档位（非策略引擎）；本机 Envoy `local_ratelimit`（按新连接令牌桶）。

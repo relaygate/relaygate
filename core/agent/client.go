@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/relaygate/relaygate/core/config"
+	"github.com/relaygate/relaygate/core/resources"
 )
 
 // Client talks to the control-plane Panel agent APIs.
@@ -55,6 +56,8 @@ type versionResp struct {
 }
 
 // PullOnce fetches the current published config and writes it to local DataDir.
+// It does NOT update applied-version — that happens only after HotApply succeeds
+// (see MarkApplied / Run AfterPull).
 func (c *Client) PullOnce(root string) (version string, err error) {
 	req, err := http.NewRequest(http.MethodGet, c.ControlURL+"/api/agent/config", nil)
 	if err != nil {
@@ -77,19 +80,65 @@ func (c *Client) PullOnce(root string) (version string, err error) {
 	if vr.Version == "" || vr.Body == "" {
 		return "", fmt.Errorf("主控尚无已发布版本。请先在主控执行「发布到机群」")
 	}
+
+	tmpParse := filepath.Join(config.ResolveDataDir(root), "resources.pull.tmp.yaml")
+	if err := os.MkdirAll(filepath.Dir(tmpParse), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(tmpParse, []byte(vr.Body), 0o640); err != nil {
+		return "", err
+	}
+	defer os.Remove(tmpParse)
+
+	r, err := resources.Load(tmpParse)
+	if err != nil {
+		return "", fmt.Errorf("主控返回的配置与本机不兼容（请升级节点到与主控相同版本后再拉取）：%v", err)
+	}
+	resources.StripFleetNodeIdentity(r)
+	name, pubIP := localInstallIdentity(root)
+	resources.ApplyLocalNodeIdentity(r, name, pubIP)
+
 	dst := config.ResolvePaths(root).Resources
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := resources.Save(dst, r); err != nil {
 		return "", err
 	}
-	tmp := dst + ".tmp"
-	if err := os.WriteFile(tmp, []byte(vr.Body), 0o640); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmp, dst); err != nil {
-		return "", err
-	}
-	_ = os.WriteFile(filepath.Join(config.ResolveDataDir(root), "applied-version"), []byte(vr.Version+"\n"), 0o640)
+	_ = os.WriteFile(filepath.Join(config.ResolveDataDir(root), "pulled-version"), []byte(vr.Version+"\n"), 0o640)
 	return vr.Version, nil
+}
+
+// localInstallIdentity prefers process env, then explicit keys in root/.env.
+// Does not invent defaults (avoids stamping LoadEnv's 127.0.0.1 / gateway-01).
+func localInstallIdentity(root string) (name, publicIP string) {
+	name = strings.TrimSpace(os.Getenv("GATEWAY_NAME"))
+	publicIP = strings.TrimSpace(os.Getenv("GATEWAY_PUBLIC_IP"))
+	env, err := config.LoadEnv(root)
+	if err != nil {
+		return name, publicIP
+	}
+	if name == "" {
+		name = strings.TrimSpace(env.Raw["GATEWAY_NAME"])
+	}
+	if publicIP == "" {
+		publicIP = strings.TrimSpace(env.Raw["GATEWAY_PUBLIC_IP"])
+	}
+	return name, publicIP
+}
+
+// MarkApplied records that version was successfully HotApplied (incl. xDS ACK).
+func MarkApplied(root, version string) error {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return fmt.Errorf("applied 版本为空")
+	}
+	path := filepath.Join(config.ResolveDataDir(root), "applied-version")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(version+"\n"), 0o640); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // Heartbeat reports applied version to the control plane.

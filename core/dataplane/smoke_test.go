@@ -20,12 +20,12 @@ func TestResolveCanaryPortsPrefersValidationThenProduction(t *testing.T) {
 	}
 	res := &resources.Resources{
 		Meta: resources.Meta{GatewayName: "gw"},
-		Servers: []resources.Server{
+		Upstreams: []resources.Upstream{
 			{Name: "server-01", Address: "10.0.0.11", TCP: resources.ProtoPortOf(7777), Enabled: true},
 		},
-		Rules: []resources.Rule{
-			{Name: "forward-server-01-production-tcp", Entry: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: true},
-			{Name: "forward-server-01-production-udp", Entry: "production", Server: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: true},
+		Forwards: []resources.Forward{
+			{Name: "forward-server-01-production-tcp", Entry: "production", Upstream: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: true},
+			{Name: "forward-server-01-production-udp", Entry: "production", Upstream: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: true},
 		},
 	}
 	writeResources(t, filepath.Join(dataDir, "resources.yaml"), res)
@@ -38,9 +38,9 @@ func TestResolveCanaryPortsPrefersValidationThenProduction(t *testing.T) {
 		t.Fatalf("got tcp=%s udp=%s source=%s", tcp, udp, source)
 	}
 
-	res.Rules = append(res.Rules,
-		resources.Rule{Name: "forward-server-01-validation-tcp", Entry: "validation", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
-		resources.Rule{Name: "forward-server-01-validation-udp", Entry: "validation", Server: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
+	res.Forwards = append(res.Forwards,
+		resources.Forward{Name: "forward-server-01-validation-tcp", Entry: "validation", Upstream: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
+		resources.Forward{Name: "forward-server-01-validation-udp", Entry: "validation", Upstream: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
 	)
 	writeResources(t, filepath.Join(dataDir, "resources.yaml"), res)
 
@@ -62,11 +62,11 @@ func TestResolveCanaryPortsNoEnabledEntries(t *testing.T) {
 	}
 	res := &resources.Resources{
 		Meta: resources.Meta{GatewayName: "gw"},
-		Servers: []resources.Server{
+		Upstreams: []resources.Upstream{
 			{Name: "server-01", Address: "10.0.0.11", TCP: resources.ProtoPortOf(7777), Enabled: true},
 		},
-		Rules: []resources.Rule{
-			{Name: "forward-server-01-production-tcp", Entry: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
+		Forwards: []resources.Forward{
+			{Name: "forward-server-01-production-tcp", Entry: "production", Upstream: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
 		},
 	}
 	writeResources(t, filepath.Join(dataDir, "resources.yaml"), res)

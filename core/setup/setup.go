@@ -162,7 +162,7 @@ func writeEnv(opt Options) error {
 	envPath := filepath.Join(opt.Root, ".env")
 	profiles := ""
 	if opt.EnableGrafana == "1" {
-		// 主节点默认带 Loki + Fluent Bit（TCP access 日志）；从节点自行改 COMPOSE_PROFILES
+		// 主控默认带 Loki + Fluent Bit（TCP access 日志）；节点自行改 COMPOSE_PROFILES
 		profiles = "with-grafana,with-loki,with-logs"
 	}
 	grafanaURL := ""

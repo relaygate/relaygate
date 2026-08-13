@@ -7,54 +7,54 @@ import (
 )
 
 // ServerLifecycle summarizes validation/production entry enablement for one upstream.
-type ServerLifecycle struct {
+type UpstreamLifecycle struct {
 	Name                   string   `json:"name"`
-	ServerEnabled          bool     `json:"server_enabled"`
+	UpstreamEnabled        bool     `json:"upstream_enabled"`
 	ValidationEnabled      bool     `json:"validation_enabled"`
 	ProductionEnabled      bool     `json:"production_enabled"`
 	ValidationPorts        []string `json:"validation_ports"` // e.g. "TCP/11001"
 	ProductionPorts        []string `json:"production_ports"`
-	ValidationRuleCount    int      `json:"validation_rule_count"`
-	ProductionRuleCount    int      `json:"production_rule_count"`
+	ValidationForwardCount int      `json:"validation_forward_count"`
+	ProductionForwardCount int      `json:"production_forward_count"`
 	Protocols              []string `json:"protocols"`
 }
 
-// LifecycleStatus returns per-server validation→production visibility (from Rules).
-// Protocols come from the Server's enabled upstreams (tcp/udp ports).
-func (r *Resources) LifecycleStatus() []ServerLifecycle {
-	byName := make(map[string]*ServerLifecycle, len(r.Servers))
-	order := make([]string, 0, len(r.Servers))
-	for _, s := range r.Servers {
+// LifecycleStatus returns per-server validation→production visibility (from Forwards).
+// Protocols come from the Upstream's enabled upstreams (tcp/udp ports).
+func (r *Resources) LifecycleStatus() []UpstreamLifecycle {
+	byName := make(map[string]*UpstreamLifecycle, len(r.Upstreams))
+	order := make([]string, 0, len(r.Upstreams))
+	for _, s := range r.Upstreams {
 		order = append(order, s.Name)
-		byName[s.Name] = &ServerLifecycle{
+		byName[s.Name] = &UpstreamLifecycle{
 			Name:          s.Name,
-			ServerEnabled: s.Enabled,
+			UpstreamEnabled: s.Enabled,
 			Protocols:     s.EnabledProtocols(),
 		}
 	}
-	for _, rule := range r.Rules {
-		lc, ok := byName[rule.Server]
+	for _, fwd := range r.Forwards {
+		lc, ok := byName[fwd.Upstream]
 		if !ok {
 			continue
 		}
-		proto := strings.ToUpper(strings.TrimSpace(rule.Protocol))
-		port := fmt.Sprintf("%s/%d", proto, rule.ListenPort)
-		switch strings.ToLower(strings.TrimSpace(rule.Entry)) {
+		proto := strings.ToUpper(strings.TrimSpace(fwd.Protocol))
+		port := fmt.Sprintf("%s/%d", proto, fwd.ListenPort)
+		switch strings.ToLower(strings.TrimSpace(fwd.Entry)) {
 		case EntryValidation:
-			lc.ValidationRuleCount++
-			if rule.Enabled {
+			lc.ValidationForwardCount++
+			if fwd.Enabled {
 				lc.ValidationEnabled = true
 				lc.ValidationPorts = append(lc.ValidationPorts, port)
 			}
 		case EntryProduction:
-			lc.ProductionRuleCount++
-			if rule.Enabled {
+			lc.ProductionForwardCount++
+			if fwd.Enabled {
 				lc.ProductionEnabled = true
 				lc.ProductionPorts = append(lc.ProductionPorts, port)
 			}
 		}
 	}
-	out := make([]ServerLifecycle, 0, len(order))
+	out := make([]UpstreamLifecycle, 0, len(order))
 	for _, name := range order {
 		lc := byName[name]
 		sort.Strings(lc.ValidationPorts)
@@ -72,11 +72,11 @@ func FormatLifecycle(r *Resources) string {
 	fmt.Fprintf(&b, "## 入口状态: %d 台上游\n", len(rows))
 	for _, lc := range rows {
 		srv := "off"
-		if lc.ServerEnabled {
+		if lc.UpstreamEnabled {
 			srv = "on"
 		}
 		validation := "—"
-		if lc.ValidationRuleCount > 0 {
+		if lc.ValidationForwardCount > 0 {
 			if lc.ValidationEnabled {
 				validation = "on " + strings.Join(lc.ValidationPorts, ",")
 			} else {
@@ -84,7 +84,7 @@ func FormatLifecycle(r *Resources) string {
 			}
 		}
 		prod := "—"
-		if lc.ProductionRuleCount > 0 {
+		if lc.ProductionForwardCount > 0 {
 			if lc.ProductionEnabled {
 				prod = "on " + strings.Join(lc.ProductionPorts, ",")
 			} else {
@@ -92,8 +92,8 @@ func FormatLifecycle(r *Resources) string {
 			}
 		}
 		// Use "·" (not "-") so change-summary coloring does not treat rows as
-		// `  - server <removed>` when names are server-*.
-		fmt.Fprintf(&b, "  · %s server=%s validation=%s production=%s\n", lc.Name, srv, validation, prod)
+		// `  - upstream <removed>` when names are server-*.
+		fmt.Fprintf(&b, "  · %s upstream=%s validation=%s production=%s\n", lc.Name, srv, validation, prod)
 	}
 	return b.String()
 }
@@ -101,18 +101,18 @@ func FormatLifecycle(r *Resources) string {
 // EntryListenPorts returns the first enabled TCP/UDP listen ports for entry (0 if none).
 func (r *Resources) EntryListenPorts(entry string) (tcpPort, udpPort int) {
 	want := strings.ToLower(strings.TrimSpace(entry))
-	for _, rule := range r.EnabledRules() {
-		if strings.ToLower(strings.TrimSpace(rule.Entry)) != want {
+	for _, fwd := range r.EnabledForwards() {
+		if strings.ToLower(strings.TrimSpace(fwd.Entry)) != want {
 			continue
 		}
-		switch strings.ToUpper(rule.Protocol) {
+		switch strings.ToUpper(fwd.Protocol) {
 		case "TCP":
 			if tcpPort == 0 {
-				tcpPort = rule.ListenPort
+				tcpPort = fwd.ListenPort
 			}
 		case "UDP":
 			if udpPort == 0 {
-				udpPort = rule.ListenPort
+				udpPort = fwd.ListenPort
 			}
 		}
 	}

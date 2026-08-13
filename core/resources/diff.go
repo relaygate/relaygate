@@ -12,15 +12,15 @@ import (
 
 // ChangeSummary describes what changed between two Resources snapshots.
 type ChangeSummary struct {
-	ServersAdded    []string
-	ServersRemoved  []string
-	ServersChanged  []string
-	RulesAdded      []string
-	RulesRemoved    []string
-	RulesToggled    []string
+	UpstreamsAdded  []string
+	UpstreamsRemoved []string
+	UpstreamsChanged []string
+	ForwardsAdded   []string
+	ForwardsRemoved []string
+	ForwardsToggled []string
 	PortChanges     []string
-	DefaultsChanged []string
-	ACLChanged      []string
+	DefaultsChanged  []string
+	SecurityChanged  []string
 	// MetaChanged lists bootstrap-affecting meta field deltas (admin_*, envoy_image).
 	// Populated only when Diff has a non-nil before snapshot.
 	MetaChanged []string
@@ -28,23 +28,23 @@ type ChangeSummary struct {
 }
 
 func (c ChangeSummary) Empty() bool {
-	return len(c.ServersAdded) == 0 && len(c.ServersRemoved) == 0 &&
-		len(c.ServersChanged) == 0 && len(c.RulesAdded) == 0 &&
-		len(c.RulesRemoved) == 0 && len(c.RulesToggled) == 0 &&
+	return len(c.UpstreamsAdded) == 0 && len(c.UpstreamsRemoved) == 0 &&
+		len(c.UpstreamsChanged) == 0 && len(c.ForwardsAdded) == 0 &&
+		len(c.ForwardsRemoved) == 0 && len(c.ForwardsToggled) == 0 &&
 		len(c.PortChanges) == 0 && len(c.DefaultsChanged) == 0 &&
-		len(c.ACLChanged) == 0 && len(c.MetaChanged) == 0
+		len(c.SecurityChanged) == 0 && len(c.MetaChanged) == 0
 }
 
 // ApplySurface classifies which execution surfaces a ChangeSummary needs.
 // Envoy reload vs nft apply stay separate. With XDS_ENABLED=0, ops always HardReload.
 type ApplySurface struct {
-	NeedsReload     bool // servers / rules / Envoy defaults / hard meta
-	NeedsFirewall   bool // ACL / nftables defaults / enabled listen ports
+	NeedsReload     bool // upstreams / forwards / Envoy defaults / hard meta
+	NeedsFirewall   bool // security policies / enabled listen ports
 	CanHotApply     bool // NeedsReload && !NeedsHardReload
 	NeedsHardReload bool // meta.admin_* / meta.envoy_image (bootstrap)
 }
 
-// Classify returns whether this diff needs Envoy reload and/or nftables dataplane.
+// Classify returns whether this diff needs gateway reload and/or firewall apply.
 // Both may be true (e.g. new listen port). Empty diffs yield all false.
 func (c ChangeSummary) Classify() ApplySurface {
 	hard := c.needsHardReload()
@@ -62,10 +62,10 @@ func (c ChangeSummary) needsHardReload() bool {
 }
 
 func (c ChangeSummary) needsReload() bool {
-	if len(c.ServersAdded) > 0 || len(c.ServersRemoved) > 0 || len(c.ServersChanged) > 0 {
+	if len(c.UpstreamsAdded) > 0 || len(c.UpstreamsRemoved) > 0 || len(c.UpstreamsChanged) > 0 {
 		return true
 	}
-	if len(c.RulesAdded) > 0 || len(c.RulesRemoved) > 0 || len(c.RulesToggled) > 0 || len(c.PortChanges) > 0 {
+	if len(c.ForwardsAdded) > 0 || len(c.ForwardsRemoved) > 0 || len(c.ForwardsToggled) > 0 || len(c.PortChanges) > 0 {
 		return true
 	}
 	for _, d := range c.DefaultsChanged {
@@ -73,35 +73,60 @@ func (c ChangeSummary) needsReload() bool {
 			return true
 		}
 	}
+	for _, d := range c.SecurityChanged {
+		if securityEntryAffectsEnvoy(d) {
+			return true
+		}
+	}
 	return false
 }
 
+func securityEntryAffectsEnvoy(entry string) bool {
+	field, _, _ := strings.Cut(entry, " ")
+	needsReload, _ := PolicyApplySurfaces(field)
+	return needsReload
+}
+
 func (c ChangeSummary) needsFirewall() bool {
-	if len(c.ACLChanged) > 0 {
+	if len(c.SecurityChanged) > 0 {
 		return true
 	}
 	if len(c.PortChanges) > 0 {
 		return true
 	}
-	if len(c.RulesToggled) > 0 || len(c.RulesRemoved) > 0 {
+	if len(c.ForwardsToggled) > 0 || len(c.ForwardsRemoved) > 0 {
 		return true
 	}
-	for _, r := range c.RulesAdded {
+	for _, r := range c.ForwardsAdded {
 		// Diff formats enabled rules as "... , enabled)" — disabled adds do not touch FORWARD_*.
 		if strings.Contains(r, ", enabled)") {
 			return true
 		}
 	}
-	for _, d := range c.DefaultsChanged {
-		if defaultsEntryAffectsNftables(d) {
+	for _, d := range c.SecurityChanged {
+		if securityEntryAffectsFirewall(d) {
 			return true
 		}
 	}
 	return false
 }
 
+func securityEntryAffectsFirewall(entry string) bool {
+	field, _, _ := strings.Cut(entry, " ")
+	_, needsFirewall := PolicyApplySurfaces(field)
+	if needsFirewall {
+		return true
+	}
+	// ACL list deltas (+deny, -allow, etc.)
+	if strings.HasPrefix(entry, "+") || strings.HasPrefix(entry, "-") {
+		return true
+	}
+	return false
+}
+
 func defaultsEntryAffectsNftables(entry string) bool {
-	return strings.Contains(entry, "nftables.")
+	_, needsFirewall := PolicyApplySurfaces(entry)
+	return needsFirewall
 }
 
 func defaultsEntryAffectsEnvoy(entry string) bool {
@@ -109,15 +134,11 @@ func defaultsEntryAffectsEnvoy(entry string) bool {
 	if entry == "" {
 		return false
 	}
-	// First-snapshot summarizeDefaults packs envoy+nft into one line.
-	if strings.Contains(entry, "tcp_rl=") || strings.Contains(entry, "max_conn=") {
-		return true
-	}
-	field, _, _ := strings.Cut(entry, " ")
-	if strings.HasPrefix(field, "nftables.") {
+	if strings.Contains(entry, "tcp_idle=") {
 		return false
 	}
-	return true
+	field, _, _ := strings.Cut(entry, " ")
+	return !strings.HasPrefix(field, "security.policies.")
 }
 
 func (c ChangeSummary) String() string {
@@ -135,15 +156,15 @@ func (c ChangeSummary) String() string {
 	if c.Note != "" {
 		fmt.Fprintf(&b, "%s\n", c.Note)
 	}
-	writeList(&b, "  + server", c.ServersAdded)
-	writeList(&b, "  - server", c.ServersRemoved)
-	writeList(&b, "  ~ server", c.ServersChanged)
-	writeList(&b, "  + rule", c.RulesAdded)
-	writeList(&b, "  - rule", c.RulesRemoved)
-	writeList(&b, "  ~ rule", c.RulesToggled)
+	writeList(&b, "  + upstream", c.UpstreamsAdded)
+	writeList(&b, "  - upstream", c.UpstreamsRemoved)
+	writeList(&b, "  ~ upstream", c.UpstreamsChanged)
+	writeList(&b, "  + forward", c.ForwardsAdded)
+	writeList(&b, "  - forward", c.ForwardsRemoved)
+	writeList(&b, "  ~ forward", c.ForwardsToggled)
 	writeList(&b, "  ~ port", c.PortChanges)
 	writeList(&b, "  ~ defaults", c.DefaultsChanged)
-	writeList(&b, "  ~ acl", c.ACLChanged)
+	writeList(&b, "  ~ security", c.SecurityChanged)
 	writeList(&b, "  ~ meta", c.MetaChanged)
 	return b.String()
 }
@@ -162,30 +183,30 @@ func Diff(before, after *Resources) ChangeSummary {
 	if before == nil {
 		var c ChangeSummary
 		c.Note = "首次/无上次备份对比"
-		for _, s := range after.Servers {
-			c.ServersAdded = append(c.ServersAdded, s.Name)
+		for _, s := range after.Upstreams {
+			c.UpstreamsAdded = append(c.UpstreamsAdded, s.Name)
 		}
-		for _, rule := range after.Rules {
+		for _, fwd := range after.Forwards {
 			state := "disabled"
-			if rule.Enabled {
+			if fwd.Enabled {
 				state = "enabled"
 			}
-			c.RulesAdded = append(c.RulesAdded, fmt.Sprintf("%s (%s %s/%d → %s, %s)",
-				rule.Name, rule.Entry, strings.ToUpper(rule.Protocol), rule.ListenPort, rule.Server, state))
+			c.ForwardsAdded = append(c.ForwardsAdded, fmt.Sprintf("%s (%s %s/%d → %s, %s)",
+				fwd.Name, fwd.Entry, strings.ToUpper(fwd.Protocol), fwd.ListenPort, fwd.Upstream, state))
 		}
 		c.DefaultsChanged = append(c.DefaultsChanged, summarizeDefaults(after.Defaults)...)
-		c.ACLChanged = append(c.ACLChanged, summarizeACL(after.ACL)...)
+		c.SecurityChanged = append(c.SecurityChanged, summarizeSecurity(after.Security)...)
 		return c
 	}
 
 	var c ChangeSummary
-	beforeServers := before.ServerMap()
-	afterServers := after.ServerMap()
+	beforeUpstreams := before.UpstreamMap()
+	afterUpstreams := after.UpstreamMap()
 
-	for name, s := range afterServers {
-		old, ok := beforeServers[name]
+	for name, s := range afterUpstreams {
+		old, ok := beforeUpstreams[name]
 		if !ok {
-			c.ServersAdded = append(c.ServersAdded, name)
+			c.UpstreamsAdded = append(c.UpstreamsAdded, name)
 			continue
 		}
 		var parts []string
@@ -202,69 +223,69 @@ func Diff(before, after *Resources) ChangeSummary {
 			parts = append(parts, fmt.Sprintf("enabled %v→%v", old.Enabled, s.Enabled))
 		}
 		if len(parts) > 0 {
-			c.ServersChanged = append(c.ServersChanged, name+": "+strings.Join(parts, ", "))
+			c.UpstreamsChanged = append(c.UpstreamsChanged, name+": "+strings.Join(parts, ", "))
 		}
 	}
-	for name := range beforeServers {
-		if _, ok := afterServers[name]; !ok {
-			c.ServersRemoved = append(c.ServersRemoved, name)
+	for name := range beforeUpstreams {
+		if _, ok := afterUpstreams[name]; !ok {
+			c.UpstreamsRemoved = append(c.UpstreamsRemoved, name)
 		}
 	}
 
-	beforeRules := ruleMap(before)
-	afterRules := ruleMap(after)
-	for name, rule := range afterRules {
-		old, ok := beforeRules[name]
+	beforeForwards := forwardMap(before)
+	afterForwards := forwardMap(after)
+	for name, fwd := range afterForwards {
+		old, ok := beforeForwards[name]
 		if !ok {
 			state := "disabled"
-			if rule.Enabled {
+			if fwd.Enabled {
 				state = "enabled"
 			}
-			c.RulesAdded = append(c.RulesAdded, fmt.Sprintf("%s (%s %s/%d → %s, %s)",
-				rule.Name, rule.Entry, strings.ToUpper(rule.Protocol), rule.ListenPort, rule.Server, state))
+			c.ForwardsAdded = append(c.ForwardsAdded, fmt.Sprintf("%s (%s %s/%d → %s, %s)",
+				fwd.Name, fwd.Entry, strings.ToUpper(fwd.Protocol), fwd.ListenPort, fwd.Upstream, state))
 			continue
 		}
-		if old.Enabled != rule.Enabled {
+		if old.Enabled != fwd.Enabled {
 			from, to := "off", "on"
-			if !rule.Enabled {
+			if !fwd.Enabled {
 				from, to = "on", "off"
 			}
-			c.RulesToggled = append(c.RulesToggled, fmt.Sprintf("%s %s→%s", name, from, to))
+			c.ForwardsToggled = append(c.ForwardsToggled, fmt.Sprintf("%s %s→%s", name, from, to))
 		}
-		if old.ListenPort != rule.ListenPort || !strings.EqualFold(old.Protocol, rule.Protocol) {
+		if old.ListenPort != fwd.ListenPort || !strings.EqualFold(old.Protocol, fwd.Protocol) {
 			c.PortChanges = append(c.PortChanges, fmt.Sprintf("%s %s/%d→%s/%d",
 				name,
 				strings.ToUpper(old.Protocol), old.ListenPort,
-				strings.ToUpper(rule.Protocol), rule.ListenPort))
-		} else if old.Server != rule.Server || !strings.EqualFold(old.Entry, rule.Entry) {
-			c.RulesToggled = append(c.RulesToggled, fmt.Sprintf("%s target/kind changed", name))
+				strings.ToUpper(fwd.Protocol), fwd.ListenPort))
+		} else if old.Upstream != fwd.Upstream || !strings.EqualFold(old.Entry, fwd.Entry) {
+			c.ForwardsToggled = append(c.ForwardsToggled, fmt.Sprintf("%s target/kind changed", name))
 		}
 	}
-	for name := range beforeRules {
-		if _, ok := afterRules[name]; !ok {
-			c.RulesRemoved = append(c.RulesRemoved, name)
+	for name := range beforeForwards {
+		if _, ok := afterForwards[name]; !ok {
+			c.ForwardsRemoved = append(c.ForwardsRemoved, name)
 		}
 	}
 
 	c.DefaultsChanged = diffDefaults(before.Defaults, after.Defaults)
-	c.ACLChanged = diffACL(before.ACL, after.ACL)
+	c.SecurityChanged = DiffSecurityPolicies(before.Security, after.Security)
 	c.MetaChanged = diffMetaHardReload(before.Meta, after.Meta)
 
-	sort.Strings(c.ServersAdded)
-	sort.Strings(c.ServersRemoved)
-	sort.Strings(c.ServersChanged)
-	sort.Strings(c.RulesAdded)
-	sort.Strings(c.RulesRemoved)
-	sort.Strings(c.RulesToggled)
+	sort.Strings(c.UpstreamsAdded)
+	sort.Strings(c.UpstreamsRemoved)
+	sort.Strings(c.UpstreamsChanged)
+	sort.Strings(c.ForwardsAdded)
+	sort.Strings(c.ForwardsRemoved)
+	sort.Strings(c.ForwardsToggled)
 	sort.Strings(c.PortChanges)
 	sort.Strings(c.DefaultsChanged)
-	sort.Strings(c.ACLChanged)
+	sort.Strings(c.SecurityChanged)
 	sort.Strings(c.MetaChanged)
 	return c
 }
 
 // diffMetaHardReload lists meta fields that force HardReload (bootstrap / image).
-// gateway_name / game_name are labels only and do not flip NeedsHardReload.
+// gateway_name / service_name are labels only and do not flip NeedsHardReload.
 func diffMetaHardReload(before, after Meta) []string {
 	var parts []string
 	add := func(field string, a, b any) {
@@ -287,14 +308,11 @@ func diffDefaults(before, after Defaults) []string {
 			parts = append(parts, fmt.Sprintf("%s %s→%s", field, as, bs))
 		}
 	}
-	add("backend_tcp_port", before.BackendTCPPort, after.BackendTCPPort)
-	add("backend_udp_port", before.BackendUDPPort, after.BackendUDPPort)
+	add("default_upstream_tcp_port", before.DefaultUpstreamTCPPort, after.DefaultUpstreamTCPPort)
+	add("default_upstream_udp_port", before.DefaultUpstreamUDPPort, after.DefaultUpstreamUDPPort)
 	add("tcp_idle_timeout", before.TCPIdleTimeout, after.TCPIdleTimeout)
 	add("udp_idle_timeout", before.UDPIdleTimeout, after.UDPIdleTimeout)
-	add("max_connections", before.MaxConnections, after.MaxConnections)
 	add("max_pending_requests", before.MaxPendingRequests, after.MaxPendingRequests)
-	add("tcp_local_rate_limit_per_sec", before.TCPLocalRateLimitPerSec, after.TCPLocalRateLimitPerSec)
-	add("tcp_local_rate_limit_burst", before.TCPLocalRateLimitBurst, after.TCPLocalRateLimitBurst)
 	add("health.timeout", before.HealthCheck.Timeout, after.HealthCheck.Timeout)
 	add("health.interval", before.HealthCheck.Interval, after.HealthCheck.Interval)
 	add("health.unhealthy_threshold", before.HealthCheck.UnhealthyThreshold, after.HealthCheck.UnhealthyThreshold)
@@ -303,52 +321,14 @@ func diffDefaults(before, after Defaults) []string {
 	add("outlier.consecutive_local_origin_failure", before.OutlierDetection.ConsecutiveLocalOriginFailure, after.OutlierDetection.ConsecutiveLocalOriginFailure)
 	add("outlier.interval", before.OutlierDetection.Interval, after.OutlierDetection.Interval)
 	add("outlier.base_ejection_time", before.OutlierDetection.BaseEjectionTime, after.OutlierDetection.BaseEjectionTime)
-	add("nftables.tcp_new_conn_per_ip", before.Nftables.TCPNewConnPerIP, after.Nftables.TCPNewConnPerIP)
-	add("nftables.udp_pps_per_ip", before.Nftables.UDPPPSPerIP, after.Nftables.UDPPPSPerIP)
-	add("nftables.tcp_burst", before.Nftables.TCPBurst, after.Nftables.TCPBurst)
-	add("nftables.udp_burst", before.Nftables.UDPBurst, after.Nftables.UDPBurst)
 	return parts
 }
 
 func summarizeDefaults(d Defaults) []string {
 	return []string{
-		fmt.Sprintf("tcp_rl=%d/%d max_conn=%d nftables.tcp=%s nftables.udp=%s",
-			d.TCPLocalRateLimitPerSec, d.TCPLocalRateLimitBurst, d.MaxConnections,
-			d.Nftables.TCPNewConnPerIP, d.Nftables.UDPPPSPerIP),
+		fmt.Sprintf("tcp_idle=%s udp_idle=%s",
+			d.TCPIdleTimeout, d.UDPIdleTimeout),
 	}
-}
-
-func diffACL(before, after ACL) []string {
-	var parts []string
-	added, removed := listDelta(before.Deny, after.Deny)
-	for _, e := range added {
-		parts = append(parts, "+deny "+e)
-	}
-	for _, e := range removed {
-		parts = append(parts, "-deny "+e)
-	}
-	added, removed = listDelta(before.Allow, after.Allow)
-	for _, e := range added {
-		parts = append(parts, "+allow "+e)
-	}
-	for _, e := range removed {
-		parts = append(parts, "-allow "+e)
-	}
-	return parts
-}
-
-func summarizeACL(a ACL) []string {
-	var parts []string
-	if len(a.Deny) > 0 {
-		parts = append(parts, fmt.Sprintf("deny=%s", strings.Join(a.Deny, ",")))
-	}
-	if len(a.Allow) > 0 {
-		parts = append(parts, fmt.Sprintf("allow=%s (strict)", strings.Join(a.Allow, ",")))
-	}
-	if len(parts) == 0 {
-		return nil
-	}
-	return parts
 }
 
 func listDelta(before, after []string) (added, removed []string) {
@@ -375,10 +355,10 @@ func listDelta(before, after []string) (added, removed []string) {
 	return added, removed
 }
 
-func ruleMap(r *Resources) map[string]Rule {
-	m := make(map[string]Rule, len(r.Rules))
-	for _, rule := range r.Rules {
-		m[rule.Name] = rule
+func forwardMap(r *Resources) map[string]Forward {
+	m := make(map[string]Forward, len(r.Forwards))
+	for _, fwd := range r.Forwards {
+		m[fwd.Name] = fwd
 	}
 	return m
 }

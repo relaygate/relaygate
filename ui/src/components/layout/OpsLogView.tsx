@@ -78,6 +78,3 @@ export function OpsLogView({
     </div>
   )
 }
-
-/** @deprecated Prefer OpsLogView — same component. */
-export const LogPane = OpsLogView

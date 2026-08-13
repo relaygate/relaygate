@@ -8,14 +8,14 @@
 
 | 概念 | 说明 |
 |------|------|
-| **上游** `servers` | 回源目标（地址 + TCP/UDP 端口）；固定单目标，非多成员 LB |
-| **转发** `rules` | 入口（类型 + 监听端口 + 协议）→ 某一上游；命名 `forward-{server}-{entry}-{proto}` |
+| **上游** `upstreams` | 回源目标（地址 + TCP/UDP 端口）；固定单目标，非多成员 LB |
+| **转发** `forwards` | 入口（类型 + 监听端口 + 协议）→ 某一上游；命名 `forward-{upstream}-{entry}-{proto}` |
 | **入口类型** `entry` | `validation`（验证）/ `production`（正式），可并行；回退 = 关正式转发 |
 | **运行态** | 默认 `/opt/relaygate/data`（可用 `RELAYGATE_DATA_DIR` 覆盖） |
 
-**已知边界：** 固定目标转发（不做多上游成员 LB）· UDP 无可靠主动健康检查 · 上游看到的是网关源 IP · Envoy 非抗 DDoS（大流量需云高防）· 默认 `PROXY_PROTOCOL=off`（公网直连；有云 LB 发 PROXY 时再开，见 [logging-playbook](docs/logging-playbook.md)）
+**已知边界：** 固定目标转发（不做多上游成员 LB）· UDP 无可靠主动健康检查 · 上游看到的是网关源 IP · 网关非抗 DDoS（大流量需云高防）· 默认 `PROXY_PROTOCOL=off`（公网直连；有云 LB 发 PROXY 时再开，见 [logging-playbook](docs/logging-playbook.md)）· 安全四域与落地顺序见 [security-domains](docs/security-domains.md)
 
-**延伸阅读：** [能力边界](docs/envoy-capability-roadmap.md) · [机群运维](docs/fleet-ops.md) · [机群架构](docs/fleet-scale-control-plane.md) · [热更新](docs/hot-update-xds.md) · [中心观测](packaging/observability/README.md)
+**延伸阅读：** [能力边界](docs/envoy-capability-roadmap.md) · [安全领域](docs/security-domains.md) · [机群运维](docs/fleet-ops.md) · [机群架构](docs/fleet-scale-control-plane.md) · [热更新](docs/hot-update-xds.md) · [中心观测](packaging/observability/README.md)
 
 ---
 
@@ -104,12 +104,12 @@ relaygate smoke
 1. 添加**上游**（地址、TCP/UDP 端口）
 2. 添加**转发**：先开 `validation` 验证入口，测通后再开 `production` 正式入口
 3. **应用配置**（Envoy）→ `smoke` / 验证
-4. 需要 ACL / 主机侧放行时再 **应用防火墙**（nft）
+4. 需要 ACL / 主机侧放行时再 **应用防火墙**
 
 | 改了什么 | 怎么应用 |
 |----------|----------|
-| 上游 / 转发 / Envoy 限速等 | Panel「应用配置」或 `relaygate reload`（首次全量用 `apply`） |
-| ACL / 仅 nftables | Panel「应用防火墙」或 `relaygate firewall apply` |
+| 上游 / 转发 / 网关限速等 | Panel「应用配置」或 `relaygate reload`（首次全量用 `apply`） |
+| ACL / 仅防火墙 | Panel「应用防火墙」或 `relaygate firewall apply` |
 | 二进制 / packaging | `relaygate upgrade [--drain]` 或 `install.sh upgrade` |
 
 | `entry` | 用途 |
@@ -126,6 +126,8 @@ acl:
 ```
 
 SSH 不受 ACL 约束。改 ACL 后执行 `firewall apply`（无需 `reload` Envoy）。
+
+**网关防护（可选）：** 领域与落地顺序见 [security-domains](docs/security-domains.md)；攻击×策略见 [`packaging/security/`](packaging/security/)（[threat-analysis.md](packaging/security/threat-analysis.md)；`profile apply tcp-longlived`；防火墙仍走上方「应用防火墙」）。**Out of scope：** 外部 RLS 全局限速。
 
 ---
 
@@ -251,19 +253,19 @@ sudo PURGE=1 bash install.sh --uninstall
 
 ## 术语（运维对照）
 
-对外对齐 Envoy / L4；YAML / CLI 标识符保持兼容，**不改字段名**。
+对外对齐 Envoy / L4；YAML / API / Panel 使用统一中性字段名。
 
 | 中文（对外） | English | YAML / 运行标识 |
 |--------------|---------|-----------------|
 | **下游** / 客户端 | Downstream / Client | （无独立资源） |
-| **入口** | Entry | `rules[].entry` + `listen_port` |
+| **入口** | Entry | `forwards[].entry` + `listen_port` |
 | **验证入口** / **正式入口** | Validation / Production | `validation` / `production` |
 | **Listener** | Listener | `ingress-{forward名}` |
-| **上游** | Upstream | `servers[]` |
-| **转发** | Forward | `rules[]` |
-| **ACL** | ACL | `acl.deny` / `acl.allow` |
-
-展示层用「上游 / 转发 / 入口」；勿把 `servers` 改名为 `upstreams`（破坏兼容）。`backend_*` 为历史字段名，文档称「默认上游端口」。
+| **上游** | Upstream | `upstreams[]` |
+| **转发** | Forward | `forwards[]` |
+| **安全策略** | Security policy | `security.policies[]`（含 allowlist deny/allow） |
+| **默认上游端口** | Default upstream port | `defaults.default_upstream_tcp_port` / `default_upstream_udp_port` |
+| **业务标识** | Service name | `meta.service_name` |
 
 ---
 

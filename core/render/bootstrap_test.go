@@ -52,6 +52,21 @@ func TestRenderBootstrapMinimal(t *testing.T) {
 	}
 }
 
+func TestBootstrapOptionsFromEnvPrefersLocalName(t *testing.T) {
+	t.Parallel()
+	r := testResources()
+	r.Meta.GatewayName = "gateway-01"
+	r.Gateway.Name = "gateway-01"
+	opt := BootstrapOptionsFromEnv("gateway-03", "18000", r)
+	if opt.NodeID != "gateway-03" || opt.NodeCluster != "gateway-03" {
+		t.Fatalf("local GATEWAY_NAME must win over fleet meta: %+v", opt)
+	}
+	opt2 := BootstrapOptionsFromEnv("", "18000", r)
+	if opt2.NodeID != "gateway-01" {
+		t.Fatalf("empty env should fall back to meta: %+v", opt2)
+	}
+}
+
 func TestParseXDSPort(t *testing.T) {
 	t.Parallel()
 	if ParseXDSPort("") != DefaultXDSPort {

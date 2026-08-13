@@ -19,6 +19,7 @@
     "@fontsource-variable/geist": "^5.3.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@rolldown/binding-linux-x64-gnu": "^1.1.5",
     "@tailwindcss/vite": "^4",
     "@uiw/react-codemirror": "^4.25.11",
     "class-variance-authority": "^0.7.1",

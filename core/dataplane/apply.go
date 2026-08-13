@@ -21,7 +21,7 @@ func Apply(root string) error {
 		return err
 	}
 	if env.GatewayName == "" {
-		return fmt.Errorf("set GATEWAY_NAME in .env")
+		return fmt.Errorf("请在 .env 中设置 GATEWAY_NAME")
 	}
 
 	// First apply / upgrade: seed missing runtime defaults from versioned templates

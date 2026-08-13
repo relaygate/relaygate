@@ -230,15 +230,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/lang", s.apiLang)
 
 	// Resource APIs
-	mux.HandleFunc("/api/servers", s.withAuth(s.apiServers))
-	mux.HandleFunc("/api/servers/", s.withAuth(s.apiServersPath))
-	mux.HandleFunc("/api/rules", s.withAuth(s.apiRules))
-	mux.HandleFunc("/api/rules/", s.withAuth(s.apiRulePatch))
-	mux.HandleFunc("/api/acl", s.withAuth(s.apiACL))
+	mux.HandleFunc("/api/upstreams", s.withAuth(s.apiUpstreams))
+	mux.HandleFunc("/api/upstreams/", s.withAuth(s.apiUpstreamsPath))
+	mux.HandleFunc("/api/forwards", s.withAuth(s.apiForwards))
+	mux.HandleFunc("/api/forwards/", s.withAuth(s.apiForwardPatch))
 	mux.HandleFunc("/api/port-map", s.withAuthReadonly(s.apiPortMap))
 	mux.HandleFunc("/api/apply", s.withAuth(s.apiApply))
 	mux.HandleFunc("/api/apply/preview", s.withAuthReadonly(s.apiApplyPreview))
 	mux.HandleFunc("/api/firewall/apply", s.withAuth(s.apiFirewallApply))
+	mux.HandleFunc("/api/security/preview", s.withAuthReadonly(s.apiSecurityPreview))
+	mux.HandleFunc("/api/security/profiles", s.withAuthReadonly(s.apiSecurityProfiles))
+	mux.HandleFunc("/api/security/profile-apply", s.withAuth(s.apiSecurityProfileApply))
 	mux.HandleFunc("/api/status/envoy", s.withAuthReadonly(s.apiEnvoyStatus))
 	mux.HandleFunc("/api/status/traffic", s.withAuthReadonly(s.apiTrafficStatus))
 	mux.HandleFunc("/api/status/xds", s.withAuthReadonly(s.apiXDSStatus))
@@ -269,7 +271,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/config/resources/validate", s.withAuthReadonly(s.apiConfigResourcesValidate))
 	mux.HandleFunc("/api/config/export", s.withAuthReadonly(s.apiConfigExport))
 
-	// Legacy lang redirect (optional bookmark)
+	// Optional /lang bookmark redirect
 	mux.HandleFunc("/lang", s.handleLangRedirect)
 
 	if s.grafanaProxy != nil {
@@ -534,8 +536,8 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func lifecycleByName(res *resources.Resources) map[string]resources.ServerLifecycle {
-	out := make(map[string]resources.ServerLifecycle, len(res.Servers))
+func lifecycleByName(res *resources.Resources) map[string]resources.UpstreamLifecycle {
+	out := make(map[string]resources.UpstreamLifecycle, len(res.Upstreams))
 	for _, lc := range res.LifecycleStatus() {
 		out[lc.Name] = lc
 	}
@@ -544,7 +546,7 @@ func lifecycleByName(res *resources.Resources) map[string]resources.ServerLifecy
 
 // --- Resource JSON APIs ---
 
-func (s *Server) apiServers(w http.ResponseWriter, r *http.Request) {
+func (s *Server) apiUpstreams(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		res, err := s.load()
@@ -553,7 +555,7 @@ func (s *Server) apiServers(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 200, map[string]any{
-			"servers":   res.Servers,
+			"upstreams": res.Upstreams,
 			"lifecycle": lifecycleByName(res),
 		})
 	case http.MethodPost:
@@ -563,8 +565,8 @@ func (s *Server) apiServers(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) apiServersPath(w http.ResponseWriter, r *http.Request) {
-	rel := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/servers/"), "/")
+func (s *Server) apiUpstreamsPath(w http.ResponseWriter, r *http.Request) {
+	rel := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/upstreams/"), "/")
 	parts := strings.Split(rel, "/")
 	if len(parts) == 0 || parts[0] == "" {
 		http.NotFound(w, r)
@@ -630,7 +632,7 @@ func (s *Server) apiServerCreate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	err = res.AddServer(resources.Server{
+	err = res.AddUpstream(resources.Upstream{
 		Name:    body.Name,
 		Address: body.Address,
 		TCP:     body.TCP,
@@ -659,22 +661,22 @@ func (s *Server) apiServerCreateBatch(w http.ResponseWriter, r *http.Request) {
 		Entries []string `json:"entries"`
 		// EnableProduction force-enables newly created production entries.
 		EnableProduction bool `json:"enable_production"`
-		Servers          []struct {
-			Name     string               `json:"name"`
-			Address  string               `json:"address"`
-			TCP      *resources.ProtoPort `json:"tcp"`
-			UDP      *resources.ProtoPort `json:"udp"`
-			Enabled  *bool                `json:"enabled"`
-			Entries  []string             `json:"entries"`
-			EnableProduction *bool        `json:"enable_production"`
-		} `json:"servers"`
+		Upstreams        []struct {
+			Name             string               `json:"name"`
+			Address          string               `json:"address"`
+			TCP              *resources.ProtoPort `json:"tcp"`
+			UDP              *resources.ProtoPort `json:"udp"`
+			Enabled          *bool                `json:"enabled"`
+			Entries          []string             `json:"entries"`
+			EnableProduction *bool                `json:"enable_production"`
+		} `json:"upstreams"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, 400, map[string]any{"error": err.Error()})
 		return
 	}
-	if len(body.Servers) == 0 {
-		writeJSON(w, 400, map[string]any{"error": "servers 不能为空"})
+	if len(body.Upstreams) == 0 {
+		writeJSON(w, 400, map[string]any{"error": "upstreams 不能为空"})
 		return
 	}
 	res, err := s.load()
@@ -684,21 +686,21 @@ func (s *Server) apiServerCreateBatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type batchItem struct {
-		Name  string           `json:"name"`
-		OK    bool             `json:"ok"`
-		Error string           `json:"error,omitempty"`
-		Rules []resources.Rule `json:"rules,omitempty"`
+		Name     string              `json:"name"`
+		OK       bool                `json:"ok"`
+		Error    string              `json:"error,omitempty"`
+		Forwards []resources.Forward `json:"forwards,omitempty"`
 	}
-	results := make([]batchItem, 0, len(body.Servers))
+	results := make([]batchItem, 0, len(body.Upstreams))
 	succeeded := 0
 	var createdNames []string
 
-	for _, item := range body.Servers {
+	for _, item := range body.Upstreams {
 		enabled := true
 		if item.Enabled != nil {
 			enabled = *item.Enabled
 		}
-		addErr := res.AddServer(resources.Server{
+		addErr := res.AddUpstream(resources.Upstream{
 			Name:    item.Name,
 			Address: item.Address,
 			TCP:     item.TCP,
@@ -721,7 +723,7 @@ func (s *Server) apiServerCreateBatch(w http.ResponseWriter, r *http.Request) {
 		if item.EnableProduction != nil {
 			enableProd = *item.EnableProduction
 		}
-		var created []resources.Rule
+		var created []resources.Forward
 		name := strings.TrimSpace(item.Name)
 		for _, entry := range entries {
 			entry = resources.NormalizeEntry(entry)
@@ -733,10 +735,10 @@ func (s *Server) apiServerCreateBatch(w http.ResponseWriter, r *http.Request) {
 				enable = resources.BoolPtr(enableProd)
 			}
 			// validation defaults to enabled inside AddEntries
-			rules, eErr := res.AddEntries(resources.AddEntryOptions{
-				Server:  name,
-				Entry:   entry,
-				Enabled: enable,
+			forwards, eErr := res.AddEntries(resources.AddEntryOptions{
+				Upstream: name,
+				Entry:    entry,
+				Enabled:  enable,
 			})
 			if eErr != nil {
 				results = append(results, batchItem{
@@ -746,19 +748,19 @@ func (s *Server) apiServerCreateBatch(w http.ResponseWriter, r *http.Request) {
 				})
 				goto nextItem
 			}
-			created = append(created, rules...)
+			created = append(created, forwards...)
 		}
 		succeeded++
 		createdNames = append(createdNames, name)
 		results = append(results, batchItem{
-			Name:  name,
-			OK:    true,
-			Rules: created,
+			Name:     name,
+			OK:       true,
+			Forwards: created,
 		})
 	nextItem:
 	}
 
-	failed := len(body.Servers) - succeeded
+	failed := len(body.Upstreams) - succeeded
 	if succeeded > 0 {
 		if err := resources.Save(s.resourcesPath(), res); err != nil {
 			writeJSON(w, 500, map[string]any{"error": err.Error()})
@@ -797,7 +799,7 @@ func (s *Server) apiServerPut(w http.ResponseWriter, r *http.Request, name strin
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	result, err := res.UpdateServer(name, body.Address, body.TCP, body.UDP, body.Enabled)
+	result, err := res.UpdateUpstream(name, body.Address, body.TCP, body.UDP, body.Enabled)
 	if err != nil {
 		code := 404
 		if strings.Contains(err.Error(), "至少启用") ||
@@ -813,7 +815,7 @@ func (s *Server) apiServerPut(w http.ResponseWriter, r *http.Request, name strin
 		return
 	}
 	s.appendAudit("server.update", name)
-	writeJSON(w, 200, map[string]any{"ok": true, "cascaded_rules": result.CascadedRules})
+	writeJSON(w, 200, map[string]any{"ok": true, "cascaded_forwards": result.CascadedForwards})
 }
 
 func (s *Server) apiServerEntries(w http.ResponseWriter, r *http.Request, name string) {
@@ -832,7 +834,7 @@ func (s *Server) apiServerEntries(w http.ResponseWriter, r *http.Request, name s
 		return
 	}
 	created, err := res.AddEntries(resources.AddEntryOptions{
-		Server:    name,
+		Upstream:  name,
 		Entry:     body.Entry,
 		Protocols: body.Protocols,
 		Enabled:   body.Enabled,
@@ -850,7 +852,7 @@ func (s *Server) apiServerEntries(w http.ResponseWriter, r *http.Request, name s
 		return
 	}
 	s.appendAudit("server.entries", fmt.Sprintf("%s entry=%s n=%d", name, body.Entry, len(created)))
-	writeJSON(w, 201, map[string]any{"ok": true, "rules": created})
+	writeJSON(w, 201, map[string]any{"ok": true, "forwards": created})
 }
 
 func (s *Server) apiServerDelete(w http.ResponseWriter, r *http.Request, name string) {
@@ -859,7 +861,7 @@ func (s *Server) apiServerDelete(w http.ResponseWriter, r *http.Request, name st
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	removed, err := res.DeleteServer(name)
+	removed, err := res.DeleteUpstream(name)
 	if err != nil {
 		writeJSON(w, 404, map[string]any{"error": err.Error()})
 		return
@@ -869,7 +871,7 @@ func (s *Server) apiServerDelete(w http.ResponseWriter, r *http.Request, name st
 		return
 	}
 	s.appendAudit("server.delete", name)
-	writeJSON(w, 200, map[string]any{"ok": true, "removed_rules": removed})
+	writeJSON(w, 200, map[string]any{"ok": true, "removed_forwards": removed})
 }
 
 func (s *Server) apiServerPromote(w http.ResponseWriter, r *http.Request, name string) {
@@ -878,7 +880,7 @@ func (s *Server) apiServerPromote(w http.ResponseWriter, r *http.Request, name s
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	changed, err := res.EnableProductionForServer(name, true)
+	changed, err := res.EnableProductionForUpstream(name, true)
 	if err != nil {
 		writeJSON(w, 400, map[string]any{"error": err.Error()})
 		return
@@ -915,7 +917,7 @@ func (s *Server) apiPortMap(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) apiRules(w http.ResponseWriter, r *http.Request) {
+func (s *Server) apiForwards(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		res, err := s.load()
@@ -923,17 +925,17 @@ func (s *Server) apiRules(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 500, map[string]any{"error": err.Error()})
 			return
 		}
-		writeJSON(w, 200, res.Rules)
+		writeJSON(w, 200, res.Forwards)
 	case http.MethodPost:
-		s.apiRuleCreate(w, r)
+		s.apiForwardCreate(w, r)
 	default:
 		http.Error(w, "method not allowed", 405)
 	}
 }
 
-func (s *Server) apiRuleCreate(w http.ResponseWriter, r *http.Request) {
+func (s *Server) apiForwardCreate(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Server    string   `json:"server"`
+		Upstream  string   `json:"upstream"`
 		Entry     string   `json:"entry"`
 		Protocols []string `json:"protocols"`
 		Enabled   *bool    `json:"enabled"`
@@ -947,13 +949,13 @@ func (s *Server) apiRuleCreate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	serverName := strings.TrimSpace(body.Server)
-	if serverName == "" {
-		writeJSON(w, 400, map[string]any{"error": "server 不能为空"})
+	upstreamName := strings.TrimSpace(body.Upstream)
+	if upstreamName == "" {
+		writeJSON(w, 400, map[string]any{"error": "upstream 不能为空"})
 		return
 	}
 	created, err := res.AddEntries(resources.AddEntryOptions{
-		Server:    serverName,
+		Upstream:  upstreamName,
 		Entry:     body.Entry,
 		Protocols: body.Protocols,
 		Enabled:   body.Enabled,
@@ -970,8 +972,8 @@ func (s *Server) apiRuleCreate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]any{"error": err.Error()})
 		return
 	}
-	s.appendAudit("rule.create", fmt.Sprintf("%s entry=%s n=%d", serverName, body.Entry, len(created)))
-	writeJSON(w, 201, map[string]any{"ok": true, "rules": created, "server": serverName})
+	s.appendAudit("forward.create", fmt.Sprintf("%s entry=%s n=%d", upstreamName, body.Entry, len(created)))
+	writeJSON(w, 201, map[string]any{"ok": true, "forwards": created, "upstream": upstreamName})
 }
 
 func (s *Server) apiACL(w http.ResponseWriter, r *http.Request) {
@@ -982,8 +984,11 @@ func (s *Server) apiACL(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 500, map[string]any{"error": err.Error()})
 			return
 		}
-		_ = res.ACL.NormalizeACL()
-		writeJSON(w, 200, res.ACL)
+		if err := res.Security.NormalizeSecurity(); err != nil {
+			writeJSON(w, 400, map[string]any{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, res.AllowlistView())
 	case http.MethodPost:
 		var body struct {
 			List string `json:"list"`
@@ -998,7 +1003,7 @@ func (s *Server) apiACL(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 500, map[string]any{"error": err.Error()})
 			return
 		}
-		canonical, err := res.AddACLEntry(body.List, body.CIDR)
+		canonical, err := res.AddAllowlistEntry(body.List, body.CIDR)
 		if err != nil {
 			code := 400
 			if strings.Contains(err.Error(), "已存在") {
@@ -1011,7 +1016,7 @@ func (s *Server) apiACL(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 500, map[string]any{"error": err.Error()})
 			return
 		}
-		writeJSON(w, 201, map[string]any{"ok": true, "cidr": canonical, "acl": res.ACL})
+		writeJSON(w, 201, map[string]any{"ok": true, "cidr": canonical, "allowlist": res.AllowlistView()})
 	case http.MethodDelete:
 		var body struct {
 			List string `json:"list"`
@@ -1026,7 +1031,7 @@ func (s *Server) apiACL(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 500, map[string]any{"error": err.Error()})
 			return
 		}
-		canonical, err := res.RemoveACLEntry(body.List, body.CIDR)
+		canonical, err := res.RemoveAllowlistEntry(body.List, body.CIDR)
 		if err != nil {
 			writeJSON(w, 404, map[string]any{"error": err.Error()})
 			return
@@ -1035,13 +1040,13 @@ func (s *Server) apiACL(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 500, map[string]any{"error": err.Error()})
 			return
 		}
-		writeJSON(w, 200, map[string]any{"ok": true, "cidr": canonical, "acl": res.ACL})
+		writeJSON(w, 200, map[string]any{"ok": true, "cidr": canonical, "allowlist": res.AllowlistView()})
 	default:
 		http.Error(w, "method not allowed", 405)
 	}
 }
 
-func (s *Server) apiRulePatch(w http.ResponseWriter, r *http.Request) {
+func (s *Server) apiForwardPatch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPatch {
 		http.Error(w, "method not allowed", 405)
 		return
@@ -1054,14 +1059,14 @@ func (s *Server) apiRulePatch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"error": err.Error()})
 		return
 	}
-	changed, err := resources.PatchRuleEnabledInPlace(s.resourcesPath(), name, body.Enabled)
+	changed, err := resources.PatchForwardEnabledInPlace(s.resourcesPath(), name, body.Enabled)
 	if err != nil {
 		res, loadErr := s.load()
 		if loadErr != nil {
 			writeJSON(w, 500, map[string]any{"error": err.Error()})
 			return
 		}
-		if setErr := res.SetRuleEnabled(name, body.Enabled); setErr != nil {
+		if setErr := res.SetForwardEnabled(name, body.Enabled); setErr != nil {
 			writeJSON(w, 404, map[string]any{"error": setErr.Error()})
 			return
 		}

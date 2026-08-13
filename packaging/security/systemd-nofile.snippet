@@ -1,0 +1,21 @@
+# RelayGate：高并发 / TCP 长连接（long-lived TCP）的文件描述符限制（FD limits）提示
+# 不自动安装。按角色把片段并入现有 unit，或写入 drop-in。
+#
+# 宿主进程（示例：节点 agent）drop-in:
+#   /etc/systemd/system/relaygate-agent.service.d/nofile.conf
+#
+# [Service]
+# LimitNOFILE=1048576
+#
+# 然后: systemctl daemon-reload && systemctl restart relaygate-agent
+#
+# Envoy 在 Docker host 网络下继承容器 rlimit。可在 compose 的 envoy 服务增加:
+#
+#   ulimits:
+#     nofile:
+#       soft: 1048576
+#       hard: 1048576
+#
+# 同时确认宿主: fs.file-max / fs.nr_open（packaging/sysctl/gateway.conf 已抬高）。
+# 检查: cat /proc/$(pgrep -n envoy)/limits | grep 'open files'
+# 用途：缓解 connection exhaustion 场景下 FD 耗尽（配合 max_connections）。

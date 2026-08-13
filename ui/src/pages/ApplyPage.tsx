@@ -38,7 +38,7 @@ export function ApplyPage() {
   const [error, setError] = useState(false)
   const [loading, setLoading] = useState(true)
   const [applyingConfig, setApplyingConfig] = useState(false)
-  const [applyingFirewall, setApplyingFirewall] = useState(false)
+  const [applyingSecurityNft, setApplyingSecurityNft] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [fwOpen, setFwOpen] = useState(false)
   const [fwConfirm, setFwConfirm] = useState("")
@@ -106,27 +106,27 @@ export function ApplyPage() {
     }
   }
 
-  async function handleApplyFirewall() {
+  async function handleApplySecurityNft() {
     if (standby || !matchesConfirm(fwConfirm)) return
-    setApplyingFirewall(true)
+    setApplyingSecurityNft(true)
     setError(false)
     try {
       const res = await applyFirewall(fwConfirm.trim())
-      const out = res.output ?? t("apply.toast_fw_ok")
+      const out = res.output ?? t("apply.toast_security_firewall_ok")
       setResult(out)
-      toast.success(t("apply.toast_fw_ok"))
+      toast.success(t("apply.toast_security_firewall_ok"))
       setFwOpen(false)
       setFwConfirm("")
       await loadPreview()
     } catch (err) {
       setError(true)
-      const msg = err instanceof ApiError ? err.message : t("apply.toast_fw_fail")
+      const msg = err instanceof ApiError ? err.message : t("apply.toast_security_firewall_fail")
       const body = err instanceof ApiError ? (err.body as Record<string, unknown>) : null
       const out = typeof body?.output === "string" ? body.output : msg
       setResult(out)
       toast.error(msg)
     } finally {
-      setApplyingFirewall(false)
+      setApplyingSecurityNft(false)
     }
   }
 
@@ -154,14 +154,14 @@ export function ApplyPage() {
     }
   }
 
-  const busy = applyingConfig || applyingFirewall || publishing
+  const busy = applyingConfig || applyingSecurityNft || publishing
   const configBtnVariant = applyMode === "hard" ? "destructive" : "caution"
   const configDialogVariant = applyMode === "hard" ? "destructive" : "caution"
 
   const summaryBadges = (
     <>
       {needsReload ? <Badge variant="default">{t("apply.tag_config")}</Badge> : null}
-      {needsFirewall ? <Badge variant="default">{t("apply.tag_firewall")}</Badge> : null}
+      {needsFirewall ? <Badge variant="default">{t("apply.tag_security_firewall")}</Badge> : null}
       {needsReload && applyMode === "hot" ? (
         <Badge variant="secondary">{t("apply.tag_hot")}</Badge>
       ) : null}
@@ -200,9 +200,9 @@ export function ApplyPage() {
                 setFwOpen(true)
               }}
               disabled={standby || busy || !needsFirewall}
-              title={t("apply.hint_firewall")}
+              title={t("apply.hint_security_firewall")}
             >
-              {t("apply.submit_firewall")}
+              {t("apply.submit_security_firewall")}
             </Button>
             <Button
               variant="caution"
@@ -326,7 +326,7 @@ export function ApplyPage() {
       <Dialog
         open={fwOpen}
         onOpenChange={(open) => {
-          if (!applyingFirewall) {
+          if (!applyingSecurityNft) {
             setFwOpen(open)
             if (!open) setFwConfirm("")
           }
@@ -334,11 +334,11 @@ export function ApplyPage() {
       >
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{t("apply.fw_confirm_title")}</DialogTitle>
+            <DialogTitle>{t("apply.security_firewall_confirm_title")}</DialogTitle>
             <DialogDescription asChild>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <p>{t("apply.fw_confirm_body")}</p>
-                <p className="text-destructive">{t("apply.fw_confirm_disconnect")}</p>
+                <p>{t("apply.security_firewall_confirm_body")}</p>
+                <p className="text-destructive">{t("apply.security_firewall_confirm_disconnect")}</p>
               </div>
             </DialogDescription>
           </DialogHeader>
@@ -348,23 +348,23 @@ export function ApplyPage() {
               <Input
                 value={fwConfirm}
                 onChange={(e) => setFwConfirm(e.target.value)}
-                disabled={standby || applyingFirewall}
+                disabled={standby || applyingSecurityNft}
                 autoComplete="off"
                 placeholder={confirmPlaceholder}
               />
             </Field>
           </FieldGroup>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setFwOpen(false)} disabled={applyingFirewall}>
+            <Button variant="ghost" onClick={() => setFwOpen(false)} disabled={applyingSecurityNft}>
               {t("ops.cancel")}
             </Button>
             <Button
               variant="destructive"
-              onClick={handleApplyFirewall}
-              disabled={standby || applyingFirewall || !matchesConfirm(fwConfirm)}
+              onClick={handleApplySecurityNft}
+              disabled={standby || applyingSecurityNft || !matchesConfirm(fwConfirm)}
             >
-              {applyingFirewall ? <Spinner data-icon="inline-start" /> : null}
-              {t("apply.submit_firewall")}
+              {applyingSecurityNft ? <Spinner data-icon="inline-start" /> : null}
+              {t("apply.submit_security_firewall")}
             </Button>
           </DialogFooter>
         </DialogContent>

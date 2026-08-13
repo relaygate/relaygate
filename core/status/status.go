@@ -22,19 +22,19 @@ type EnvoyStatus struct {
 	Stats           map[string]string `json:"stats,omitempty"`
 }
 
-// RuleRateLimit is per-forward TCP local rate-limit hits (from Envoy rl_<forward> stat_prefix).
-type RuleRateLimit struct {
-	Rule   string  `json:"rule"`
-	Prefix string  `json:"prefix"`
-	Hits5m float64 `json:"hits_5m"`
+// ForwardRateLimit is per-forward TCP local rate-limit hits (from Envoy rl_<forward> stat_prefix).
+type ForwardRateLimit struct {
+	Forward string  `json:"forward"`
+	Prefix  string  `json:"prefix"`
+	Hits5m  float64 `json:"hits_5m"`
 }
 
 type TrafficStatus struct {
-	TCPActiveConnections float64         `json:"tcp_active_connections"`
-	UDPActiveSessions    float64         `json:"udp_active_sessions"`
-	LocalRateLimited5m   float64         `json:"local_rate_limited_5m"`
-	TopLimitedRules      []RuleRateLimit `json:"top_limited_rules,omitempty"`
-	Error                string          `json:"error,omitempty"`
+	TCPActiveConnections float64            `json:"tcp_active_connections"`
+	UDPActiveSessions    float64            `json:"udp_active_sessions"`
+	LocalRateLimited5m   float64            `json:"local_rate_limited_5m"`
+	TopLimitedForwards   []ForwardRateLimit `json:"top_limited_forwards,omitempty"`
+	Error                string             `json:"error,omitempty"`
 }
 
 type Client struct {
@@ -138,7 +138,7 @@ func (c *Client) Traffic() TrafficStatus {
 	st.UDPActiveSessions = udp
 	st.LocalRateLimited5m = rl
 	if err4 == nil {
-		st.TopLimitedRules = parseTopLimited(top)
+		st.TopLimitedForwards = parseTopLimited(top)
 	}
 	return st
 }
@@ -148,8 +148,8 @@ type promSample struct {
 	Value  float64
 }
 
-func parseTopLimited(samples []promSample) []RuleRateLimit {
-	out := make([]RuleRateLimit, 0, len(samples))
+func parseTopLimited(samples []promSample) []ForwardRateLimit {
+	out := make([]ForwardRateLimit, 0, len(samples))
 	for _, s := range samples {
 		prefix := s.Metric["envoy_local_rate_limit"]
 		if prefix == "" {
@@ -158,11 +158,11 @@ func parseTopLimited(samples []promSample) []RuleRateLimit {
 		if prefix == "" {
 			continue
 		}
-		rule := prefix
-		if strings.HasPrefix(rule, "rl_") {
-			rule = strings.ReplaceAll(strings.TrimPrefix(rule, "rl_"), "_", "-")
+		forward := prefix
+		if strings.HasPrefix(forward, "rl_") {
+			forward = strings.ReplaceAll(strings.TrimPrefix(forward, "rl_"), "_", "-")
 		}
-		out = append(out, RuleRateLimit{Rule: rule, Prefix: prefix, Hits5m: s.Value})
+		out = append(out, ForwardRateLimit{Forward: forward, Prefix: prefix, Hits5m: s.Value})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Hits5m > out[j].Hits5m })
 	return out

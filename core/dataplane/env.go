@@ -1,4 +1,4 @@
-// Package ops implements RelayGate data-plane workflows (apply, reload, seed, firewall…).
+// Package dataplane implements RelayGate data-plane workflows (apply, reload, seed, firewall…).
 // Host Panel systemd install lives in core/host. Versioned templates live in packaging/.
 // Runtime state lives in config.ResolveDataDir (never in the source-tree layout).
 package dataplane

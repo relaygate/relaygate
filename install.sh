@@ -634,7 +634,7 @@ write_agent_join_creds() {
     upsert_env_file "${INSTALL_DIR}/.env" ENABLE_GRAFANA "${ENABLE_GRAFANA:-0}"
     [[ -n "${GATEWAY_NAME:-}" ]] && upsert_env_file "${INSTALL_DIR}/.env" GATEWAY_NAME "$GATEWAY_NAME"
   fi
-  log "已写入节点代理令牌: ${tok}"
+  log "已写入节点 agent 令牌: ${tok}"
 }
 
 Invoke_Product() {
@@ -714,9 +714,10 @@ Invoke_Product() {
       chown root:relaygate "${data_dir}/panel-audit.log"
       chmod 0660 "${data_dir}/panel-audit.log"
     fi
-    if [[ -f "${data_dir}/versions/current" ]]; then
-      chown root:relaygate "${data_dir}/versions/current"
-      chmod 0640 "${data_dir}/versions/current"
+    if [[ -d "${data_dir}/versions" ]]; then
+      # 含历史 versions/<id>/：root CLI 发布后须组可读，否则 Panel 拉配置失败
+      find "${data_dir}/versions" -type d -exec chown root:relaygate {} \; -exec chmod 0770 {} \; 2>/dev/null || true
+      find "${data_dir}/versions" -type f -exec chown root:relaygate {} \; -exec chmod 0640 {} \; 2>/dev/null || true
     fi
     if [[ -d "${data_dir}/agent-tokens" ]]; then
       find "${data_dir}/agent-tokens" -maxdepth 1 -type f -exec chown root:relaygate {} \; -exec chmod 0640 {} \; 2>/dev/null || true
@@ -728,6 +729,14 @@ Invoke_Product() {
     # 节点：有令牌 / CONTROL_URL / 已装 agent 单元 → 安装或升级后重启 agent
     if [[ -n "${AGENT_TOKEN:-}" || -n "${AGENT_TOKEN_FILE:-}" || -n "${CONTROL_URL:-}" ]] \
       || systemctl cat relaygate-agent.service >/dev/null 2>&1; then
+      [[ -n "${CONTROL_URL:-}" ]] || warn "节点未设置 CONTROL_URL；接入后无法拉取机群配置"
+      [[ -n "${GATEWAY_NAME:-}" ]] || warn "节点未设置 GATEWAY_NAME；请与名册节点名一致（勿用主控名）"
+      # 机群配置 schema（upstreams/forwards）须与本机二进制一致；勿用旧节点拉新主控包
+      if [[ -x ./bin/relaygate ]]; then
+        local bin_ver
+        bin_ver="$(./bin/relaygate version 2>/dev/null || true)"
+        log "节点二进制: ${bin_ver:-unknown}（请与主控同版本升级，避免 schema 不兼容）"
+      fi
       log "→ relaygate agent install"
       ENABLE_NOW=1 ./bin/relaygate agent install || die "agent install 失败"
       systemctl restart relaygate-agent 2>/dev/null || true
@@ -762,7 +771,7 @@ Show_Result() {
     log "默认管理员密码: relaygate（密钥文件 panel_admin_password；生产务必改密）"
     log "升级: curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh | sudo bash -s -- upgrade"
   elif [[ -n "${CONTROL_URL:-}" ]]; then
-    log "节点代理: systemctl status relaygate-agent ；主控 ${CONTROL_URL}"
+    log "节点 agent: systemctl status relaygate-agent ；主控 ${CONTROL_URL}"
     log "升级: curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh | sudo bash -s -- upgrade"
   fi
 }

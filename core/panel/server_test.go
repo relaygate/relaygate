@@ -41,16 +41,17 @@ func setupPanel(t *testing.T) (*Server, string, string) {
 	}
 	writeMinimalUI(t, uiDir, false)
 	res := &resources.Resources{
-		Servers: []resources.Server{
+		Security: resources.DefaultSecurity(),
+		Upstreams: []resources.Upstream{
 			{Name: "server-01", Address: "10.0.0.11", TCP: resources.ProtoPortOf(7777), UDP: resources.ProtoPortOf(7778), Enabled: true},
 			{Name: "server-02", Address: "10.0.0.12", TCP: resources.ProtoPortOf(7777), UDP: resources.ProtoPortOf(7778), Enabled: true},
 		},
-		Rules: []resources.Rule{
-			{Name: "forward-server-01-validation-tcp", Entry: "validation", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
-			{Name: "forward-server-01-production-tcp", Entry: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
-			{Name: "forward-server-01-production-udp", Entry: "production", Server: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
-			{Name: "forward-server-02-production-tcp", Entry: "production", Server: "server-02", Protocol: "TCP", ListenPort: 10002, Enabled: false},
-			{Name: "forward-server-02-production-udp", Entry: "production", Server: "server-02", Protocol: "UDP", ListenPort: 10002, Enabled: false},
+		Forwards: []resources.Forward{
+			{Name: "forward-server-01-validation-tcp", Entry: "validation", Upstream: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
+			{Name: "forward-server-01-production-tcp", Entry: "production", Upstream: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
+			{Name: "forward-server-01-production-udp", Entry: "production", Upstream: "server-01", Protocol: "UDP", ListenPort: 10001, Enabled: false},
+			{Name: "forward-server-02-production-tcp", Entry: "production", Upstream: "server-02", Protocol: "TCP", ListenPort: 10002, Enabled: false},
+			{Name: "forward-server-02-production-udp", Entry: "production", Upstream: "server-02", Protocol: "UDP", ListenPort: 10002, Enabled: false},
 		},
 	}
 	if err := resources.Save(filepath.Join(cfgDir, "resources.yaml"), res); err != nil {
@@ -91,7 +92,8 @@ func setupPanelWithGrafana(t *testing.T) (*Server, string, string) {
 	}
 	writeMinimalUI(t, uiDir, true)
 	res := &resources.Resources{
-		Servers: []resources.Server{
+		Security: resources.DefaultSecurity(),
+		Upstreams: []resources.Upstream{
 			{Name: "server-01", Address: "10.0.0.11", TCP: resources.ProtoPortOf(7777), UDP: resources.ProtoPortOf(7778), Enabled: true},
 		},
 	}
@@ -151,7 +153,7 @@ func TestAPIServerCreateAndDelete(t *testing.T) {
 		"name": "server-11", "address": "10.0.0.21",
 		"tcp": map[string]any{"port": 7777}, "udp": map[string]any{"port": 7778}, "enabled": true,
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/upstreams", bytes.NewReader(body))
 	authedCSRF(req, token, csrf)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -162,24 +164,24 @@ func TestAPIServerCreateAndDelete(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
-	if _, hasRules := created["rules"]; hasRules {
-		t.Fatalf("AddServer must not return rules: %#v", created)
+	if _, hasForwards := created["forwards"]; hasForwards {
+		t.Fatalf("AddUpstream must not return forwards: %#v", created)
 	}
 
 	res, err := resources.Load(filepath.Join(config.ResolveDataDir(srv.cfg.Root), "resources.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Servers) != 3 {
-		t.Fatalf("servers=%d", len(res.Servers))
+	if len(res.Upstreams) != 3 {
+		t.Fatalf("upstreams=%d", len(res.Upstreams))
 	}
-	for _, rule := range res.Rules {
-		if rule.Server == "server-11" {
-			t.Fatalf("unexpected rule for upstream-only create: %+v", rule)
+	for _, fwd := range res.Forwards {
+		if fwd.Upstream == "server-11" {
+			t.Fatalf("unexpected forward for upstream-only create: %+v", fwd)
 		}
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(body))
+	req = httptest.NewRequest(http.MethodPost, "/api/upstreams", bytes.NewReader(body))
 	authedCSRF(req, token, csrf)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -187,7 +189,7 @@ func TestAPIServerCreateAndDelete(t *testing.T) {
 		t.Fatalf("duplicate status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodDelete, "/api/servers/server-11", nil)
+	req = httptest.NewRequest(http.MethodDelete, "/api/upstreams/server-11", nil)
 	authedCSRF(req, token, csrf)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -195,7 +197,7 @@ func TestAPIServerCreateAndDelete(t *testing.T) {
 		t.Fatalf("delete status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodDelete, "/api/servers/server-01", nil)
+	req = httptest.NewRequest(http.MethodDelete, "/api/upstreams/server-01", nil)
 	authedCSRF(req, token, csrf)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -204,7 +206,7 @@ func TestAPIServerCreateAndDelete(t *testing.T) {
 	}
 	var deleted map[string]any
 	_ = json.Unmarshal(rec.Body.Bytes(), &deleted)
-	if int(deleted["removed_rules"].(float64)) < 2 {
+	if int(deleted["removed_forwards"].(float64)) < 2 {
 		t.Fatalf("expected cascade remove, got %#v", deleted)
 	}
 
@@ -212,9 +214,9 @@ func TestAPIServerCreateAndDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, rule := range res.Rules {
-		if rule.Server == "server-01" {
-			t.Fatalf("orphan rule: %+v", rule)
+	for _, fwd := range res.Forwards {
+		if fwd.Upstream == "server-01" {
+			t.Fatalf("orphan forward: %+v", fwd)
 		}
 	}
 }
@@ -227,7 +229,7 @@ func TestAPIServerEntriesAndPortMap(t *testing.T) {
 		"name": "server-20", "address": "10.0.0.30",
 		"tcp": map[string]any{"port": 7777}, "udp": map[string]any{"port": 7778},
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/upstreams", bytes.NewReader(body))
 	authedCSRF(req, token, csrf)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -238,7 +240,7 @@ func TestAPIServerEntriesAndPortMap(t *testing.T) {
 	entryBody, _ := json.Marshal(map[string]any{
 		"entry": "validation", "protocols": []string{"TCP"},
 	})
-	req = httptest.NewRequest(http.MethodPost, "/api/servers/server-20/entries", bytes.NewReader(entryBody))
+	req = httptest.NewRequest(http.MethodPost, "/api/upstreams/server-20/entries", bytes.NewReader(entryBody))
 	authedCSRF(req, token, csrf)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -249,9 +251,9 @@ func TestAPIServerEntriesAndPortMap(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
-	rules, _ := created["rules"].([]any)
-	if len(rules) != 1 {
-		t.Fatalf("expected 1 validation tcp, got %#v", created["rules"])
+	forwards, _ := created["forwards"].([]any)
+	if len(forwards) != 1 {
+		t.Fatalf("expected 1 validation tcp, got %#v", created["forwards"])
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/port-map", nil)
@@ -293,7 +295,7 @@ func TestAPIRuleCreateAndServerPut(t *testing.T) {
 		"name": "server-21", "address": "10.0.0.31",
 		"tcp": map[string]any{"port": 4301}, "udp": map[string]any{"port": 4301},
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(serverBody))
+	req := httptest.NewRequest(http.MethodPost, "/api/upstreams", bytes.NewReader(serverBody))
 	authedCSRF(req, token, csrf)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -301,29 +303,29 @@ func TestAPIRuleCreateAndServerPut(t *testing.T) {
 		t.Fatalf("server create status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
-	ruleBody, _ := json.Marshal(map[string]any{
-		"server": "server-21", "entry": "production", "protocols": []string{"TCP", "UDP"},
+	forwardBody, _ := json.Marshal(map[string]any{
+		"upstream": "server-21", "entry": "production", "protocols": []string{"TCP", "UDP"},
 	})
-	req = httptest.NewRequest(http.MethodPost, "/api/rules", bytes.NewReader(ruleBody))
+	req = httptest.NewRequest(http.MethodPost, "/api/forwards", bytes.NewReader(forwardBody))
 	authedCSRF(req, token, csrf)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 201 {
-		t.Fatalf("rule create status=%d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("forward create status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	var created map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
-	rules, _ := created["rules"].([]any)
-	if len(rules) != 2 {
-		t.Fatalf("expected 2 production rules, got %#v", created["rules"])
+	forwards, _ := created["forwards"].([]any)
+	if len(forwards) != 2 {
+		t.Fatalf("expected 2 production forwards, got %#v", created["forwards"])
 	}
 
 	putBody, _ := json.Marshal(map[string]any{
 		"address": "10.0.0.32", "tcp": map[string]any{"port": 4301}, "udp": map[string]any{"port": 4301}, "enabled": true,
 	})
-	req = httptest.NewRequest(http.MethodPut, "/api/servers/server-21", bytes.NewReader(putBody))
+	req = httptest.NewRequest(http.MethodPut, "/api/upstreams/server-21", bytes.NewReader(putBody))
 	authedCSRF(req, token, csrf)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -334,16 +336,16 @@ func TestAPIRuleCreateAndServerPut(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if _, has := payload["rules"]; has {
-		t.Fatalf("put must not ensure rules: %#v", payload)
+	if _, has := payload["forwards"]; has {
+		t.Fatalf("put must not ensure forwards: %#v", payload)
 	}
 
 	res, err := resources.Load(filepath.Join(config.ResolveDataDir(srv.cfg.Root), "resources.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Servers[len(res.Servers)-1].Address != "10.0.0.32" {
-		t.Fatalf("address not updated: %+v", res.Servers)
+	if res.Upstreams[len(res.Upstreams)-1].Address != "10.0.0.32" {
+		t.Fatalf("address not updated: %+v", res.Upstreams)
 	}
 }
 
@@ -353,7 +355,7 @@ func TestAPIServerCreateBatch(t *testing.T) {
 
 	body, _ := json.Marshal(map[string]any{
 		"entries": []string{"production", "validation"},
-		"servers": []map[string]any{
+		"upstreams": []map[string]any{
 			{
 				"name": "server-30", "address": "10.0.0.40",
 				"tcp": map[string]any{"port": 4301}, "udp": map[string]any{"port": 4301},
@@ -368,7 +370,7 @@ func TestAPIServerCreateBatch(t *testing.T) {
 			},
 		},
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/servers/batch", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/upstreams/batch", bytes.NewReader(body))
 	authedCSRF(req, token, csrf)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -395,19 +397,19 @@ func TestAPIServerCreateBatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	names := map[string]bool{}
-	for _, s := range res.Servers {
+	for _, s := range res.Upstreams {
 		names[s.Name] = true
 	}
 	if !names["server-30"] || !names["server-31"] {
-		t.Fatalf("expected batch servers persisted, got %#v", names)
+		t.Fatalf("expected batch upstreams persisted, got %#v", names)
 	}
 	var haveVal, haveProd int
-	for _, rule := range res.Rules {
-		if rule.Server == "server-30" {
-			if rule.Entry == "validation" {
+	for _, fwd := range res.Forwards {
+		if fwd.Upstream == "server-30" {
+			if fwd.Entry == "validation" {
 				haveVal++
 			}
-			if rule.Entry == "production" {
+			if fwd.Entry == "production" {
 				haveProd++
 			}
 		}
@@ -420,7 +422,7 @@ func TestAPIServerCreateBatch(t *testing.T) {
 func TestAPIServersIncludesLifecycle(t *testing.T) {
 	srv, token, _ := setupPanel(t)
 	h := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/servers", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/upstreams", nil)
 	authed(req, token)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -431,8 +433,8 @@ func TestAPIServersIncludesLifecycle(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := payload["servers"]; !ok {
-		t.Fatalf("missing servers: %s", rec.Body.String())
+	if _, ok := payload["upstreams"]; !ok {
+		t.Fatalf("missing upstreams: %s", rec.Body.String())
 	}
 	if _, ok := payload["lifecycle"]; !ok {
 		t.Fatalf("missing lifecycle: %s", rec.Body.String())
@@ -442,7 +444,7 @@ func TestAPIServersIncludesLifecycle(t *testing.T) {
 func TestAPIServersOmitsHealthCheckPort(t *testing.T) {
 	srv, token, _ := setupPanel(t)
 	h := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/api/servers", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/upstreams", nil)
 	authed(req, token)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -454,15 +456,15 @@ func TestAPIServersOmitsHealthCheckPort(t *testing.T) {
 		t.Fatalf("API must not expose health_check_port: %s", raw)
 	}
 	var payload struct {
-		Servers []map[string]any `json:"servers"`
+		Upstreams []map[string]any `json:"upstreams"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if len(payload.Servers) == 0 {
-		t.Fatal("expected sample servers")
+	if len(payload.Upstreams) == 0 {
+		t.Fatal("expected sample upstreams")
 	}
-	for _, s := range payload.Servers {
+	for _, s := range payload.Upstreams {
 		for _, banned := range []string{"health_check_port", "HealthCheckPort", "health", "Health"} {
 			if _, ok := s[banned]; ok {
 				t.Fatalf("server %v has banned field %q", s["name"], banned)
@@ -594,7 +596,7 @@ func TestGrafanaDisabledWithoutURL(t *testing.T) {
 func TestSPAFallback(t *testing.T) {
 	srv, _, _ := setupPanel(t)
 	h := srv.Handler()
-	req := httptest.NewRequest(http.MethodGet, "/servers", nil)
+	req := httptest.NewRequest(http.MethodGet, "/upstreams", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 200 {
@@ -605,7 +607,7 @@ func TestSPAFallback(t *testing.T) {
 	}
 
 	// Non-API POST still gets method not allowed from SPA.
-	post := httptest.NewRequest(http.MethodPost, "/servers", nil)
+	post := httptest.NewRequest(http.MethodPost, "/upstreams", nil)
 	postRec := httptest.NewRecorder()
 	h.ServeHTTP(postRec, post)
 	if postRec.Code != http.StatusMethodNotAllowed {
@@ -667,7 +669,7 @@ func TestCSRFRejectsMutatingWithoutToken(t *testing.T) {
 		"name": "server-csrf", "address": "10.0.0.99",
 		"tcp": map[string]any{"port": 7777}, "udp": map[string]any{"port": 7778},
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/upstreams", bytes.NewReader(body))
 	authed(req, token)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -692,7 +694,7 @@ func TestCSRFRejectsMutatingWithoutToken(t *testing.T) {
 		t.Fatalf("get status=%d", rec.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(body))
+	req = httptest.NewRequest(http.MethodPost, "/api/upstreams", bytes.NewReader(body))
 	authedCSRF(req, token, csrf)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -710,7 +712,7 @@ func TestStandbyRejectsWrites(t *testing.T) {
 		"name": "server-standby", "address": "10.0.0.55",
 		"tcp": map[string]any{"port": 7777}, "udp": map[string]any{"port": 7778},
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/servers", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/upstreams", bytes.NewReader(body))
 	authedCSRF(req, token, csrf)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -738,7 +740,7 @@ func TestStandbyRejectsWrites(t *testing.T) {
 		t.Fatalf("standby firewall apply status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/servers", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/upstreams", nil)
 	authed(req, token)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

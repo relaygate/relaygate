@@ -12,30 +12,31 @@ func BuildClusterListenerMaps(r *resources.Resources, opt Options) ([]map[string
 	if err := r.Validate(); err != nil {
 		return nil, nil, err
 	}
-	r.Defaults.ApplyNftablesDefaults()
-	servers := r.ServerMap()
-	rules := r.EnabledRules()
+	r.Security.EnsureSecurityDefaults()
+	upstreams := r.UpstreamMap()
+	forwards := r.EnabledForwards()
 	defaults := r.Defaults
+	security := r.Security
 	listenAddress := r.Gateway.ListenAddress
 
 	clusters := map[string]any{}
 	var listeners []map[string]any
 
-	for _, rule := range rules {
-		server := servers[rule.Server]
-		proto := strings.ToUpper(rule.Protocol)
-		cname := UpstreamClusterName(server.Name, proto)
+	for _, fwd := range forwards {
+		upstream := upstreams[fwd.Upstream]
+		proto := strings.ToUpper(fwd.Protocol)
+		cname := UpstreamClusterName(upstream.Name, proto)
 		if _, ok := clusters[cname]; !ok {
 			if proto == "TCP" {
-				clusters[cname] = renderTCPCluster(server, defaults)
+				clusters[cname] = renderTCPCluster(upstream, defaults, security)
 			} else {
-				clusters[cname] = renderUDPCluster(server, defaults)
+				clusters[cname] = renderUDPCluster(upstream, defaults, security)
 			}
 		}
 		if proto == "TCP" {
-			listeners = append(listeners, renderTCPListener(rule, listenAddress, defaults, opt))
+			listeners = append(listeners, renderTCPListener(fwd, listenAddress, defaults, security, opt))
 		} else {
-			listeners = append(listeners, renderUDPListener(rule, listenAddress, defaults))
+			listeners = append(listeners, renderUDPListener(fwd, listenAddress, defaults))
 		}
 	}
 

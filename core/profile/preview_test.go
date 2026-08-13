@@ -20,20 +20,33 @@ func TestPreviewDoesNotWrite(t *testing.T) {
 	if err := os.MkdirAll(profDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	sec := resources.DefaultSecurity()
+	sec.PolicyByID(resources.PolicyConnLimit).Params.MaxConnections = 100
 	res := &resources.Resources{
-		Servers: []resources.Server{
+		Upstreams: []resources.Upstream{
 			{Name: "server-01", Address: "10.0.0.1", TCP: resources.ProtoPortOf(7777), UDP: resources.ProtoPortOf(7778), Enabled: true},
 		},
-		Rules: []resources.Rule{
-			{Name: "forward-server-01-production-tcp", Entry: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: true},
+		Forwards: []resources.Forward{
+			{Name: "forward-server-01-production-tcp", Entry: "production", Upstream: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: true},
 		},
-		Defaults: resources.Defaults{MaxConnections: 100},
+		Security: sec,
 	}
-	res.Defaults.ApplyNftablesDefaults()
 	if err := resources.Save(filepath.Join(data, "resources.yaml"), res); err != nil {
 		t.Fatal(err)
 	}
-	body := "name: demo\ndescription: t\ndefaults:\n  max_connections: 999\n  tcp_idle_timeout: 1h\n  udp_idle_timeout: 1m\n"
+	body := `name: demo
+description: t
+defaults:
+  tcp_idle_timeout: 1h
+  udp_idle_timeout: 1m
+security:
+  policies:
+    - id: conn_limit
+      type: conn_limit
+      enabled: true
+      params:
+        max_connections: 999
+`
 	if err := os.WriteFile(filepath.Join(profDir, "demo.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +62,7 @@ func TestPreviewDoesNotWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.Defaults.MaxConnections != 100 {
-		t.Fatalf("preview wrote defaults: %d", after.Defaults.MaxConnections)
+	if after.Security.PolicyByID(resources.PolicyConnLimit).Params.MaxConnections != 100 {
+		t.Fatalf("preview wrote security: %d", after.Security.PolicyByID(resources.PolicyConnLimit).Params.MaxConnections)
 	}
 }

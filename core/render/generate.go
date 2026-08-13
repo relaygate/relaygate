@@ -73,19 +73,19 @@ func UpstreamClusterName(server, protocol string) string {
 }
 
 // IngressListenerName is the Envoy ingress listener for one forwarding rule (1:1).
-// Format: ingress-{forwardName} so it stays aligned with resources.yaml rules[].name (forward-*).
-func IngressListenerName(rule resources.Rule) string {
-	return "ingress-" + rule.Name
+// Format: ingress-{forwardName} so it stays aligned with resources.yaml forwards[].name (forward-*).
+func IngressListenerName(fwd resources.Forward) string {
+	return "ingress-" + fwd.Name
 }
 
 // rateLimitStatPrefix is the Envoy local_rate_limit stat_prefix (metric name), not a forward name.
 // Format: rl_{forwardName with - → _} → e.g. rl_forward_server_01_validation_tcp.
-func rateLimitStatPrefix(rule resources.Rule) string {
-	return "rl_" + strings.ReplaceAll(rule.Name, "-", "_")
+func rateLimitStatPrefix(fwd resources.Forward) string {
+	return "rl_" + strings.ReplaceAll(fwd.Name, "-", "_")
 }
 
-func proxyStatPrefix(rule resources.Rule, proto string) string {
-	return strings.ToLower(proto) + "_" + strings.ReplaceAll(rule.Name, "-", "_")
+func proxyStatPrefix(fwd resources.Forward, proto string) string {
+	return strings.ToLower(proto) + "_" + strings.ReplaceAll(fwd.Name, "-", "_")
 }
 
 // Render builds Envoy static config + nft defines using OptionsFromEnv().
@@ -98,30 +98,31 @@ func RenderWith(r *resources.Resources, opt Options) (map[string]any, string, er
 	if err := r.Validate(); err != nil {
 		return nil, "", err
 	}
-	r.Defaults.ApplyNftablesDefaults()
-	servers := r.ServerMap()
-	rules := r.EnabledRules()
+	r.Security.EnsureSecurityDefaults()
+	upstreams := r.UpstreamMap()
+	forwards := r.EnabledForwards()
 	defaults := r.Defaults
+	security := r.Security
 	listenAddress := r.Gateway.ListenAddress
 
 	clusters := map[string]any{}
 	var listeners []any
 
-	for _, rule := range rules {
-		server := servers[rule.Server]
-		proto := strings.ToUpper(rule.Protocol)
-		cname := UpstreamClusterName(server.Name, proto)
+	for _, fwd := range forwards {
+		upstream := upstreams[fwd.Upstream]
+		proto := strings.ToUpper(fwd.Protocol)
+		cname := UpstreamClusterName(upstream.Name, proto)
 		if _, ok := clusters[cname]; !ok {
 			if proto == "TCP" {
-				clusters[cname] = renderTCPCluster(server, defaults)
+				clusters[cname] = renderTCPCluster(upstream, defaults, security)
 			} else {
-				clusters[cname] = renderUDPCluster(server, defaults)
+				clusters[cname] = renderUDPCluster(upstream, defaults, security)
 			}
 		}
 		if proto == "TCP" {
-			listeners = append(listeners, renderTCPListener(rule, listenAddress, defaults, opt))
+			listeners = append(listeners, renderTCPListener(fwd, listenAddress, defaults, security, opt))
 		} else {
-			listeners = append(listeners, renderUDPListener(rule, listenAddress, defaults))
+			listeners = append(listeners, renderUDPListener(fwd, listenAddress, defaults))
 		}
 	}
 
@@ -159,7 +160,7 @@ func RenderWith(r *resources.Resources, opt Options) (map[string]any, string, er
 			"clusters":  clusterList,
 		},
 	}
-	return cfg, renderNFT(rules, defaults.Nftables, r.ACL), nil
+	return cfg, renderNFT(forwards, security), nil
 }
 
 func Write(envoyPath, nftPath string, r *resources.Resources) error {
@@ -195,15 +196,15 @@ func WriteWith(envoyPath, nftPath string, r *resources.Resources, opt Options) e
 	return os.Chmod(nftPath, 0o644)
 }
 
-func renderTCPCluster(server resources.Server, d resources.Defaults) map[string]any {
+func renderTCPCluster(upstream resources.Upstream, d resources.Defaults, sec resources.Security) map[string]any {
 	d.ApplyOutlierDefaults()
-	name := UpstreamClusterName(server.Name, "TCP")
-	tcpPort := server.TCPPort()
-	hcPort := server.HealthCheckPort()
+	name := UpstreamClusterName(upstream.Name, "TCP")
+	tcpPort := upstream.TCPPort()
+	hcPort := upstream.HealthCheckPort()
 	endpoint := map[string]any{
 		"address": map[string]any{
 			"socket_address": map[string]any{
-				"address":    server.Address,
+				"address":    upstream.Address,
 				"port_value": tcpPort,
 			},
 		},
@@ -213,6 +214,7 @@ func renderTCPCluster(server resources.Server, d resources.Defaults) map[string]
 			"port_value": hcPort,
 		}
 	}
+	maxConn := sec.EffectiveMaxConnections()
 	cluster := map[string]any{
 		"name":            name,
 		"type":            "STATIC",
@@ -222,9 +224,9 @@ func renderTCPCluster(server resources.Server, d resources.Defaults) map[string]
 			"thresholds": []any{
 				map[string]any{
 					"priority":             "DEFAULT",
-					"max_connections":      d.MaxConnections,
+					"max_connections":      maxConn,
 					"max_pending_requests": d.MaxPendingRequests,
-					"max_requests":         d.MaxConnections,
+					"max_requests":         maxConn,
 				},
 			},
 		},
@@ -272,8 +274,8 @@ func outlierDetectionConfig(d resources.Defaults) map[string]any {
 	}
 }
 
-func renderUDPCluster(server resources.Server, d resources.Defaults) map[string]any {
-	name := UpstreamClusterName(server.Name, "UDP")
+func renderUDPCluster(upstream resources.Upstream, d resources.Defaults, sec resources.Security) map[string]any {
+	name := UpstreamClusterName(upstream.Name, "UDP")
 	return map[string]any{
 		"name":            name,
 		"type":            "STATIC",
@@ -283,7 +285,7 @@ func renderUDPCluster(server resources.Server, d resources.Defaults) map[string]
 			"thresholds": []any{
 				map[string]any{
 					"priority":        "DEFAULT",
-					"max_connections": d.MaxConnections,
+					"max_connections": sec.EffectiveMaxConnections(),
 				},
 			},
 		},
@@ -296,8 +298,8 @@ func renderUDPCluster(server resources.Server, d resources.Defaults) map[string]
 							"endpoint": map[string]any{
 								"address": map[string]any{
 									"socket_address": map[string]any{
-										"address":    server.Address,
-										"port_value": server.UDPPort(),
+										"address":    upstream.Address,
+										"port_value": upstream.UDPPort(),
 									},
 								},
 							},
@@ -309,65 +311,68 @@ func renderUDPCluster(server resources.Server, d resources.Defaults) map[string]
 	}
 }
 
-func renderTCPListener(rule resources.Rule, listenAddress string, d resources.Defaults, opt Options) map[string]any {
-	cname := UpstreamClusterName(rule.Server, "TCP")
-	listener := map[string]any{
-		"name": IngressListenerName(rule),
-		"address": map[string]any{
-			"socket_address": map[string]any{
-				"protocol":   "TCP",
-				"address":    listenAddress,
-				"port_value": rule.ListenPort,
+func renderTCPListener(fwd resources.Forward, listenAddress string, d resources.Defaults, sec resources.Security, opt Options) map[string]any {
+	cname := UpstreamClusterName(fwd.Upstream, "TCP")
+	perSec, burst := sec.EffectiveTCPLocalRateLimit()
+	filters := make([]any, 0, 2)
+	if perSec > 0 && burst > 0 {
+		filters = append(filters, map[string]any{
+			"name": "envoy.filters.network.local_ratelimit",
+			"typed_config": map[string]any{
+				"@type":       "type.googleapis.com/envoy.extensions.filters.network.local_ratelimit.v3.LocalRateLimit",
+				"stat_prefix": rateLimitStatPrefix(fwd),
+				"token_bucket": map[string]any{
+					"max_tokens":      burst,
+					"tokens_per_fill": perSec,
+					"fill_interval":   "1s",
+				},
 			},
-		},
-		"filter_chains": []any{
-			map[string]any{
-				"filters": []any{
-					map[string]any{
-						"name": "envoy.filters.network.local_ratelimit",
-						"typed_config": map[string]any{
-							"@type":       "type.googleapis.com/envoy.extensions.filters.network.local_ratelimit.v3.LocalRateLimit",
-							"stat_prefix": rateLimitStatPrefix(rule),
-							"token_bucket": map[string]any{
-								"max_tokens":      d.TCPLocalRateLimitBurst,
-								"tokens_per_fill": d.TCPLocalRateLimitPerSec,
-								"fill_interval":   "1s",
-							},
-						},
-					},
-					map[string]any{
-						"name": "envoy.filters.network.tcp_proxy",
-						"typed_config": map[string]any{
-							"@type":        "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy",
-							"stat_prefix":  proxyStatPrefix(rule, "TCP"),
-							"cluster":      cname,
-							"idle_timeout": d.TCPIdleTimeout,
-							"access_log": []any{
-								map[string]any{
-									"name": "envoy.access_loggers.file",
-									"typed_config": map[string]any{
-										"@type": "type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog",
-										"path":  "/var/log/envoy/tcp-access.json",
-										"log_format": map[string]any{
-											"json_format": map[string]any{
-												"ts":          "%START_TIME%",
-												"rule":        rule.Name,
-												"protocol":    "TCP",
-												"downstream":  "%DOWNSTREAM_REMOTE_ADDRESS%",
-												"upstream":    "%UPSTREAM_HOST%",
-												"bytes_rx":    "%BYTES_RECEIVED%",
-												"bytes_tx":    "%BYTES_SENT%",
-												"duration_ms": "%DURATION%",
-												"flags":       "%RESPONSE_FLAGS%",
-												"conn_id":     "%CONNECTION_ID%",
-											},
-										},
-									},
-								},
+		})
+	}
+	filters = append(filters, map[string]any{
+		"name": "envoy.filters.network.tcp_proxy",
+		"typed_config": map[string]any{
+			"@type":        "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy",
+			"stat_prefix":  proxyStatPrefix(fwd, "TCP"),
+			"cluster":      cname,
+			"idle_timeout": d.TCPIdleTimeout,
+			"access_log": []any{
+				map[string]any{
+					"name": "envoy.access_loggers.file",
+					"typed_config": map[string]any{
+						"@type": "type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog",
+						"path":  "/var/log/envoy/tcp-access.json",
+						"log_format": map[string]any{
+							"json_format": map[string]any{
+								"ts":          "%START_TIME%",
+								"rule":        fwd.Name,
+								"protocol":    "TCP",
+								"downstream":  "%DOWNSTREAM_REMOTE_ADDRESS%",
+								"upstream":    "%UPSTREAM_HOST%",
+								"bytes_rx":    "%BYTES_RECEIVED%",
+								"bytes_tx":    "%BYTES_SENT%",
+								"duration_ms": "%DURATION%",
+								"flags":       "%RESPONSE_FLAGS%",
+								"conn_id":     "%CONNECTION_ID%",
 							},
 						},
 					},
 				},
+			},
+		},
+	})
+	listener := map[string]any{
+		"name": IngressListenerName(fwd),
+		"address": map[string]any{
+			"socket_address": map[string]any{
+				"protocol":   "TCP",
+				"address":    listenAddress,
+				"port_value": fwd.ListenPort,
+			},
+		},
+		"filter_chains": []any{
+			map[string]any{
+				"filters": filters,
 			},
 		},
 	}
@@ -404,15 +409,15 @@ func proxyProtocolListenerFilter(opt Options) map[string]any {
 	}
 }
 
-func renderUDPListener(rule resources.Rule, listenAddress string, d resources.Defaults) map[string]any {
-	cname := UpstreamClusterName(rule.Server, "UDP")
+func renderUDPListener(fwd resources.Forward, listenAddress string, d resources.Defaults) map[string]any {
+	cname := UpstreamClusterName(fwd.Upstream, "UDP")
 	return map[string]any{
-		"name": IngressListenerName(rule),
+		"name": IngressListenerName(fwd),
 		"address": map[string]any{
 			"socket_address": map[string]any{
 				"protocol":   "UDP",
 				"address":    listenAddress,
-				"port_value": rule.ListenPort,
+				"port_value": fwd.ListenPort,
 			},
 		},
 		"udp_listener_config": map[string]any{
@@ -425,7 +430,7 @@ func renderUDPListener(rule resources.Rule, listenAddress string, d resources.De
 				"name": "envoy.filters.udp_listener.udp_proxy",
 				"typed_config": map[string]any{
 					"@type":        "type.googleapis.com/envoy.extensions.filters.udp.udp_proxy.v3.UdpProxyConfig",
-					"stat_prefix":  proxyStatPrefix(rule, "UDP"),
+					"stat_prefix":  proxyStatPrefix(fwd, "UDP"),
 					"idle_timeout": d.UDPIdleTimeout,
 					"matcher": map[string]any{
 						"on_no_match": map[string]any{
@@ -447,15 +452,16 @@ func renderUDPListener(rule resources.Rule, listenAddress string, d resources.De
 	}
 }
 
-func renderNFT(rules []resources.Rule, nft resources.NftablesDefaults, acl resources.ACL) string {
+func renderNFT(forwards []resources.Forward, sec resources.Security) string {
+	nft := sec.EffectiveFirewallRates()
 	tcpSet := map[int]struct{}{}
 	udpSet := map[int]struct{}{}
-	for _, r := range rules {
-		switch strings.ToUpper(r.Protocol) {
+	for _, fwd := range forwards {
+		switch strings.ToUpper(fwd.Protocol) {
 		case "TCP":
-			tcpSet[r.ListenPort] = struct{}{}
+			tcpSet[fwd.ListenPort] = struct{}{}
 		case "UDP":
-			udpSet[r.ListenPort] = struct{}{}
+			udpSet[fwd.ListenPort] = struct{}{}
 		}
 	}
 	tcp := sortedPorts(tcpSet)
@@ -466,24 +472,24 @@ func renderNFT(rules []resources.Rule, nft resources.NftablesDefaults, acl resou
 	if len(udp) == 0 {
 		udp = []int{10001}
 	}
-	// Empty deny: TEST-NET-1 host that should never be a real client source.
-	denySet := acl.Deny
-	if len(denySet) == 0 {
+	denySet, allowSet := sec.EffectiveAllowlist()
+	allowStrict := 0
+	if !sec.AllowlistEnforced() {
+		denySet = []string{"192.0.2.255"}
+		allowSet = []string{"0.0.0.0/0"}
+	} else if len(denySet) == 0 {
 		denySet = []string{"192.0.2.255"}
 	}
-	// Empty allow: 0.0.0.0/0 so `saddr != $ACL_ALLOW` never matches (no strict mode).
-	allowSet := acl.Allow
-	allowStrict := 0
 	if len(allowSet) == 0 {
 		allowSet = []string{"0.0.0.0/0"}
-	} else {
+	} else if sec.AllowlistEnforced() {
 		allowStrict = 1
 	}
 	return fmt.Sprintf(`# Generated by relaygate. Do not edit.
-# Source: DataDir/resources.yaml (defaults.nftables + enabled rules + acl)
-# TCP forward (listen) ports from enabled rules
+# Source: DataDir/resources.yaml (security.policies + enabled forwards)
+# TCP forward (listen) ports from enabled forwards
 define FORWARD_TCP_PORTS = { %s }
-# UDP forward (listen) ports from enabled rules
+# UDP forward (listen) ports from enabled forwards
 define FORWARD_UDP_PORTS = { %s }
 # Per-IP rate limits (nftables) — numeric defines for nft 1.0.x (rate unit inlined in gateway.nft)
 define FORWARD_TCP_NEW_CONN_RATE = %d
@@ -491,6 +497,7 @@ define FORWARD_TCP_NEW_CONN_BURST = %d
 define FORWARD_UDP_PPS_RATE = %d
 define FORWARD_UDP_PPS_BURST = %d
 # ACL (nftables truth): deny always applied; allow strict when ACL_ALLOW_STRICT=1
+# Evaluation on INPUT: established,related accept (above) → deny → allow strict → rate limits in allow-forward-* chains.
 define ACL_DENY = { %s }
 define ACL_ALLOW = { %s }
 define ACL_ALLOW_STRICT = %d
@@ -537,13 +544,13 @@ func joinInts(ports []int) string {
 }
 
 func Summarize(r *resources.Resources) string {
-	servers := r.ServerMap()
-	rules := r.EnabledRules()
+	upstreams := r.UpstreamMap()
+	forwards := r.EnabledForwards()
 	var b strings.Builder
-	fmt.Fprintf(&b, "校验通过: %d 台上游, %d 条启用转发\n", len(servers), len(rules))
-	for _, rule := range rules {
+	fmt.Fprintf(&b, "校验通过: %d 台上游, %d 条启用转发\n", len(upstreams), len(forwards))
+	for _, fwd := range forwards {
 		fmt.Fprintf(&b, "  - %s: %s/%d -> %s (%s)\n",
-			rule.Name, strings.ToUpper(rule.Protocol), rule.ListenPort, rule.Server, rule.Entry)
+			fwd.Name, strings.ToUpper(fwd.Protocol), fwd.ListenPort, fwd.Upstream, fwd.Entry)
 	}
 	b.WriteString(resources.FormatLifecycle(r))
 	return b.String()

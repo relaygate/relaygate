@@ -37,51 +37,51 @@ import {
 import { useStandby } from "@/context/SessionContext"
 import {
   ApiError,
-  createRule,
+  createForward,
   exportPortMapCSV,
-  getRules,
-  getServers,
-  patchRule,
+  getForwards,
+  getUpstreams,
+  patchForward,
 } from "@/lib/api"
 import { ENTRIES, entryLabel, type EntryKind } from "@/lib/entry"
-import type { Rule, Server } from "@/lib/types"
+import type { Forward, Upstream } from "@/lib/types"
 import { tf } from "@/i18n"
 
 type AddForm = {
-  server: string
+  upstream: string
   entry: EntryKind
   protocols: string[]
   enabledOverride: boolean | null
 }
 
 const emptyAddForm = (): AddForm => ({
-  server: "",
+  upstream: "",
   entry: "validation",
   protocols: [],
   enabledOverride: null,
 })
 
-function serverProtocols(server: Server | undefined): string[] {
-  if (!server) return []
+function upstreamProtocols(upstream: Upstream | undefined): string[] {
+  if (!upstream) return []
   const protocols: string[] = []
-  if (server.tcp?.port) protocols.push("TCP")
-  if (server.udp?.port) protocols.push("UDP")
+  if (upstream.tcp?.port) protocols.push("TCP")
+  if (upstream.udp?.port) protocols.push("UDP")
   return protocols
 }
 
-function upstreamPort(server: Server | undefined, protocol: string): string {
-  if (!server) return "—"
+function upstreamPort(upstream: Upstream | undefined, protocol: string): string {
+  if (!upstream) return "—"
   const proto = protocol.toUpperCase()
-  if (proto === "TCP") return server.tcp?.port ? String(server.tcp.port) : "—"
-  if (proto === "UDP") return server.udp?.port ? String(server.udp.port) : "—"
+  if (proto === "TCP") return upstream.tcp?.port ? String(upstream.tcp.port) : "—"
+  if (proto === "UDP") return upstream.udp?.port ? String(upstream.udp.port) : "—"
   return "—"
 }
 
 export function RulesPage({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation()
   const standby = useStandby()
-  const [rules, setRules] = useState<Rule[]>([])
-  const [servers, setServers] = useState<Server[]>([])
+  const [forwards, setForwards] = useState<Forward[]>([])
+  const [upstreams, setUpstreams] = useState<Upstream[]>([])
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
@@ -91,9 +91,9 @@ export function RulesPage({ embedded = false }: { embedded?: boolean }) {
 
   const load = useCallback(async () => {
     try {
-      const [rulesData, serversData] = await Promise.all([getRules(), getServers()])
-      setRules(rulesData)
-      setServers(serversData.servers)
+      const [rulesData, serversData] = await Promise.all([getForwards(), getUpstreams()])
+      setForwards(rulesData)
+      setUpstreams(serversData.upstreams)
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : t("common.toast_load_fail"))
     }
@@ -103,59 +103,59 @@ export function RulesPage({ embedded = false }: { embedded?: boolean }) {
     load().finally(() => setLoading(false))
   }, [load])
 
-  const serversByName = useMemo(() => {
-    const map = new Map<string, Server>()
-    for (const s of servers) map.set(s.name, s)
+  const upstreamsByName = useMemo(() => {
+    const map = new Map<string, Upstream>()
+    for (const s of upstreams) map.set(s.name, s)
     return map
-  }, [servers])
+  }, [upstreams])
 
-  const selectedServer = useMemo(
-    () => serversByName.get(form.server),
-    [serversByName, form.server],
+  const selectedUpstream = useMemo(
+    () => upstreamsByName.get(form.upstream),
+    [upstreamsByName, form.upstream],
   )
 
   const availableProtocols = useMemo(
-    () => serverProtocols(selectedServer),
-    [selectedServer],
+    () => upstreamProtocols(selectedUpstream),
+    [selectedUpstream],
   )
 
   function openAdd() {
-    const first = servers[0]
-    const protocols = serverProtocols(first)
+    const first = upstreams[0]
+    const protocols = upstreamProtocols(first)
     setForm({
       ...emptyAddForm(),
-      server: first?.name ?? "",
+      upstream: first?.name ?? "",
       protocols: [...protocols],
     })
     setAddOpen(true)
   }
 
-  function setServer(name: string) {
-    const srv = servers.find((s) => s.name === name)
+  function setUpstream(name: string) {
+    const srv = upstreams.find((s) => s.name === name)
     setForm((f) => ({
       ...f,
-      server: name,
-      protocols: serverProtocols(srv),
+      upstream: name,
+      protocols: upstreamProtocols(srv),
     }))
   }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
     if (standby) return
-    if (!form.server) {
-      toast.error(t("rules.need_upstream"))
+    if (!form.upstream) {
+      toast.error(t("forwards.need_upstream"))
       return
     }
     if (!form.protocols.length) {
-      toast.error(t("servers.quick_need_proto"))
+      toast.error(t("upstreams.quick_need_proto"))
       return
     }
     setAdding(true)
     try {
       const enabled =
         form.enabledOverride !== null ? { enabled: form.enabledOverride } : {}
-      const res = await createRule({
-        server: form.server,
+      const res = await createForward({
+        upstream: form.upstream,
         entry: form.entry,
         protocols: form.protocols,
         ...enabled,
@@ -163,10 +163,10 @@ export function RulesPage({ embedded = false }: { embedded?: boolean }) {
       await load()
       setAddOpen(false)
       setForm(emptyAddForm())
-      if (res.rules?.length) {
-        toast.success(tf("rules.toast_added", res.rules.map((r) => r.name).join(", ")))
+      if (res.forwards?.length) {
+        toast.success(tf("forwards.toast_added", res.forwards.map((r) => r.name).join(", ")))
       } else {
-        toast.message(t("rules.toast_added_none"))
+        toast.message(t("forwards.toast_added_none"))
       }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : t("apply.toast_fail"))
@@ -179,28 +179,28 @@ export function RulesPage({ embedded = false }: { embedded?: boolean }) {
     setExporting(true)
     try {
       await exportPortMapCSV()
-      toast.success(t("rules.toast_export_ok"))
+      toast.success(t("forwards.toast_export_ok"))
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : t("rules.toast_export_fail"))
+      toast.error(err instanceof ApiError ? err.message : t("forwards.toast_export_fail"))
     } finally {
       setExporting(false)
     }
   }
 
-  async function toggleRule(rule: Rule, enabled: boolean) {
+  async function toggleForward(fwd: Forward, enabled: boolean) {
     if (standby) return
-    setToggling(rule.name)
-    setRules((prev) =>
-      prev.map((r) => (r.name === rule.name ? { ...r, enabled } : r)),
+    setToggling(fwd.name)
+    setForwards((prev) =>
+      prev.map((r) => (r.name === fwd.name ? { ...r, enabled } : r)),
     )
     try {
-      await patchRule(rule.name, enabled)
+      await patchForward(fwd.name, enabled)
       toast.success(
-        enabled ? tf("rules.toast_enabled", rule.name) : tf("rules.toast_disabled", rule.name),
+        enabled ? tf("forwards.toast_enabled", fwd.name) : tf("forwards.toast_disabled", fwd.name),
       )
     } catch (err) {
-      setRules((prev) =>
-        prev.map((r) => (r.name === rule.name ? { ...r, enabled: rule.enabled } : r)),
+      setForwards((prev) =>
+        prev.map((r) => (r.name === fwd.name ? { ...r, enabled: fwd.enabled } : r)),
       )
       toast.error(err instanceof ApiError ? err.message : t("apply.toast_fail"))
     } finally {
@@ -210,19 +210,19 @@ export function RulesPage({ embedded = false }: { embedded?: boolean }) {
 
   const headerActions = (
     <>
-      <Button size="sm" disabled={standby || loading} title={t("rules.add")} onClick={openAdd}>
+      <Button size="sm" disabled={standby || loading} title={t("forwards.add")} onClick={openAdd}>
         <PlusIcon data-icon="inline-start" />
-        {t("rules.add")}
+        {t("forwards.add")}
       </Button>
       <Button
         size="sm"
         variant="outline"
         disabled={exporting || loading}
-        title={t("rules.export")}
+        title={t("forwards.export")}
         onClick={handleExport}
       >
         {exporting ? <Spinner data-icon="inline-start" /> : <DownloadIcon data-icon="inline-start" />}
-        {t("rules.export")}
+        {t("forwards.export")}
       </Button>
     </>
   )
@@ -234,14 +234,14 @@ export function RulesPage({ embedded = false }: { embedded?: boolean }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>{t("rules.col_rule")}</TableHead>
-              <TableHead>{t("rules.col_entry")}</TableHead>
-              <TableHead>{t("rules.col_protocol")}</TableHead>
-              <TableHead>{t("rules.col_upstream")}</TableHead>
-              <TableHead>{t("rules.col_upstream_ip")}</TableHead>
-              <TableHead>{t("rules.col_upstream_port")}</TableHead>
-              <TableHead>{t("rules.col_port")}</TableHead>
-              <TableHead>{t("rules.col_enabled")}</TableHead>
+              <TableHead>{t("forwards.col_rule")}</TableHead>
+              <TableHead>{t("forwards.col_entry")}</TableHead>
+              <TableHead>{t("forwards.col_protocol")}</TableHead>
+              <TableHead>{t("forwards.col_upstream")}</TableHead>
+              <TableHead>{t("forwards.col_upstream_ip")}</TableHead>
+              <TableHead>{t("forwards.col_upstream_port")}</TableHead>
+              <TableHead>{t("forwards.col_port")}</TableHead>
+              <TableHead>{t("forwards.col_enabled")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -255,39 +255,39 @@ export function RulesPage({ embedded = false }: { embedded?: boolean }) {
                   ))}
                 </TableRow>
               ))
-            ) : rules.length === 0 ? (
+            ) : forwards.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={8} className="p-2">
                   <EmptyState
                     icon={ArrowRightLeftIcon}
-                    title={t("rules.empty")}
-                    description={t("rules.empty_hint")}
+                    title={t("forwards.empty")}
+                    description={t("forwards.empty_hint")}
                   />
                 </TableCell>
               </TableRow>
             ) : (
-              rules.map((rule) => {
-                const srv = serversByName.get(rule.server)
+              forwards.map((fwd) => {
+                const srv = upstreamsByName.get(fwd.upstream)
                 return (
-                  <TableRow key={rule.name}>
-                    <TableCell className="font-mono text-xs font-medium">{rule.name}</TableCell>
-                    <TableCell>{entryLabel(rule.entry)}</TableCell>
-                    <TableCell>{rule.protocol}</TableCell>
-                    <TableCell className="font-medium">{rule.server}</TableCell>
+                  <TableRow key={fwd.name}>
+                    <TableCell className="font-mono text-xs font-medium">{fwd.name}</TableCell>
+                    <TableCell>{entryLabel(fwd.entry)}</TableCell>
+                    <TableCell>{fwd.protocol}</TableCell>
+                    <TableCell className="font-medium">{fwd.upstream}</TableCell>
                     <TableCell className="font-mono text-xs">
                       {srv?.address || "—"}
                     </TableCell>
                     <TableCell className="font-mono text-xs">
-                      {upstreamPort(srv, rule.protocol)}
+                      {upstreamPort(srv, fwd.protocol)}
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{rule.listen_port}</TableCell>
+                    <TableCell className="font-mono text-xs">{fwd.listen_port}</TableCell>
                     <TableCell>
                       <Switch
-                        title={t("rules.col_enabled")}
-                        aria-label={t("rules.col_enabled")}
-                        checked={rule.enabled}
-                        onCheckedChange={(v) => toggleRule(rule, v)}
-                        disabled={standby || toggling === rule.name}
+                        title={t("forwards.col_enabled")}
+                        aria-label={t("forwards.col_enabled")}
+                        checked={fwd.enabled}
+                        onCheckedChange={(v) => toggleForward(fwd, v)}
+                        disabled={standby || toggling === fwd.name}
                       />
                     </TableCell>
                   </TableRow>
@@ -309,15 +309,15 @@ export function RulesPage({ embedded = false }: { embedded?: boolean }) {
       >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{t("rules.add_heading")}</DialogTitle>
-            <DialogDescription>{t("rules.add_description")}</DialogDescription>
+            <DialogTitle>{t("forwards.add_heading")}</DialogTitle>
+            <DialogDescription>{t("forwards.add_description")}</DialogDescription>
           </DialogHeader>
-          {servers.length === 0 ? (
+          {upstreams.length === 0 ? (
             <div className="flex flex-col gap-4">
               <EmptyState
                 icon={ServerIcon}
-                title={t("servers.empty")}
-                description={t("rules.need_upstream_hint")}
+                title={t("upstreams.empty")}
+                description={t("forwards.need_upstream_hint")}
                 compact
               />
               <DialogFooter>
@@ -326,29 +326,29 @@ export function RulesPage({ embedded = false }: { embedded?: boolean }) {
                   variant="ghost"
                   onClick={() => setAddOpen(false)}
                 >
-                  {t("servers.cancel")}
+                  {t("upstreams.cancel")}
                 </Button>
-                <Button render={<Link to="/servers" onClick={() => setAddOpen(false)} />}>
-                  {t("rules.goto_servers")}
+                <Button render={<Link to="/upstreams" onClick={() => setAddOpen(false)} />}>
+                  {t("forwards.goto_upstreams")}
                 </Button>
               </DialogFooter>
             </div>
           ) : (
             <form onSubmit={handleAdd} className="flex flex-col gap-4">
               <Field>
-                <FieldLabel>{t("rules.server")}</FieldLabel>
+                <FieldLabel>{t("forwards.upstream")}</FieldLabel>
                 <Select
-                  value={form.server || undefined}
+                  value={form.upstream || undefined}
                   onValueChange={(v) => {
-                    if (v) setServer(v)
+                    if (v) setUpstream(v)
                   }}
                   disabled={standby || adding}
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder={t("servers.empty")} />
+                    <SelectValue placeholder={t("upstreams.empty")} />
                   </SelectTrigger>
                   <SelectContent>
-                    {servers.map((s) => (
+                    {upstreams.map((s) => (
                       <SelectItem key={s.name} value={s.name}>
                         {s.name}
                       </SelectItem>
@@ -358,7 +358,7 @@ export function RulesPage({ embedded = false }: { embedded?: boolean }) {
               </Field>
 
               <Field>
-                <FieldLabel>{t("rules.entry")}</FieldLabel>
+                <FieldLabel>{t("forwards.entry")}</FieldLabel>
                 <div className="flex h-8 items-center gap-3 text-sm">
                   {ENTRIES.map((entry) => (
                     <label key={entry} className="flex items-center gap-1.5">
@@ -382,7 +382,7 @@ export function RulesPage({ embedded = false }: { embedded?: boolean }) {
               </Field>
 
               <Field>
-                <FieldLabel>{t("rules.protocols")}</FieldLabel>
+                <FieldLabel>{t("forwards.protocols")}</FieldLabel>
                 <div className="flex h-8 items-center gap-3 text-sm">
                   {(["TCP", "UDP"] as const).map((proto) => {
                     const available = availableProtocols.includes(proto)
@@ -409,7 +409,7 @@ export function RulesPage({ embedded = false }: { embedded?: boolean }) {
               </Field>
 
               <Field>
-                <FieldLabel htmlFor="rule-enabled-override">{t("rules.col_enabled")}</FieldLabel>
+                <FieldLabel htmlFor="rule-enabled-override">{t("forwards.col_enabled")}</FieldLabel>
                 <div className="flex h-8 items-center gap-2 text-sm">
                   <Switch
                     id="rule-enabled-override"
@@ -418,7 +418,7 @@ export function RulesPage({ embedded = false }: { embedded?: boolean }) {
                     }
                     onCheckedChange={(v) => setForm((f) => ({ ...f, enabledOverride: v }))}
                     disabled={standby || adding}
-                    aria-label={t("rules.col_enabled")}
+                    aria-label={t("forwards.col_enabled")}
                   />
                   <span className="text-xs text-muted-foreground">
                     {form.entry === "validation"
@@ -435,11 +435,11 @@ export function RulesPage({ embedded = false }: { embedded?: boolean }) {
                   onClick={() => setAddOpen(false)}
                   disabled={adding}
                 >
-                  {t("servers.cancel")}
+                  {t("upstreams.cancel")}
                 </Button>
                 <Button type="submit" disabled={standby || adding}>
                   {adding ? <Spinner data-icon="inline-start" /> : null}
-                  {t("rules.add")}
+                  {t("forwards.add")}
                 </Button>
               </DialogFooter>
             </form>
@@ -453,7 +453,7 @@ export function RulesPage({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <Page>
-      <PageHeader title={t("rules.title")} description={t("rules.desc")} actions={headerActions} />
+      <PageHeader title={t("forwards.title")} description={t("forwards.desc")} actions={headerActions} />
       {main}
     </Page>
   )

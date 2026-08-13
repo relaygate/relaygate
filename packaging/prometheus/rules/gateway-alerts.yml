@@ -45,7 +45,8 @@ groups:
           summary: "{{ $labels.gateway }} 集群 {{ $labels.envoy_cluster_name }} 触发熔断/溢出"
           description: "近 5 分钟出现连接或 pending 溢出，请检查并发与上游容量。"
 
-      # 快满预警：默认 max_connections=1024 时约 80%。若改了 defaults.max_connections，请同步改阈值。
+      # 快满预警：默认 max_connections=1024 时约 80%（>800）。
+      # 若套用 tcp-longlived（max_connections=4096），请改为约 >3277，或按实际上限的 80% 调整。
       - alert: EnvoyConnectionsNearLimit
         expr: |
           sum by (gateway, envoy_cluster_name) (
@@ -56,7 +57,7 @@ groups:
           severity: warning
         annotations:
           summary: "{{ $labels.gateway }} 集群 {{ $labels.envoy_cluster_name }} 连接接近上限"
-          description: "活跃上游连接持续 >800（默认熔断上限 1024 的约 80%）。请核对 defaults.max_connections 与上游容量。"
+          description: "活跃上游连接持续 >800（默认熔断上限 1024 的约 80%；tcp-longlived=4096 时约 3277）。请核对 security.policies[conn_limit].params.max_connections 与上游容量。"
 
   - name: gateway-traffic
     rules:

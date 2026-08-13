@@ -18,7 +18,7 @@ func TestPromoteEnablesProduction(t *testing.T) {
 	srv, token, csrf := setupPanel(t)
 	h := srv.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/servers/server-01/promote", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/upstreams/server-01/promote", nil)
 	authedCSRF(req, token, csrf)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -30,9 +30,9 @@ func TestPromoteEnablesProduction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, rule := range res.Rules {
-		if rule.Entry == "production" && rule.Server == "server-01" && !rule.Enabled {
-			t.Fatalf("production rule still disabled: %s", rule.Name)
+	for _, fwd := range res.Forwards {
+		if fwd.Entry == "production" && fwd.Upstream == "server-01" && !fwd.Enabled {
+			t.Fatalf("production rule still disabled: %s", fwd.Name)
 		}
 	}
 	audit := filepath.Join(config.ResolveDataDir(srv.cfg.Root), "panel-audit.log")
@@ -94,7 +94,7 @@ func TestChangesListAndRollbackConfirm(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "change-summary.txt"), []byte("servers: +1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "change-summary.txt"), []byte("upstreams: +1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -114,7 +114,7 @@ func TestChangesListAndRollbackConfirm(t *testing.T) {
 	authed(req, token)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "servers: +1") {
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "upstreams: +1") {
 		t.Fatalf("summary status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
@@ -129,7 +129,7 @@ func TestChangesListAndRollbackConfirm(t *testing.T) {
 }
 
 func TestApplyPreviewClassify(t *testing.T) {
-	srv, token, csrf := setupPanel(t)
+	srv, token, _ := setupPanel(t)
 	h := srv.Handler()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/apply/preview", nil)
@@ -150,15 +150,20 @@ func TestApplyPreviewClassify(t *testing.T) {
 		t.Fatalf("missing needs_firewall: %s", rec.Body.String())
 	}
 
-	// ACL-only write should flip needs_firewall after backup exists from prior apply path.
+	// Allowlist-only write should flip needs_firewall after backup exists from prior apply path.
 	// Seed a "before" by writing a backup snapshot via resources path used by Diff.
-	aclBody, _ := json.Marshal(map[string]string{"list": "deny", "cidr": "203.0.113.10/32"})
-	req = httptest.NewRequest(http.MethodPost, "/api/acl", bytes.NewReader(aclBody))
-	authedCSRF(req, token, csrf)
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	if rec.Code != 200 && rec.Code != 201 {
-		t.Fatalf("acl status=%d body=%s", rec.Code, rec.Body.String())
+	res, err := resources.Load(filepath.Join(config.ResolveDataDir(srv.cfg.Root), "resources.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Security.EnsureSecurityDefaults()
+	p := res.Security.PolicyByID(resources.PolicyAllowlist)
+	if p == nil {
+		t.Fatal("missing allowlist policy")
+	}
+	p.Params.Deny = append(p.Params.Deny, "203.0.113.10/32")
+	if err := resources.Save(filepath.Join(config.ResolveDataDir(srv.cfg.Root), "resources.yaml"), res); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -183,7 +188,7 @@ func TestApplyRequiresConfirm(t *testing.T) {
 	srv, token, csrf := setupPanel(t)
 	h := srv.Handler()
 
-	// Seed ADS bootstrap so XDS hot path is eligible (unmigrated → RELOAD_ENVOY).
+	// Seed ADS bootstrap so the XDS hot path is eligible (needs Confirm / 确认).
 	envoyDir := filepath.Join(config.ResolveDataDir(srv.cfg.Root), "envoy")
 	if err := os.MkdirAll(envoyDir, 0o755); err != nil {
 		t.Fatal(err)
@@ -213,7 +218,6 @@ func TestApplyRequiresConfirm(t *testing.T) {
 		t.Fatalf("apply empty body status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
-
 
 func TestFleetPublishRequiresConfirm(t *testing.T) {
 	srv, token, csrf := setupPanel(t)

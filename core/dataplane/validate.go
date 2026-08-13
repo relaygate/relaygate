@@ -11,9 +11,6 @@ import (
 	"github.com/relaygate/relaygate/core/config"
 )
 
-// RenderConfig loads resources, validates, and writes envoy + nft outputs under DataDir.
-// See ops/render_config.go — kept here for backward compat in validate.go callers.
-
 // RenderObservability renders DataDir/prometheus/prometheus.yml from packaging template + env.
 func RenderObservability(root string) error {
 	env, err := LoadEnv(root)

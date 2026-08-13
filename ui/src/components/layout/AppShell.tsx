@@ -65,9 +65,9 @@ const navButtonClass = cn(
 
 const navItems = [
   { to: "/", labelKey: "nav.overview", icon: LayoutDashboardIcon, end: true },
-  { to: "/servers", labelKey: "nav.servers", icon: ServerIcon },
-  { to: "/rules", labelKey: "nav.rules", icon: ArrowLeftRightIcon },
-  { to: "/acl", labelKey: "nav.acl", icon: ShieldIcon },
+  { to: "/upstreams", labelKey: "nav.upstreams", icon: ServerIcon },
+  { to: "/forwards", labelKey: "nav.forwards", icon: ArrowLeftRightIcon },
+  { to: "/security", labelKey: "nav.security", icon: ShieldIcon },
   { to: "/config", labelKey: "nav.config", icon: FileCodeIcon },
   { to: "/apply", labelKey: "nav.apply", icon: PlayIcon },
   { to: "/ops", labelKey: "nav.ops", icon: WrenchIcon },

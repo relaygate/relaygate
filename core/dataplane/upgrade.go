@@ -29,7 +29,7 @@ func Upgrade(root string, opt UpgradeOptions) error {
 	}
 
 	fmt.Println("==> 变更分流：二进制 / packaging → relaygate upgrade（或 install.sh upgrade）")
-	fmt.Println("    ACL/nftables-only → firewall apply；resources/Envoy → reload")
+	fmt.Println("    ACL/仅防火墙 → firewall apply；resources/网关 → reload")
 	WarnIfDrainWaitShort(env.DrainWait, os.Stdout)
 
 	if opt.Drain {
@@ -141,7 +141,7 @@ func ResolveReleaseSpec(root string) (version, tarPath string, err error) {
 // ChangePathHint prints the change-routing cheat sheet.
 func ChangePathHint() {
 	fmt.Println("变更分流:")
-	fmt.Println("  ACL / nftables-only     → relaygate firewall apply")
-	fmt.Println("  resources / Envoy 配置  → relaygate reload（含 drain）")
+	fmt.Println("  ACL / 仅防火墙         → relaygate firewall apply")
+	fmt.Println("  resources / 网关配置   → relaygate reload（含 drain）")
 	fmt.Println("  二进制 / packaging      → relaygate upgrade [--drain] 或 install.sh upgrade")
 }

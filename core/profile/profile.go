@@ -12,11 +12,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Profile is a named defaults preset under packaging/profiles/*.yaml.
+// Profile is a named preset under packaging/profiles/*.yaml.
 type Profile struct {
-	Name        string              `yaml:"name"`
-	Description string              `yaml:"description"`
-	Defaults    resources.Defaults  `yaml:"defaults"`
+	Name        string             `yaml:"name"`
+	Description string             `yaml:"description"`
+	Scenario    string             `yaml:"scenario,omitempty"`
+	Defaults    resources.Defaults `yaml:"defaults"`
+	Security    resources.Security `yaml:"security,omitempty"`
 }
 
 // Dir returns packaging/profiles absolute path.
@@ -75,7 +77,7 @@ func Load(root, name string) (*Profile, error) {
 		if strings.TrimSpace(p.Name) == "" {
 			p.Name = name
 		}
-		p.Defaults.ApplyNftablesDefaults()
+		p.Security.EnsureSecurityDefaults()
 		return &p, nil
 	}
 	if lastErr != nil {
@@ -84,7 +86,61 @@ func Load(root, name string) (*Profile, error) {
 	return nil, fmt.Errorf("profile 不存在: %s", name)
 }
 
-// Preview diffs profile defaults against current resources without writing.
+// MergeSecurityInto overlays profile security policies onto dst (Panel scenario picker).
+func MergeSecurityInto(dst *resources.Security, src resources.Security) {
+	mergeProfileSecurity(dst, src)
+}
+
+func mergeProfileSecurity(dst *resources.Security, src resources.Security) {
+	dst.EnsureSecurityDefaults()
+	if len(src.Policies) == 0 {
+		return
+	}
+	byID := map[string]int{}
+	for i, p := range dst.Policies {
+		byID[p.ID] = i
+	}
+	for _, sp := range src.Policies {
+		if idx, ok := byID[sp.ID]; ok {
+			if sp.Enabled != dst.Policies[idx].Enabled {
+				dst.Policies[idx].Enabled = sp.Enabled
+			}
+			mergePolicyParams(&dst.Policies[idx].Params, sp.Params, sp.ID)
+		}
+	}
+}
+
+func mergePolicyParams(dst *resources.PolicyParams, src resources.PolicyParams, id string) {
+	switch id {
+	case resources.PolicyFirewallNewConnLimit:
+		if src.TCPPerIP != "" {
+			dst.TCPPerIP = src.TCPPerIP
+		}
+		if src.Burst > 0 {
+			dst.Burst = src.Burst
+		}
+	case resources.PolicyGatewayNewConnLimit:
+		if src.PerSec > 0 {
+			dst.PerSec = src.PerSec
+		}
+		if src.Burst > 0 {
+			dst.Burst = src.Burst
+		}
+	case resources.PolicyConnLimit:
+		if src.MaxConnections > 0 {
+			dst.MaxConnections = src.MaxConnections
+		}
+	case resources.PolicyUDPLimit:
+		if src.UDPPPSPerIP != "" {
+			dst.UDPPPSPerIP = src.UDPPPSPerIP
+		}
+		if src.UDPBurst > 0 {
+			dst.UDPBurst = src.UDPBurst
+		}
+	}
+}
+
+// Preview diffs profile against current resources without writing.
 func Preview(root, name string) (*resources.ChangeSummary, error) {
 	p, err := Load(root, name)
 	if err != nil {
@@ -98,16 +154,16 @@ func Preview(root, name string) (*resources.ChangeSummary, error) {
 	before := *res
 	after := *res
 	after.Defaults = p.Defaults
-	after.Defaults.ApplyNftablesDefaults()
+	mergeProfileSecurity(&after.Security, p.Security)
 	if err := after.Validate(); err != nil {
 		return nil, fmt.Errorf("preview 校验失败: %w", err)
 	}
 	sum := resources.Diff(&before, &after)
-	sum.Note = fmt.Sprintf("profile preview %s → defaults", p.Name)
+	sum.Note = fmt.Sprintf("profile preview %s", p.Name)
 	return &sum, nil
 }
 
-// Apply merges profile defaults into resources.yaml (replace defaults section fields from profile).
+// Apply merges profile into resources.yaml.
 func Apply(root, name string) (*resources.ChangeSummary, error) {
 	p, err := Load(root, name)
 	if err != nil {
@@ -120,7 +176,7 @@ func Apply(root, name string) (*resources.ChangeSummary, error) {
 	}
 	before := *res
 	res.Defaults = p.Defaults
-	res.Defaults.ApplyNftablesDefaults()
+	mergeProfileSecurity(&res.Security, p.Security)
 	if err := res.Validate(); err != nil {
 		return nil, fmt.Errorf("apply 后校验失败: %w", err)
 	}
@@ -128,7 +184,7 @@ func Apply(root, name string) (*resources.ChangeSummary, error) {
 		return nil, err
 	}
 	sum := resources.Diff(&before, res)
-	sum.Note = fmt.Sprintf("profile apply %s → defaults", p.Name)
+	sum.Note = fmt.Sprintf("profile apply %s", p.Name)
 	return &sum, nil
 }
 
@@ -143,13 +199,10 @@ func FormatShow(p *Profile) string {
 	fmt.Fprintf(&b, "defaults:\n")
 	fmt.Fprintf(&b, "  tcp_idle_timeout: %s\n", d.TCPIdleTimeout)
 	fmt.Fprintf(&b, "  udp_idle_timeout: %s\n", d.UDPIdleTimeout)
-	fmt.Fprintf(&b, "  max_connections: %d\n", d.MaxConnections)
 	fmt.Fprintf(&b, "  max_pending_requests: %d\n", d.MaxPendingRequests)
-	fmt.Fprintf(&b, "  tcp_local_rate_limit_per_sec: %d\n", d.TCPLocalRateLimitPerSec)
-	fmt.Fprintf(&b, "  tcp_local_rate_limit_burst: %d\n", d.TCPLocalRateLimitBurst)
-	fmt.Fprintf(&b, "  nftables.tcp_new_conn_per_ip: %s\n", d.Nftables.TCPNewConnPerIP)
-	fmt.Fprintf(&b, "  nftables.udp_pps_per_ip: %s\n", d.Nftables.UDPPPSPerIP)
-	fmt.Fprintf(&b, "  nftables.tcp_burst: %d\n", d.Nftables.TCPBurst)
-	fmt.Fprintf(&b, "  nftables.udp_burst: %d\n", d.Nftables.UDPBurst)
+	p.Security.EnsureSecurityDefaults()
+	for _, pol := range p.Security.Policies {
+		fmt.Fprintf(&b, "security.policies.%s: enabled=%t\n", pol.ID, pol.Enabled)
+	}
 	return b.String()
 }

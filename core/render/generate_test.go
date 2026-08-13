@@ -8,6 +8,22 @@ import (
 )
 
 func testResources() *resources.Resources {
+	sec := resources.DefaultSecurity()
+	for i := range sec.Policies {
+		switch sec.Policies[i].ID {
+		case resources.PolicyFirewallNewConnLimit:
+			sec.Policies[i].Params.TCPPerIP = "40/second"
+			sec.Policies[i].Params.Burst = 80
+		case resources.PolicyGatewayNewConnLimit:
+			sec.Policies[i].Params.PerSec = 200
+			sec.Policies[i].Params.Burst = 400
+		case resources.PolicyUDPLimit:
+			sec.Policies[i].Params.UDPPPSPerIP = "600/second"
+			sec.Policies[i].Params.UDPBurst = 1200
+		case resources.PolicyConnLimit:
+			sec.Policies[i].Params.MaxConnections = 1024
+		}
+	}
 	return &resources.Resources{
 		Meta: resources.Meta{
 			AdminPort:    9901,
@@ -15,30 +31,22 @@ func testResources() *resources.Resources {
 		},
 		Gateway: resources.Gateway{ListenAddress: "0.0.0.0"},
 		Defaults: resources.Defaults{
-			MaxConnections:          1024,
-			MaxPendingRequests:      256,
-			TCPLocalRateLimitPerSec: 200,
-			TCPLocalRateLimitBurst:  400,
-			TCPIdleTimeout:          "3600s",
-			UDPIdleTimeout:          "120s",
+			MaxPendingRequests: 256,
+			TCPIdleTimeout:     "3600s",
+			UDPIdleTimeout:     "120s",
 			HealthCheck: resources.HealthCheck{
 				Timeout: "2s", Interval: "10s",
 				UnhealthyThreshold: 3, HealthyThreshold: 2,
 			},
-			Nftables: resources.NftablesDefaults{
-				TCPNewConnPerIP: "40/second",
-				UDPPPSPerIP:     "600/second",
-				TCPBurst:        80,
-				UDPBurst:        1200,
-			},
 		},
-		Servers: []resources.Server{
+		Security: sec,
+		Upstreams: []resources.Upstream{
 			{Name: "server-01", Address: "10.0.0.11", TCP: resources.ProtoPortOf(7777), UDP: resources.ProtoPortOf(7778), Enabled: true},
 		},
-		Rules: []resources.Rule{
-			{Name: "forward-server-01-validation-tcp", Entry: "validation", Server: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
-			{Name: "forward-server-01-validation-udp", Entry: "validation", Server: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
-			{Name: "forward-server-01-production-tcp", Entry: "production", Server: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
+		Forwards: []resources.Forward{
+			{Name: "forward-server-01-validation-tcp", Entry: "validation", Upstream: "server-01", Protocol: "TCP", ListenPort: 11001, Enabled: true},
+			{Name: "forward-server-01-validation-udp", Entry: "validation", Upstream: "server-01", Protocol: "UDP", ListenPort: 11001, Enabled: true},
+			{Name: "forward-server-01-production-tcp", Entry: "production", Upstream: "server-01", Protocol: "TCP", ListenPort: 10001, Enabled: false},
 		},
 	}
 }
@@ -94,10 +102,9 @@ func TestRenderNFTIncludesPortsAndRateLimits(t *testing.T) {
 
 func TestRenderNFTIncludesACLSets(t *testing.T) {
 	r := testResources()
-	r.ACL = resources.ACL{
-		Deny:  []string{"1.2.3.4/32", "10.0.0.0/8"},
-		Allow: []string{"203.0.113.0/24"},
-	}
+	p := r.Security.PolicyByID(resources.PolicyAllowlist)
+	p.Params.Deny = []string{"1.2.3.4/32", "10.0.0.0/8"}
+	p.Params.Allow = []string{"203.0.113.0/24"}
 	_, nft, err := Render(r)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
@@ -116,7 +123,9 @@ func TestRenderNFTIncludesACLSets(t *testing.T) {
 
 func TestRenderNFTAppliesDefaultRateLimits(t *testing.T) {
 	r := testResources()
-	r.Defaults.Nftables = resources.NftablesDefaults{}
+	p := r.Security.PolicyByID(resources.PolicyFirewallNewConnLimit)
+	p.Params.TCPPerIP = ""
+	p.Params.Burst = 0
 	_, nft, err := Render(r)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
@@ -263,5 +272,50 @@ func TestProxyProtocolCompatEmitsAllowWithout(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("no TCP listener")
+	}
+}
+
+func TestRenderRespectsDisabledNewConnRateLimit(t *testing.T) {
+	r := testResources()
+	r.Security.PolicyByID(resources.PolicyFirewallNewConnLimit).Enabled = false
+	r.Security.PolicyByID(resources.PolicyGatewayNewConnLimit).Enabled = false
+	cfg, nft, err := Render(r)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if !strings.Contains(nft, "FORWARD_TCP_NEW_CONN_RATE = 999999") {
+		t.Fatalf("nft should use disabled rate:\n%s", nft)
+	}
+	listeners := cfg["static_resources"].(map[string]any)["listeners"].([]any)
+	for _, raw := range listeners {
+		l := raw.(map[string]any)
+		if !strings.Contains(l["name"].(string), "-tcp") {
+			continue
+		}
+		fc := l["filter_chains"].([]any)[0].(map[string]any)
+		filters := fc["filters"].([]any)
+		for _, f := range filters {
+			if f.(map[string]any)["name"] == "envoy.filters.network.local_ratelimit" {
+				t.Fatal("local_ratelimit should be omitted when policy disabled")
+			}
+		}
+	}
+}
+
+func TestRenderRespectsDisabledSourceACL(t *testing.T) {
+	r := testResources()
+	p := r.Security.PolicyByID(resources.PolicyAllowlist)
+	p.Params.Deny = []string{"1.2.3.4/32"}
+	p.Params.Allow = []string{"203.0.113.0/24"}
+	p.Enabled = false
+	_, nft, err := Render(r)
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if strings.Contains(nft, "1.2.3.4/32") {
+		t.Fatalf("acl deny should be ignored when allowlist disabled:\n%s", nft)
+	}
+	if !strings.Contains(nft, "ACL_ALLOW_STRICT = 0") {
+		t.Fatalf("strict allow should be off:\n%s", nft)
 	}
 }

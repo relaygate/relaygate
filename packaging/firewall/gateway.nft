@@ -57,6 +57,7 @@ table inet relaygate {
     udp dport $FORWARD_UDP_PORTS ip saddr != $ACL_ALLOW counter drop comment "acl-allow-miss-udp"
 
     # 转发 TCP 入口（rules 监听端口）+ 新建连接限速
+    # （已建立会话在上方 established,related 已放行；长连接勿再对整会话做 PPS）
     tcp dport $FORWARD_TCP_PORTS jump allow-forward-tcp
     # 转发 UDP 入口（rules 监听端口）+ 每 IP PPS 限速
     udp dport $FORWARD_UDP_PORTS jump allow-forward-udp

@@ -68,7 +68,7 @@ function looksLikeChangeSummary(lines: string[]): boolean {
 function isNoDiffLine(trimmed: string): boolean {
   if (!trimmed) return false
   if (/^无差异$|^无变更$|^No changes$/i.test(trimmed)) return true
-  // （相对上次备份无 server/rule/defaults/acl 差异） / （无 server/rule/defaults/acl 差异）
+  // （相对上次备份无 upstream/forward/defaults/security 差异） / （无 upstream/forward/defaults/security 差异）
   if (
     /^[（(]?(?:相对上次备份)?无(?:\s*server\/rule\/defaults\/acl\s*)?差异[）)]?$/i.test(
       trimmed,

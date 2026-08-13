@@ -16,6 +16,7 @@ import (
 
 // writeFirewallRuntime materializes a runnable nft file under DataDir/firewall/
 // from the packaging template (SSH port + include path rewritten).
+// INPUT evaluation order matches gateway.nft: established → ACL deny → ACL allow → rate limits.
 func writeFirewallRuntime(root, sshPort string) (fwDir, runtimePath string, err error) {
 	p := config.ResolvePaths(root)
 	fwDir = p.Firewall
@@ -29,10 +30,10 @@ func writeFirewallRuntime(root, sshPort string) (fwDir, runtimePath string, err 
 	}
 	forwardPorts := filepath.Join(fwDir, "forward-ports.nft")
 	body := string(b)
-	body = strings.ReplaceAll(body, "@INLINE_TCP_NEW_CONN_RATE@", inlineNftablesRate(root, func(n resources.NftablesDefaults) string { return n.TCPNewConnPerIP }))
-	body = strings.ReplaceAll(body, "@INLINE_UDP_PPS_RATE@", inlineNftablesRate(root, func(n resources.NftablesDefaults) string { return n.UDPPPSPerIP }))
-	body = strings.ReplaceAll(body, "@INLINE_TCP_NEW_CONN_BURST@", inlineNftablesBurst(root, func(n resources.NftablesDefaults) int { return n.TCPBurst }, 60))
-	body = strings.ReplaceAll(body, "@INLINE_UDP_PPS_BURST@", inlineNftablesBurst(root, func(n resources.NftablesDefaults) int { return n.UDPBurst }, 1000))
+	body = strings.ReplaceAll(body, "@INLINE_TCP_NEW_CONN_RATE@", inlineNftablesRate(root, func(n resources.FirewallRateDefaults) string { return n.TCPNewConnPerIP }, resources.PolicyFirewallNewConnLimit))
+	body = strings.ReplaceAll(body, "@INLINE_UDP_PPS_RATE@", inlineNftablesRate(root, func(n resources.FirewallRateDefaults) string { return n.UDPPPSPerIP }, resources.PolicyUDPLimit))
+	body = strings.ReplaceAll(body, "@INLINE_TCP_NEW_CONN_BURST@", inlineNftablesBurst(root, func(n resources.FirewallRateDefaults) int { return n.TCPBurst }, 60, resources.PolicyFirewallNewConnLimit))
+	body = strings.ReplaceAll(body, "@INLINE_UDP_PPS_BURST@", inlineNftablesBurst(root, func(n resources.FirewallRateDefaults) int { return n.UDPBurst }, 1000, resources.PolicyUDPLimit))
 	lines := strings.Split(body, "\n")
 	for i, line := range lines {
 		trim := strings.TrimSpace(line)
@@ -118,10 +119,10 @@ func firewallExec(root string, apply bool, skipConfirm bool) error {
 	fmt.Printf("将保留 SSH/TCP %s；应用前请保持当前会话并准备云控制台。\n", sshPort)
 
 	if !apply {
-		fmt.Println("变更分流：ACL / nftables-only → sudo relaygate firewall apply（无需 reload Envoy）")
+		fmt.Println("变更分流：防火墙 → sudo relaygate firewall apply（无需 reload 网关）")
 		fmt.Println("默认未应用。确认无误后执行: sudo relaygate firewall apply")
 		fmt.Println("（非交互: sudo APPLY_FIREWALL=1 FIREWALL_CONFIRM=Confirm relaygate firewall apply）")
-		fmt.Println("（Panel：运维工具 → 防火墙检查 / 应用防火墙，经 privileged helper）")
+		fmt.Println("（Panel：安全策略页 → 应用安全策略，经 privileged helper）")
 		return nil
 	}
 
@@ -182,28 +183,34 @@ func confirmFirewall(env Env) error {
 	return nil
 }
 
-func inlineNftablesRate(root string, pick func(resources.NftablesDefaults) string) string {
+func inlineNftablesRate(root string, pick func(resources.FirewallRateDefaults) string, policyID string) string {
 	resPath, _, _ := resources.DefaultPaths(root)
 	res, err := resources.Load(resPath)
 	if err != nil {
 		return "30/second"
 	}
-	res.Defaults.ApplyNftablesDefaults()
-	rate := strings.TrimSpace(pick(res.Defaults.Nftables))
+	nft := res.Security.EffectiveFirewallRates()
+	if policyID != "" && !res.Security.PolicyEnabled(policyID) {
+		return resources.DisabledFirewallRatePerIP
+	}
+	rate := strings.TrimSpace(pick(nft))
 	if rate == "" {
 		return "30/second"
 	}
 	return rate
 }
 
-func inlineNftablesBurst(root string, pick func(resources.NftablesDefaults) int, fallback int) string {
+func inlineNftablesBurst(root string, pick func(resources.FirewallRateDefaults) int, fallback int, policyID string) string {
 	resPath, _, _ := resources.DefaultPaths(root)
 	res, err := resources.Load(resPath)
 	if err != nil {
 		return strconv.Itoa(fallback)
 	}
-	res.Defaults.ApplyNftablesDefaults()
-	v := pick(res.Defaults.Nftables)
+	nft := res.Security.EffectiveFirewallRates()
+	if policyID != "" && !res.Security.PolicyEnabled(policyID) {
+		return strconv.Itoa(resources.DisabledFirewallBurst)
+	}
+	v := pick(nft)
 	if v <= 0 {
 		v = fallback
 	}

@@ -94,7 +94,7 @@ export function OverviewPage() {
       </Section>
 
       <Section title={t("overview.top_limited")}>
-        {traffic?.top_limited_rules?.length ? (
+        {traffic?.top_limited_forwards?.length ? (
           <div className="rounded-md border border-border/60">
             <Table>
               <TableHeader>
@@ -105,9 +105,9 @@ export function OverviewPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {traffic.top_limited_rules.map((row) => (
-                  <TableRow key={`${row.rule}-${row.prefix}`}>
-                    <TableCell className="font-medium">{row.rule}</TableCell>
+                {traffic.top_limited_forwards.map((row) => (
+                  <TableRow key={`${row.forward}-${row.prefix}`}>
+                    <TableCell className="font-medium">{row.forward}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">
                       {row.prefix}
                     </TableCell>

@@ -151,10 +151,10 @@ func Run(opt Options) error {
 			return fmt.Errorf("PANEL_ROLE=%q 无效（须 primary|standby）", env.PanelRole)
 		}
 		if role == "standby" && env.EnablePanel == "1" {
-			fmt.Println("WARN: PANEL_ROLE=standby 但 ENABLE_PANEL=1（从节点建议 ENABLE_PANEL=0；若误启则 Panel 写保护）")
+			fmt.Println("WARN: PANEL_ROLE=standby 但 ENABLE_PANEL=1（只读 Panel；纯节点通常 ENABLE_PANEL=0）")
 		}
 		if role == "primary" && env.EnablePanel != "1" {
-			fmt.Println("WARN: PANEL_ROLE=primary 但 ENABLE_PANEL!=1（主管理节点通常需要 Panel）")
+			fmt.Println("WARN: PANEL_ROLE=primary 但 ENABLE_PANEL!=1（主控通常需要 Panel）")
 		}
 		fmt.Printf("PANEL_ROLE=%s ENABLE_PANEL=%s DRAIN_WAIT=%ds ENVOY_ADMIN_PORT=%s\n",
 			env.PanelRole, env.EnablePanel, env.DrainWait, env.EnvoyAdminPort)
@@ -285,7 +285,7 @@ func Run(opt Options) error {
 		fmt.Printf("  [ ] DRAIN_WAIT=%ds ≥ %ds（模板 unhealthy_threshold×interval）\n",
 			env.DrainWait, config.RecommendedDrainWaitSec)
 		role := strings.ToLower(strings.TrimSpace(env.PanelRole))
-		fmt.Printf("  [ ] 双活角色 PANEL_ROLE=%s（滚动时先 drain 变更节点）\n", role)
+		fmt.Printf("  [ ] Panel 写保护 PANEL_ROLE=%s（滚动时先 drain 变更节点）\n", role)
 		fmt.Println("  [ ] 维护剧本: doctor → drain fail →（控制台确认 unhealthy）→ reload|upgrade → smoke")
 		fmt.Println("  详见 packaging/terraform/nlb/README.md 与 README「L4 维护窗口」")
 		return nil

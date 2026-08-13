@@ -1,0 +1,42 @@
+# UDP 侧重：放宽 UDP PPS，缩短 UDP idle
+name: udp-heavy
+scenario: udp_heavy
+description: 适合 UDP 包率较高的业务；放宽 nft UDP PPS，仍需云侧挡大流量洪泛
+
+defaults:
+  default_upstream_tcp_port: 7777
+  default_upstream_udp_port: 7778
+  tcp_idle_timeout: 1800s
+  udp_idle_timeout: 60s
+  max_pending_requests: 512
+  health_check:
+    timeout: 2s
+    interval: 10s
+    unhealthy_threshold: 3
+    healthy_threshold: 2
+
+security:
+  policies:
+    - id: firewall_new_conn_limit
+      type: new_conn_limit_firewall
+      enabled: true
+      params:
+        tcp_per_ip: 40/second
+        burst: 80
+    - id: gateway_new_conn_limit
+      type: new_conn_limit_gateway
+      enabled: true
+      params:
+        per_sec: 400
+        burst: 800
+    - id: conn_limit
+      type: conn_limit
+      enabled: true
+      params:
+        max_connections: 2048
+    - id: udp_limit
+      type: udp_limit
+      enabled: true
+      params:
+        udp_pps_per_ip: 1200/second
+        udp_burst: 2400

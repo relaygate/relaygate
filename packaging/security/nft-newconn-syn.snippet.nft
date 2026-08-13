@@ -1,0 +1,32 @@
+#!/usr/sbin/nft -f
+# =============================================================================
+# 说明模板（勿直接 nft -f 本文件覆盖现网 —— 防 desired state / actual 漂移）
+# =============================================================================
+# 正式业务入口的「每源 IP 新建 TCP 连接」rate limiting 已在:
+#   packaging/firewall/gateway.nft  → chain allow-forward-tcp
+#   （ct state new + dynamic set；established/related 在 input 链最前已 accept）
+#
+# 限速数值由 resources.yaml defaults.nftables 渲染进 forward-ports.nft，经
+#   relaygate firewall apply
+# 生效。本文件帮助区分 SYN / new connections vs established，避免误用 PPS 伤
+# TCP 长连接（long-lived / persistent connections）。
+#
+# 错误示范（long-lived TCP 禁止）:
+#   # 对所有 TCP 包做 PPS rate limiting —— 误伤已建立会话业务流量
+#   # tcp dport $PORT limit rate over 100/second drop
+#
+# 正确思路（与 gateway.nft 一致 · defense in depth 主机层）:
+#   1) ct state established,related accept
+#   2) 仅 ct state new 做每源 IP rate limiting，再 accept
+#
+# 若需临时在实验机验证语法，请复制到独立 table 名，且不要 flush ruleset。
+# =============================================================================
+
+# 以下为示意片段（变量名与正式渲染一致，不可单独加载）:
+#
+# chain allow-forward-tcp {
+#   ct state new ip saddr @tcp_new_per_ip \
+#     limit rate over $TCP_NEW_CONN_RATE burst $TCP_NEW_CONN_BURST packets \
+#     counter drop comment "limit-new-tcp"
+#   accept comment "allow-forward-tcp"
+# }

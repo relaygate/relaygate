@@ -24,7 +24,7 @@ const (
 
 	PackagingDirName = "packaging"
 	// SharedDirName holds role-agnostic templates (resources, default env).
-	SharedDirName = "shared"
+	SharedDirName   = "shared"
 	ComposeFileRel  = "packaging/compose.yaml"
 	TemplatesDirRel = "packaging/shared"
 	ControlEnvRel   = "packaging/control/env.example"
@@ -209,7 +209,11 @@ type Env struct {
 	XDSEnabled bool
 	// XDSPort is the loopback ADS listen port (default 18000).
 	XDSPort string
-	Raw     map[string]string
+	// SecurityAutoApply controls host-side sysctl + nftables after agent pull.
+	// Empty = default: on only when ENABLE_PANEL=0 (pure node); off on control (ENABLE_PANEL=1).
+	// Explicit 1/0 overrides the default. Never auto-apply host modules on production control unless set to 1.
+	SecurityAutoApply string
+	Raw               map[string]string
 }
 
 // LoadEnv loads root/.env (if present) then reads known keys.
@@ -268,8 +272,25 @@ func LoadEnv(root string) (Env, error) {
 		Timeout:                  Getenv("TIMEOUT", "3"),
 		XDSEnabled:               XDSEnabledFromEnv(),
 		XDSPort:                  Getenv("XDS_PORT", "18000"),
+		SecurityAutoApply:        Getenv("SECURITY_AUTO_APPLY", ""),
 		Raw:                      raw,
 	}, nil
+}
+
+// HostSecurityAutoApply reports whether agent pull should apply host-side
+// sysctl and nftables (in addition to Envoy HotApply).
+// Explicit SECURITY_AUTO_APPLY wins; when unset, defaults to true only for
+// pure nodes (ENABLE_PANEL=0). Control hosts (ENABLE_PANEL=1) stay off by default
+// so upgrades never rewrite firewall/sysctl on the production control plane.
+func (e Env) HostSecurityAutoApply() bool {
+	switch strings.ToLower(strings.TrimSpace(e.SecurityAutoApply)) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return strings.TrimSpace(e.EnablePanel) == "0"
+	}
 }
 
 // XDSEnabledFromEnv reads XDS_ENABLED with DefaultXDSEnabled when unset.

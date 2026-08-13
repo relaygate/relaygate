@@ -1,5 +1,5 @@
 {
-  "error.standby": "This node is read-only. Use the control host for write operations.",
+  "error.standby": "This Panel role is read-only. Use the control host for write operations.",
   "error.grafana_unavailable": "Grafana unavailable: %s",
   "error.no_output": "(no output)",
   "error.drain_action": "action must be status|fail|ok",

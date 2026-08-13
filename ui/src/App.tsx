@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom"
 
 import { RequireAuth } from "@/components/auth/RequireAuth"
 import { AppShell } from "@/components/layout/AppShell"
-import { ACLPage } from "@/pages/ACLPage"
+import { SecurityPage } from "@/pages/SecurityPage"
 import { ApplyPage } from "@/pages/ApplyPage"
 import { ChangesPage } from "@/pages/ChangesPage"
 import { ConfigPage } from "@/pages/ConfigPage"
@@ -21,9 +21,10 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route element={<AppShell />}>
           <Route index element={<OverviewPage />} />
-          <Route path="servers" element={<ServersPage />} />
-          <Route path="rules" element={<RulesPage />} />
-          <Route path="acl" element={<ACLPage />} />
+          <Route path="upstreams" element={<ServersPage />} />
+          <Route path="forwards" element={<RulesPage />} />
+          <Route path="security" element={<SecurityPage />} />
+          <Route path="acl" element={<Navigate to="/security" replace />} />
           <Route path="config" element={<ConfigPage />} />
           <Route path="apply" element={<ApplyPage />} />
           <Route path="ops" element={<OpsPage />} />

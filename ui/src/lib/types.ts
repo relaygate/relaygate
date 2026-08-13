@@ -2,7 +2,7 @@ export interface ProtoPort {
   port: number
 }
 
-export interface Server {
+export interface Upstream {
   name: string
   address: string
   /** Present with port = TCP enabled; absent = off. */
@@ -12,22 +12,22 @@ export interface Server {
   enabled: boolean
 }
 
-export interface ServerLifecycle {
+export interface UpstreamLifecycle {
   name: string
-  server_enabled: boolean
+  upstream_enabled: boolean
   validation_enabled: boolean
   production_enabled: boolean
   validation_ports: string[]
   production_ports: string[]
-  validation_rule_count: number
-  production_rule_count: number
+  validation_forward_count: number
+  production_forward_count: number
   protocols: string[]
 }
 
-export interface Rule {
+export interface Forward {
   name: string
   entry: string
-  server: string
+  upstream: string
   protocol: string
   listen_port: number
   enabled: boolean
@@ -64,8 +64,8 @@ export interface EnvoyStatus {
   stats?: Record<string, string>
 }
 
-export interface RuleRateLimit {
-  rule: string
+export interface ForwardRateLimit {
+  forward: string
   prefix: string
   hits_5m: number
 }
@@ -74,7 +74,7 @@ export interface TrafficStatus {
   tcp_active_connections: number
   udp_active_sessions: number
   local_rate_limited_5m: number
-  top_limited_rules?: RuleRateLimit[]
+  top_limited_forwards?: ForwardRateLimit[]
   error?: string
 }
 
@@ -109,6 +109,53 @@ export interface RollbackPreview {
 export interface Profile {
   name: string
   description: string
+  scenario?: string
+}
+
+export interface SecurityExecutionStep {
+  order: number
+  layer: string
+  component: string
+  action: string
+  policies?: string[]
+}
+
+export interface SecurityPolicySurface {
+  policy_id: string
+  layers: string[]
+  apply_path: string
+  overlap_note?: string
+}
+
+export interface SecurityPreview {
+  execution_order: SecurityExecutionStep[]
+  surfaces: SecurityPolicySurface[]
+  kernel?: {
+    enabled: boolean
+    apply_script?: string
+    content?: string
+  }
+  firewall?: {
+    forward_ports: string
+    gateway_excerpt: string
+  }
+  gateway?: {
+    max_connections: number
+    local_ratelimit_per_sec: number
+    local_ratelimit_burst: number
+    listeners_with_rate_limit: number
+    enabled_tcp_forwards: number
+    rate_limit_enabled: boolean
+    conn_limit_enabled: boolean
+  }
+  notes: string[]
+}
+
+export interface SecurityProfileMerge {
+  name: string
+  description: string
+  scenario?: string
+  policies: unknown[]
 }
 
 export interface OpsResult {
@@ -143,7 +190,7 @@ function asStringArray(v: unknown): string[] {
   return v.map((x) => asString(x))
 }
 
-export function normalizeServer(raw: unknown): Server {
+export function normalizeUpstream(raw: unknown): Upstream {
   const o = (raw ?? {}) as Record<string, unknown>
   const tcpRaw = pick(o, "tcp", "TCP")
   const udpRaw = pick(o, "udp", "UDP")
@@ -162,14 +209,14 @@ export function normalizeServer(raw: unknown): Server {
   }
 }
 
-export function normalizeServers(raw: unknown): Server[] {
+export function normalizeUpstreams(raw: unknown): Upstream[] {
   if (!Array.isArray(raw)) return []
-  return raw.map(normalizeServer)
+  return raw.map(normalizeUpstream)
 }
 
-export function normalizeLifecycle(raw: unknown): Record<string, ServerLifecycle> {
+export function normalizeLifecycle(raw: unknown): Record<string, UpstreamLifecycle> {
   if (!raw || typeof raw !== "object") return {}
-  const out: Record<string, ServerLifecycle> = {}
+  const out: Record<string, UpstreamLifecycle> = {}
   if (Array.isArray(raw)) {
     for (const item of raw) {
       const lc = normalizeLifecycleEntry(item)
@@ -184,36 +231,36 @@ export function normalizeLifecycle(raw: unknown): Record<string, ServerLifecycle
   return out
 }
 
-function normalizeLifecycleEntry(raw: unknown): ServerLifecycle {
+function normalizeLifecycleEntry(raw: unknown): UpstreamLifecycle {
   const o = (raw ?? {}) as Record<string, unknown>
   return {
     name: asString(pick(o, "name", "Name")),
-    server_enabled: asBool(pick(o, "server_enabled", "ServerEnabled")),
+    upstream_enabled: asBool(pick(o, "upstream_enabled", "UpstreamEnabled", "server_enabled", "ServerEnabled")),
     validation_enabled: asBool(pick(o, "validation_enabled", "ValidationEnabled")),
     production_enabled: asBool(pick(o, "production_enabled", "ProductionEnabled")),
     validation_ports: asStringArray(pick(o, "validation_ports", "ValidationPorts")),
     production_ports: asStringArray(pick(o, "production_ports", "ProductionPorts")),
-    validation_rule_count: asNumber(pick(o, "validation_rule_count", "ValidationRuleCount")),
-    production_rule_count: asNumber(pick(o, "production_rule_count", "ProductionRuleCount")),
+    validation_forward_count: asNumber(pick(o, "validation_forward_count", "ValidationForwardCount", "validation_rule_count", "ValidationRuleCount")),
+    production_forward_count: asNumber(pick(o, "production_forward_count", "ProductionForwardCount", "production_rule_count", "ProductionRuleCount")),
     protocols: asStringArray(pick(o, "protocols", "Protocols")),
   }
 }
 
-export function normalizeRule(raw: unknown): Rule {
+export function normalizeForward(raw: unknown): Forward {
   const o = (raw ?? {}) as Record<string, unknown>
   return {
     name: asString(pick(o, "name", "Name")),
     entry: asString(pick(o, "entry", "Entry")),
-    server: asString(pick(o, "server", "Server")),
+    upstream: asString(pick(o, "upstream", "Upstream", "server", "Server")),
     protocol: asString(pick(o, "protocol", "Protocol")),
     listen_port: asNumber(pick(o, "listen_port", "ListenPort")),
     enabled: asBool(pick(o, "enabled", "Enabled")),
   }
 }
 
-export function normalizeRules(raw: unknown): Rule[] {
+export function normalizeForwards(raw: unknown): Forward[] {
   if (!Array.isArray(raw)) return []
-  return raw.map(normalizeRule)
+  return raw.map(normalizeForward)
 }
 
 export function normalizeACL(raw: unknown): ACL {
@@ -238,12 +285,12 @@ export function normalizeEnvoy(raw: unknown): EnvoyStatus {
 
 export function normalizeTraffic(raw: unknown): TrafficStatus {
   const o = (raw ?? {}) as Record<string, unknown>
-  const topRaw = pick<unknown[]>(o, "top_limited_rules", "TopLimitedRules")
-  const top: RuleRateLimit[] = Array.isArray(topRaw)
+  const topRaw = pick<unknown[]>(o, "top_limited_forwards", "TopLimitedRules")
+  const top: ForwardRateLimit[] = Array.isArray(topRaw)
     ? topRaw.map((item) => {
         const r = (item ?? {}) as Record<string, unknown>
         return {
-          rule: asString(pick(r, "rule", "Rule")),
+          forward: asString(pick(r, "forward", "Forward", "rule", "Rule")),
           prefix: asString(pick(r, "prefix", "Prefix")),
           hits_5m: asNumber(pick(r, "hits_5m", "Hits5m")),
         }
@@ -253,7 +300,7 @@ export function normalizeTraffic(raw: unknown): TrafficStatus {
     tcp_active_connections: asNumber(pick(o, "tcp_active_connections", "TCPActiveConnections")),
     udp_active_sessions: asNumber(pick(o, "udp_active_sessions", "UDPActiveSessions")),
     local_rate_limited_5m: asNumber(pick(o, "local_rate_limited_5m", "LocalRateLimited5m")),
-    top_limited_rules: top,
+    top_limited_forwards: top,
     error: asString(pick(o, "error", "Error")) || undefined,
   }
 }
@@ -291,6 +338,68 @@ export function normalizeProfiles(raw: unknown): Profile[] {
     return {
       name: asString(pick(o, "name", "Name")),
       description: asString(pick(o, "description", "Description")),
+      scenario: asString(pick(o, "scenario", "Scenario")) || undefined,
     }
   })
+}
+
+export function normalizeSecurityPreview(raw: unknown): SecurityPreview {
+  const o = (raw ?? {}) as Record<string, unknown>
+  const orderRaw = pick<unknown[]>(o, "execution_order", "ExecutionOrder") ?? []
+  const surfacesRaw = pick<unknown[]>(o, "surfaces", "Surfaces") ?? []
+  const kernelRaw = pick(o, "kernel", "Kernel") as Record<string, unknown> | undefined
+  const firewallRaw = pick(o, "firewall", "Firewall") as Record<string, unknown> | undefined
+  const gatewayRaw = pick(o, "gateway", "Gateway") as Record<string, unknown> | undefined
+  return {
+    execution_order: orderRaw.map((item) => {
+      const r = (item ?? {}) as Record<string, unknown>
+      return {
+        order: asNumber(pick(r, "order", "Order")),
+        layer: asString(pick(r, "layer", "Layer")),
+        component: asString(pick(r, "component", "Component")),
+        action: asString(pick(r, "action", "Action")),
+        policies: asStringArray(pick(r, "policies", "Policies")),
+      }
+    }),
+    surfaces: surfacesRaw.map((item) => {
+      const r = (item ?? {}) as Record<string, unknown>
+      return {
+        policy_id: asString(pick(r, "policy_id", "PolicyID")),
+        layers: asStringArray(pick(r, "layers", "Layers")),
+        apply_path: asString(pick(r, "apply_path", "ApplyPath")),
+        overlap_note: asString(pick(r, "overlap_note", "OverlapNote")) || undefined,
+      }
+    }),
+    kernel: kernelRaw
+      ? {
+          enabled: asBool(pick(kernelRaw, "enabled", "Enabled")),
+          apply_script: asString(pick(kernelRaw, "apply_script", "ApplyScript")) || undefined,
+          content: asString(pick(kernelRaw, "content", "Content")) || undefined,
+        }
+      : undefined,
+    firewall: firewallRaw
+      ? {
+          forward_ports: asString(pick(firewallRaw, "forward_ports", "ForwardPorts")),
+          gateway_excerpt: asString(pick(firewallRaw, "gateway_excerpt", "GatewayExcerpt")),
+        }
+      : undefined,
+    gateway: gatewayRaw
+      ? {
+          max_connections: asNumber(pick(gatewayRaw, "max_connections", "MaxConnections")),
+          local_ratelimit_per_sec: asNumber(
+            pick(gatewayRaw, "local_ratelimit_per_sec", "LocalRateLimitPerSec"),
+          ),
+          local_ratelimit_burst: asNumber(
+            pick(gatewayRaw, "local_ratelimit_burst", "LocalRateLimitBurst"),
+          ),
+          listeners_with_rate_limit: asNumber(
+            pick(gatewayRaw, "listeners_with_rate_limit", "ListenersWithRateLimit"),
+          ),
+          enabled_tcp_forwards: asNumber(pick(gatewayRaw, "enabled_tcp_forwards", "EnabledTCPForwards")),
+          rate_limit_enabled: asBool(pick(gatewayRaw, "rate_limit_enabled", "RateLimitEnabled")),
+          conn_limit_enabled: asBool(pick(gatewayRaw, "conn_limit_enabled", "ConnLimitEnabled")),
+        }
+      : undefined,
+    notes: asStringArray(pick(o, "notes", "Notes")),
+  }
 }

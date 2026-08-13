@@ -2,7 +2,7 @@
 
 | 包 | 职责 |
 |----|------|
-| `agent` | 节点代理：名册/发布版本/心跳/拉取；CLI `agent`、`fleet publish|join|leave|status` |
+| `agent` | 节点 agent：名册/发布版本/心跳/拉取；CLI `agent`、`fleet publish|join|leave|status` |
 | `dataplane` | 本机转发与运维：validate/apply/reload/hot/drain/firewall/upgrade 等 |
 | `diag` | 本机诊断：CLI `diag`（原 doctor） |
 | `panel` | 主控 HTTP UI/API |
