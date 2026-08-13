@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-08-14
+
+### Fixed
+
+- 节点名册 `nodes.yaml`：`saveRegistry` 以 0660 落盘并在 root 写入时保留/设置 `relaygate` 组，避免 root CLI（如 fleet sync）覆写后变成 `root:root` 0640 导致 Panel 无法校验节点令牌、心跳 401
+
 ## [0.1.14] - 2026-08-14
 
 ### Added

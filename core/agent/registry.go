@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -80,8 +83,21 @@ func saveRegistry(root string, reg *Registry) error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o640); err != nil {
+	// 0660 + relaygate 组：Panel User=relaygate 读写名册；root CLI 写入不可落成 root:root 0640。
+	if err := os.WriteFile(tmp, b, 0o660); err != nil {
 		return err
+	}
+	_ = os.Chmod(tmp, 0o660)
+	if st, err := os.Stat(path); err == nil {
+		if sys, ok := st.Sys().(*syscall.Stat_t); ok {
+			_ = os.Chown(tmp, int(sys.Uid), int(sys.Gid))
+		}
+	} else if os.Geteuid() == 0 {
+		if g, err := user.LookupGroup("relaygate"); err == nil {
+			if gid, err := strconv.Atoi(g.Gid); err == nil {
+				_ = os.Chown(tmp, 0, gid)
+			}
+		}
 	}
 	return os.Rename(tmp, path)
 }

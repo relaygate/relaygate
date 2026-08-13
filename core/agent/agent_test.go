@@ -409,3 +409,22 @@ func boolJSON(v bool) string {
 	}
 	return "false"
 }
+
+func TestSaveRegistryModeGroupReadable(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("RELAYGATE_DATA_DIR", filepath.Join(root, "data"))
+	if err := os.MkdirAll(filepath.Join(root, "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reg := &Registry{Nodes: []Node{{Name: "gateway-05", Role: RoleNode}}}
+	if err := saveRegistry(root, reg); err != nil {
+		t.Fatal(err)
+	}
+	st, err := os.Stat(NodesPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o660 {
+		t.Fatalf("nodes.yaml mode=%o want 0660", st.Mode().Perm())
+	}
+}
