@@ -29,8 +29,8 @@ type Options struct {
 	GatewayName    string
 	PublicIP       string
 	SSHPort        string
-	EnablePanel    string
-	EnableGrafana  string
+	PanelEnabled   string
+	GrafanaEnabled string
 	SecretsDir     string
 	ImageTag       string
 	ApplySysctl    bool
@@ -60,11 +60,11 @@ func Run(opt Options) error {
 	if v := os.Getenv("GATEWAY_SSH_PORT"); v != "" && opt.SSHPort == "" {
 		opt.SSHPort = v
 	}
-	if v := os.Getenv("ENABLE_PANEL"); v != "" && opt.EnablePanel == "" {
-		opt.EnablePanel = v
+	if v := os.Getenv("PANEL_ENABLED"); v != "" && opt.PanelEnabled == "" {
+		opt.PanelEnabled = v
 	}
-	if v := os.Getenv("ENABLE_GRAFANA"); v != "" && opt.EnableGrafana == "" {
-		opt.EnableGrafana = v
+	if v := os.Getenv("GRAFANA_ENABLED"); v != "" && opt.GrafanaEnabled == "" {
+		opt.GrafanaEnabled = v
 	}
 
 	var err error
@@ -119,34 +119,34 @@ func collectSettings(opt Options) (Options, error) {
 	if ip := net.ParseIP(opt.PublicIP); ip == nil || ip.To4() == nil {
 		return opt, fmt.Errorf("必须提供有效的 GATEWAY_PUBLIC_IP（可 export 后重试，或检查出网探测）")
 	}
-	if opt.EnablePanel == "" {
+	if opt.PanelEnabled == "" {
 		if opt.NonInteractive {
-			opt.EnablePanel = "1"
+			opt.PanelEnabled = "1"
 		} else if confirm("启用仅本机监听的 Panel？") {
-			opt.EnablePanel = "1"
+			opt.PanelEnabled = "1"
 		} else {
-			opt.EnablePanel = "0"
+			opt.PanelEnabled = "0"
 		}
 	}
-	if opt.EnableGrafana == "" {
+	if opt.GrafanaEnabled == "" {
 		if opt.NonInteractive {
 			// 节点组件默认不启中心 Grafana
-			if opt.EnablePanel == "0" {
-				opt.EnableGrafana = "0"
+			if opt.PanelEnabled == "0" {
+				opt.GrafanaEnabled = "0"
 			} else {
-				opt.EnableGrafana = "1"
+				opt.GrafanaEnabled = "1"
 			}
 		} else if confirm("启用仅本机监听的 Grafana？") {
-			opt.EnableGrafana = "1"
+			opt.GrafanaEnabled = "1"
 		} else {
-			opt.EnableGrafana = "0"
+			opt.GrafanaEnabled = "0"
 		}
 	}
-	if opt.EnablePanel != "0" && opt.EnablePanel != "1" {
-		return opt, fmt.Errorf("ENABLE_PANEL 只能是 0 或 1")
+	if opt.PanelEnabled != "0" && opt.PanelEnabled != "1" {
+		return opt, fmt.Errorf("PANEL_ENABLED 只能是 0 或 1")
 	}
-	if opt.EnableGrafana != "0" && opt.EnableGrafana != "1" {
-		return opt, fmt.Errorf("ENABLE_GRAFANA 只能是 0 或 1")
+	if opt.GrafanaEnabled != "0" && opt.GrafanaEnabled != "1" {
+		return opt, fmt.Errorf("GRAFANA_ENABLED 只能是 0 或 1")
 	}
 	n, err := strconv.Atoi(opt.SSHPort)
 	if err != nil || n < 1 || n > 65535 {
@@ -161,12 +161,12 @@ func collectSettings(opt Options) (Options, error) {
 func writeEnv(opt Options) error {
 	envPath := filepath.Join(opt.Root, ".env")
 	profiles := ""
-	if opt.EnableGrafana == "1" {
+	if opt.GrafanaEnabled == "1" {
 		// 主控默认带 Loki + Fluent Bit（TCP access 日志）；节点自行改 COMPOSE_PROFILES
 		profiles = "with-grafana,with-loki,with-logs"
 	}
 	grafanaURL := ""
-	if opt.EnablePanel == "1" && opt.EnableGrafana == "1" {
+	if opt.PanelEnabled == "1" && opt.GrafanaEnabled == "1" {
 		grafanaURL = "http://127.0.0.1:3000"
 	}
 
@@ -179,7 +179,7 @@ func writeEnv(opt Options) error {
 	}
 
 	panelRole := "primary"
-	if opt.EnablePanel == "0" {
+	if opt.PanelEnabled == "0" {
 		panelRole = "standby"
 		if profiles == "" {
 			profiles = "with-logs"
@@ -203,8 +203,8 @@ func writeEnv(opt Options) error {
 GATEWAY_PUBLIC_IP=%s
 GATEWAY_SSH_PORT=%s
 PANEL_ROLE=%s
-ENABLE_PANEL=%s
-ENABLE_GRAFANA=%s
+PANEL_ENABLED=%s
+GRAFANA_ENABLED=%s
 COMPOSE_PROJECT_NAME=relaygate-%s
 COMPOSE_PROFILES=%s
 ENVOY_IMAGE=envoyproxy/envoy:v1.39.0
@@ -222,7 +222,7 @@ RELAYGATE_SECRETS_DIR=%s
 RELAYGATE_DATA_DIR=%s
 %s# 公网直连暴露默认 off；前面有云 LB 发 PROXY 时再改 v2
 PROXY_PROTOCOL=off
-`, opt.GatewayName, opt.PublicIP, opt.SSHPort, panelRole, opt.EnablePanel, opt.EnableGrafana, opt.GatewayName,
+`, opt.GatewayName, opt.PublicIP, opt.SSHPort, panelRole, opt.PanelEnabled, opt.GrafanaEnabled, opt.GatewayName,
 		profiles, opt.ImageTag, grafanaURL, opt.SecretsDir, dataDir, nodeExtras)
 	if err := os.WriteFile(envPath, []byte(body), 0o640); err != nil {
 		return err
@@ -238,17 +238,17 @@ func patchExistingEnv(path string, opt Options, profiles, grafanaURL, dataDir st
 	lines := strings.Split(string(b), "\n")
 	set := map[string]string{
 		"IMAGE_TAG":             opt.ImageTag,
-		"ENABLE_PANEL":          opt.EnablePanel,
-		"ENABLE_GRAFANA":        opt.EnableGrafana,
+		"PANEL_ENABLED":         opt.PanelEnabled,
+		"GRAFANA_ENABLED":       opt.GrafanaEnabled,
 		"GATEWAY_NAME":          opt.GatewayName,
 		"GATEWAY_PUBLIC_IP":     opt.PublicIP,
 		"GATEWAY_SSH_PORT":      opt.SSHPort,
 		"RELAYGATE_DATA_DIR":    dataDir,
 		"RELAYGATE_SECRETS_DIR": opt.SecretsDir,
 	}
-	if opt.EnablePanel == "1" && opt.EnableGrafana == "1" {
+	if opt.PanelEnabled == "1" && opt.GrafanaEnabled == "1" {
 		set["GRAFANA_URL"] = grafanaURL
-	} else if opt.EnableGrafana == "0" {
+	} else if opt.GrafanaEnabled == "0" {
 		set["GRAFANA_URL"] = ""
 	}
 	if opt.Upgrade || opt.ImageTag != "" {
@@ -264,6 +264,10 @@ func patchExistingEnv(path string, opt Options, profiles, grafanaURL, dataDir st
 		key, _, ok := strings.Cut(trim, "=")
 		if ok {
 			key = strings.TrimSpace(key)
+			// Drop legacy env names (hard cut; no dual-read).
+			if key == "ENABLE_PANEL" || key == "ENABLE_GRAFANA" {
+				continue
+			}
 			if v, hit := set[key]; hit {
 				out = append(out, key+"="+v)
 				seen[key] = true
@@ -278,12 +282,12 @@ func patchExistingEnv(path string, opt Options, profiles, grafanaURL, dataDir st
 					if p == "" || p == "with-panel" {
 						continue
 					}
-					if opt.EnableGrafana == "0" && (p == "with-grafana" || p == "with-loki") {
+					if opt.GrafanaEnabled == "0" && (p == "with-grafana" || p == "with-loki") {
 						continue
 					}
 					cleaned = append(cleaned, p)
 				}
-				if opt.EnableGrafana == "1" && profiles != "" {
+				if opt.GrafanaEnabled == "1" && profiles != "" {
 					for _, want := range strings.Split(profiles, ",") {
 						want = strings.TrimSpace(want)
 						if want == "" {

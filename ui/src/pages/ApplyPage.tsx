@@ -38,7 +38,7 @@ export function ApplyPage() {
   const [error, setError] = useState(false)
   const [loading, setLoading] = useState(true)
   const [applyingConfig, setApplyingConfig] = useState(false)
-  const [applyingSecurityNft, setApplyingSecurityNft] = useState(false)
+  const [applyingSecurityFirewall, setApplyingSecurityFirewall] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [fwOpen, setFwOpen] = useState(false)
   const [fwConfirm, setFwConfirm] = useState("")
@@ -106,9 +106,9 @@ export function ApplyPage() {
     }
   }
 
-  async function handleApplySecurityNft() {
+  async function handleApplySecurityFirewall() {
     if (standby || !matchesConfirm(fwConfirm)) return
-    setApplyingSecurityNft(true)
+    setApplyingSecurityFirewall(true)
     setError(false)
     try {
       const res = await applyFirewall(fwConfirm.trim())
@@ -126,7 +126,7 @@ export function ApplyPage() {
       setResult(out)
       toast.error(msg)
     } finally {
-      setApplyingSecurityNft(false)
+      setApplyingSecurityFirewall(false)
     }
   }
 
@@ -154,7 +154,7 @@ export function ApplyPage() {
     }
   }
 
-  const busy = applyingConfig || applyingSecurityNft || publishing
+  const busy = applyingConfig || applyingSecurityFirewall || publishing
   const configBtnVariant = applyMode === "hard" ? "destructive" : "caution"
   const configDialogVariant = applyMode === "hard" ? "destructive" : "caution"
 
@@ -326,7 +326,7 @@ export function ApplyPage() {
       <Dialog
         open={fwOpen}
         onOpenChange={(open) => {
-          if (!applyingSecurityNft) {
+          if (!applyingSecurityFirewall) {
             setFwOpen(open)
             if (!open) setFwConfirm("")
           }
@@ -348,22 +348,22 @@ export function ApplyPage() {
               <Input
                 value={fwConfirm}
                 onChange={(e) => setFwConfirm(e.target.value)}
-                disabled={standby || applyingSecurityNft}
+                disabled={standby || applyingSecurityFirewall}
                 autoComplete="off"
                 placeholder={confirmPlaceholder}
               />
             </Field>
           </FieldGroup>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setFwOpen(false)} disabled={applyingSecurityNft}>
+            <Button variant="ghost" onClick={() => setFwOpen(false)} disabled={applyingSecurityFirewall}>
               {t("ops.cancel")}
             </Button>
             <Button
               variant="destructive"
-              onClick={handleApplySecurityNft}
-              disabled={standby || applyingSecurityNft || !matchesConfirm(fwConfirm)}
+              onClick={handleApplySecurityFirewall}
+              disabled={standby || applyingSecurityFirewall || !matchesConfirm(fwConfirm)}
             >
-              {applyingSecurityNft ? <Spinner data-icon="inline-start" /> : null}
+              {applyingSecurityFirewall ? <Spinner data-icon="inline-start" /> : null}
               {t("apply.submit_security_firewall")}
             </Button>
           </DialogFooter>

@@ -31,9 +31,9 @@ func writeFirewallRuntime(root, sshPort string) (fwDir, runtimePath string, err 
 	forwardPorts := filepath.Join(fwDir, "forward-ports.nft")
 	body := string(b)
 	body = strings.ReplaceAll(body, "@INLINE_TCP_NEW_CONN_RATE@", inlineNftablesRate(root, func(n resources.FirewallRateDefaults) string { return n.TCPNewConnPerIP }, resources.PolicyFirewallNewConnLimit))
-	body = strings.ReplaceAll(body, "@INLINE_UDP_PPS_RATE@", inlineNftablesRate(root, func(n resources.FirewallRateDefaults) string { return n.UDPPPSPerIP }, resources.PolicyUDPLimit))
+	body = strings.ReplaceAll(body, "@INLINE_UDP_PPS_RATE@", inlineNftablesRate(root, func(n resources.FirewallRateDefaults) string { return n.UDPPPSPerIP }, resources.PolicyFirewallUDPLimit))
 	body = strings.ReplaceAll(body, "@INLINE_TCP_NEW_CONN_BURST@", inlineNftablesBurst(root, func(n resources.FirewallRateDefaults) int { return n.TCPBurst }, 60, resources.PolicyFirewallNewConnLimit))
-	body = strings.ReplaceAll(body, "@INLINE_UDP_PPS_BURST@", inlineNftablesBurst(root, func(n resources.FirewallRateDefaults) int { return n.UDPBurst }, 1000, resources.PolicyUDPLimit))
+	body = strings.ReplaceAll(body, "@INLINE_UDP_PPS_BURST@", inlineNftablesBurst(root, func(n resources.FirewallRateDefaults) int { return n.UDPBurst }, 1000, resources.PolicyFirewallUDPLimit))
 	lines := strings.Split(body, "\n")
 	for i, line := range lines {
 		trim := strings.TrimSpace(line)

@@ -1,7 +1,8 @@
 # 高并发短连接：放宽新建连接令牌，提高 pending 与并发上限
+# 不写 access：合并时保留节点当前名单
 name: tcp-short-burst
 scenario: tcp_short_burst
-description: 适合高并发短连接；放宽 nft / Envoy 新建速率，提高 max_connections
+description: 适合高并发短连接；放宽防火墙 / 网关新建速率，提高 max_connections
 
 defaults:
   default_upstream_tcp_port: 7777
@@ -16,26 +17,26 @@ defaults:
     healthy_threshold: 2
 
 security:
-  policies:
+  protections:
     - id: firewall_new_conn_limit
-      type: new_conn_limit_firewall
+      type: firewall_new_conn_limit
       enabled: true
       params:
         tcp_per_ip: 80/second
         burst: 160
     - id: gateway_new_conn_limit
-      type: new_conn_limit_gateway
+      type: gateway_new_conn_limit
       enabled: true
       params:
         per_sec: 800
         burst: 1600
-    - id: conn_limit
-      type: conn_limit
+    - id: gateway_conn_limit
+      type: gateway_conn_limit
       enabled: true
       params:
         max_connections: 4096
-    - id: udp_limit
-      type: udp_limit
+    - id: firewall_udp_limit
+      type: firewall_udp_limit
       enabled: true
       params:
         udp_pps_per_ip: 400/second

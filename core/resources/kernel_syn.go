@@ -14,7 +14,7 @@ const (
 	DefaultTcpAbortOnOverflow = 0
 )
 
-// KernelSynParams is the effective sysctl overlay for kernel_syn.
+// KernelSynParams is the effective kernel overlay for policy kernel_syn (applied via sysctl).
 type KernelSynParams struct {
 	TcpSyncookies      int
 	TcpMaxSynBacklog   int
@@ -23,7 +23,8 @@ type KernelSynParams struct {
 	TcpAbortOnOverflow int
 }
 
-// EffectiveKernelSyn returns sysctl knobs when kernel_syn is enabled; nil when off.
+// EffectiveKernelSyn returns kernel knobs when kernel_syn is enabled; nil when off.
+// Uses typed Params fields only; PolicyParams.Extra is ignored.
 func (s *Security) EffectiveKernelSyn() *KernelSynParams {
 	s.EnsureSecurityDefaults()
 	if !s.PolicyEnabled(PolicyKernelSyn) {
@@ -81,15 +82,15 @@ func normalizeKernelSynParams(p *PolicyParams) error {
 	return nil
 }
 
-// RenderKernelHardenConf renders the sysctl overlay file from security.policies[kernel_syn].
+// RenderKernelHardenConf renders the kernel overlay file from security.protections[kernel_syn].
 func RenderKernelHardenConf(s *Security) string {
 	p := s.EffectiveKernelSyn()
 	if p == nil {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("# RelayGate 可选：TCP 握手 / SYN Flood 防护（sysctl overlay）\n")
-	b.WriteString("# 由 packaging/security/apply-sysctl-harden.sh 或 relaygate security kernel-conf 生成\n")
+	b.WriteString("# RelayGate 可选：TCP 握手 / SYN Flood 防护（内核域 · sysctl overlay）\n")
+	b.WriteString("# 由 relaygate security kernel-conf / apply-kernel 生成\n")
 	b.WriteString("# 不替代 packaging/sysctl/gateway.conf（somaxconn / 缓冲 / file-max 等仍由后者负责）。\n")
 	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("net.ipv4.tcp_syncookies = %d\n", p.TcpSyncookies))

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/relaygate/relaygate/core/config"
+	"github.com/relaygate/relaygate/core/resources"
 	"github.com/relaygate/relaygate/core/xds"
 )
 
@@ -17,11 +18,9 @@ import (
 type LayerStatus string
 
 const (
-	LayerStatusApplied  LayerStatus = "applied"
 	LayerStatusVerified LayerStatus = "verified"
 	LayerStatusSkipped  LayerStatus = "skipped"
 	LayerStatusFailed   LayerStatus = "failed"
-	LayerStatusDisabled LayerStatus = "disabled"
 )
 
 // Domain ids for status JSON / failed_at (product domains, not execution components).
@@ -41,8 +40,7 @@ type LayerResult struct {
 }
 
 // PullApplyStatus is written under DataDir after agent AfterPull pipeline.
-// Keys are product domains (see docs/security-domains.md). Legacy keys
-// sysctl/nftables/envoy are no longer written (one-time migration on next apply).
+// Keys are product domains (see docs/security-domains.md).
 type PullApplyStatus struct {
 	Version  string      `json:"version"`
 	At       string      `json:"at"`
@@ -62,8 +60,8 @@ type PullApplyOptions struct {
 	Env     Env
 	Stdout  io.Writer
 	Stderr  io.Writer
-	// SkipEnvoy skips gateway HotApply (tests / verify-only host path).
-	SkipEnvoy bool
+	// SkipGateway skips gateway HotApply (tests / verify-only host path).
+	SkipGateway bool
 }
 
 // AfterPullApply runs: optional host kernel → nic (skip) → firewall → gateway HotApply,
@@ -100,23 +98,37 @@ func AfterPullApply(opts PullApplyOptions) error {
 		return err
 	}
 
-	skipHostDetail := "主机侧自动应用未启用（纯节点 ENABLE_PANEL=0 默认开启；主控默认关闭。显式 SECURITY_AUTO_APPLY=1/0 可覆盖）"
+	skipHostDetail := "主机侧自动应用未启用（纯节点 PANEL_ENABLED=0 默认开启；主控默认关闭。显式 SECURITY_AUTO_APPLY=1/0 可覆盖）"
 	if !hostAuto {
 		st.Kernel.Detail = skipHostDetail
 		st.Firewall.Detail = skipHostDetail
 		logf(stdout, "主机侧（内核 / 防火墙）：跳过自动应用（%s）", skipHostDetail)
 	} else {
-		logf(stdout, "==> [内核] 按配置应用并验证")
-		if err := ApplyKernelHardenFromResources(root); err != nil {
+		kernelOn, err := kernelSynEnabled(root)
+		if err != nil {
 			st.Kernel = LayerResult{Module: DomainKernel, Status: LayerStatusFailed, Error: err.Error()}
-			return fail(DomainKernel, fmt.Errorf("内核应用失败：%w", err))
+			return fail(DomainKernel, fmt.Errorf("读取内核策略失败：%w", err))
 		}
-		if err := VerifyKernelHarden(root); err != nil {
-			st.Kernel = LayerResult{Module: DomainKernel, Status: LayerStatusFailed, Error: err.Error()}
-			return fail(DomainKernel, fmt.Errorf("内核校验失败（未标记已应用）：%w", err))
+		if !kernelOn {
+			st.Kernel = LayerResult{
+				Module: DomainKernel,
+				Status: LayerStatusSkipped,
+				Detail: "kernel_syn 已关闭，未改主机内核参数",
+			}
+			logf(stdout, "==> [内核] 跳过（策略关闭）")
+		} else {
+			logf(stdout, "==> [内核] 按配置应用并验证")
+			if err := ApplyKernelHardenFromResources(root); err != nil {
+				st.Kernel = LayerResult{Module: DomainKernel, Status: LayerStatusFailed, Error: err.Error()}
+				return fail(DomainKernel, fmt.Errorf("内核应用失败：%w", err))
+			}
+			if err := VerifyKernelHarden(root); err != nil {
+				st.Kernel = LayerResult{Module: DomainKernel, Status: LayerStatusFailed, Error: err.Error()}
+				return fail(DomainKernel, fmt.Errorf("内核校验失败（未标记已应用）：%w", err))
+			}
+			st.Kernel = LayerResult{Module: DomainKernel, Status: LayerStatusVerified, Detail: "内核参数与配置一致"}
+			logf(stdout, "==> [内核] 校验通过")
 		}
-		st.Kernel = LayerResult{Module: DomainKernel, Status: LayerStatusVerified, Detail: "内核参数与配置一致"}
-		logf(stdout, "==> [内核] 校验通过")
 
 		logf(stdout, "==> [网卡] 跳过（预留）")
 
@@ -133,7 +145,7 @@ func AfterPullApply(opts PullApplyOptions) error {
 		logf(stdout, "==> [防火墙] 校验通过")
 	}
 
-	if opts.SkipEnvoy {
+	if opts.SkipGateway {
 		st.Gateway.Detail = "跳过网关（测试）"
 		st.OK = true
 		_ = writePullApplyStatus(root, st)
@@ -167,13 +179,21 @@ func AfterPullApply(opts PullApplyOptions) error {
 		st.Gateway = LayerResult{Module: DomainGateway, Status: LayerStatusFailed, Error: err.Error()}
 		return fail(DomainGateway, err)
 	}
-	// HotApplyTo already waits for ACK + ready; treat as verified.
-	st.Gateway = LayerResult{Module: DomainGateway, Status: LayerStatusVerified, Detail: "HotApply ACK / ready"}
+	st.Gateway = LayerResult{Module: DomainGateway, Status: LayerStatusVerified, Detail: "网关热更新已确认（ACK）"}
 	st.OK = true
 	_ = writePullApplyStatus(root, st)
 	logf(stdout, "拉取后落地完成：内核=%s 网卡=%s 防火墙=%s 网关=%s",
 		st.Kernel.Status, st.NIC.Status, st.Firewall.Status, st.Gateway.Status)
 	return nil
+}
+
+func kernelSynEnabled(root string) (bool, error) {
+	resPath, _, _ := resources.DefaultPaths(root)
+	res, err := resources.Load(resPath)
+	if err != nil {
+		return false, err
+	}
+	return res.Security.EffectiveKernelSyn() != nil, nil
 }
 
 // VerifySecurityLayers checks kernel / firewall / gateway ready without applying.

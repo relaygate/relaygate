@@ -33,15 +33,15 @@ defaults:
     unhealthy_threshold: 3
     healthy_threshold: 2
 security:
-  policies:
+  protections:
     - id: gateway_new_conn_limit
-      type: new_conn_limit_gateway
+      type: gateway_new_conn_limit
       enabled: true
       params:
         per_sec: 200
         burst: 400
-    - id: conn_limit
-      type: conn_limit
+    - id: gateway_conn_limit
+      type: gateway_conn_limit
       enabled: true
       params:
         max_connections: 1024
@@ -51,7 +51,7 @@ security:
 	}
 	sec := resources.DefaultSecurity()
 	sec.PolicyByID(resources.PolicyGatewayNewConnLimit).Params.PerSec = 50
-	sec.PolicyByID(resources.PolicyConnLimit).Params.MaxConnections = 100
+	sec.PolicyByID(resources.PolicyGatewayConnLimit).Params.MaxConnections = 100
 	res := &resources.Resources{
 		Defaults: resources.Defaults{
 			TCPIdleTimeout: "100s",

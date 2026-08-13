@@ -33,7 +33,7 @@ defaults:
     unhealthy_threshold: 3
     healthy_threshold: 1
 security:
-  policies: []
+  protections: []
 upstreams:
   - name: server-01
     address: 203.0.113.20
@@ -104,11 +104,11 @@ func TestPublishJoinLeaveStatus(t *testing.T) {
 	if strings.Contains(join.JoinCommand, "PANEL_ADMIN") {
 		t.Fatal("join command must not include panel admin secrets")
 	}
-	if strings.Contains(join.JoinCommand, "ENABLE_PANEL=") || strings.Contains(join.JoinCommand, "PRIMARY_URL") || strings.Contains(join.JoinCommand, "NONINTERACTIVE=") {
+	if strings.Contains(join.JoinCommand, "PANEL_ENABLED=") || strings.Contains(join.JoinCommand, "PRIMARY_URL") || strings.Contains(join.JoinCommand, "NONINTERACTIVE=") {
 		t.Fatalf("join command should use short syntax only: %q", join.JoinCommand)
 	}
 	ctrl := FormatControlInstallCommand()
-	if !strings.Contains(ctrl, " bash -s -- control") || strings.Contains(ctrl, "ENABLE_PANEL=") {
+	if !strings.Contains(ctrl, " bash -s -- control") || strings.Contains(ctrl, "PANEL_ENABLED=") {
 		t.Fatalf("control install: %q", ctrl)
 	}
 	up := FormatUpgradeCommand()

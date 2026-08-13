@@ -16,7 +16,7 @@
 |--|------|----------|
 | 模板 | `packaging/control/env.example` | `packaging/node/env.example` |
 | 安装 | `install.sh control` | `install.sh node --control …` |
-| 启用 | `ENABLE_PANEL=1` | `ENABLE_PANEL=0`；`CONTROL_URL` + `AGENT_TOKEN_FILE` |
+| 启用 | `PANEL_ENABLED=1` | `PANEL_ENABLED=0`；`CONTROL_URL` + `AGENT_TOKEN_FILE` |
 | 职责 | 唯一可写意图源、发布、名册、可选中心观测 | agent 拉取配置、本机热更新、转发 |
 
 ## 稳态数据流

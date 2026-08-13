@@ -21,7 +21,7 @@ func TestPreviewDoesNotWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	sec := resources.DefaultSecurity()
-	sec.PolicyByID(resources.PolicyConnLimit).Params.MaxConnections = 100
+	sec.PolicyByID(resources.PolicyGatewayConnLimit).Params.MaxConnections = 100
 	res := &resources.Resources{
 		Upstreams: []resources.Upstream{
 			{Name: "server-01", Address: "10.0.0.1", TCP: resources.ProtoPortOf(7777), UDP: resources.ProtoPortOf(7778), Enabled: true},
@@ -40,9 +40,9 @@ defaults:
   tcp_idle_timeout: 1h
   udp_idle_timeout: 1m
 security:
-  policies:
-    - id: conn_limit
-      type: conn_limit
+  protections:
+    - id: gateway_conn_limit
+      type: gateway_conn_limit
       enabled: true
       params:
         max_connections: 999
@@ -62,7 +62,7 @@ security:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.Security.PolicyByID(resources.PolicyConnLimit).Params.MaxConnections != 100 {
-		t.Fatalf("preview wrote security: %d", after.Security.PolicyByID(resources.PolicyConnLimit).Params.MaxConnections)
+	if after.Security.PolicyByID(resources.PolicyGatewayConnLimit).Params.MaxConnections != 100 {
+		t.Fatalf("preview wrote security: %d", after.Security.PolicyByID(resources.PolicyGatewayConnLimit).Params.MaxConnections)
 	}
 }

@@ -36,7 +36,7 @@ type FirewallPreviewSection struct {
 	GatewayExcerpt string `json:"gateway_excerpt"`
 }
 
-// GatewayPreviewSection summarizes gateway knobs derived from security.policies.
+// GatewayPreviewSection summarizes gateway knobs derived from security.protections.
 type GatewayPreviewSection struct {
 	MaxConnections         int  `json:"max_connections"`
 	LocalRateLimitPerSec   int  `json:"local_ratelimit_per_sec"`
@@ -44,7 +44,7 @@ type GatewayPreviewSection struct {
 	ListenersWithRateLimit int  `json:"listeners_with_rate_limit"`
 	EnabledTCPForwards     int  `json:"enabled_tcp_forwards"`
 	RateLimitEnabled       bool `json:"rate_limit_enabled"`
-	ConnLimitEnabled       bool `json:"conn_limit_enabled"`
+	ConnLimitEnabled       bool `json:"gateway_conn_limit_enabled"`
 }
 
 // SecurityPreview is the API projection of effective security materialization.
@@ -67,12 +67,12 @@ func SecurityExecutionOrder() []ExecutionStep {
 		{Order: 1, Layer: string(LayerKernel), Component: "sysctl", Action: "SYN cookies / backlog (new handshakes only)", Policies: []string{PolicyKernelSyn}},
 		{Order: 2, Layer: string(LayerNIC), Component: "reserved", Action: "NIC path (ip/tc/XDP) — not implemented; skipped on apply", Policies: nil},
 		{Order: 3, Layer: string(LayerFirewall), Component: "nft INPUT", Action: "accept established,related (long-lived sessions bypass rate limits)", Policies: nil},
-		{Order: 4, Layer: string(LayerFirewall), Component: "nft INPUT", Action: "ACL deny (drop listed sources first)", Policies: []string{PolicyAllowlist}},
-		{Order: 5, Layer: string(LayerFirewall), Component: "nft INPUT", Action: "ACL allow strict (drop non-listed when allow non-empty)", Policies: []string{PolicyAllowlist}},
+		{Order: 4, Layer: string(LayerFirewall), Component: "nft INPUT", Action: "ACL deny (drop listed sources first)", Policies: []string{"access"}},
+		{Order: 5, Layer: string(LayerFirewall), Component: "nft INPUT", Action: "ACL allow strict (drop non-listed when allow non-empty)", Policies: []string{"access"}},
 		{Order: 6, Layer: string(LayerFirewall), Component: "nft INPUT", Action: "new TCP conn per-IP rate", Policies: []string{PolicyFirewallNewConnLimit}},
-		{Order: 7, Layer: string(LayerFirewall), Component: "nft INPUT", Action: "UDP per-IP PPS", Policies: []string{PolicyUDPLimit}},
+		{Order: 7, Layer: string(LayerFirewall), Component: "nft INPUT", Action: "UDP per-IP PPS", Policies: []string{PolicyFirewallUDPLimit}},
 		{Order: 8, Layer: string(LayerGateway), Component: "Envoy listener", Action: "local_ratelimit token bucket (new connections)", Policies: []string{PolicyGatewayNewConnLimit}},
-		{Order: 9, Layer: string(LayerGateway), Component: "Envoy cluster", Action: "circuit_breaker max_connections", Policies: []string{PolicyConnLimit}},
+		{Order: 9, Layer: string(LayerGateway), Component: "Envoy cluster", Action: "circuit_breaker max_connections", Policies: []string{PolicyGatewayConnLimit}},
 	}
 }
 
@@ -116,7 +116,7 @@ func BuildSecurityPreview(r *Resources, packagingRoot, firewallForwardPorts, fir
 	if r.Security.PolicyEnabled(PolicyKernelSyn) {
 		prev.Kernel = &KernelPreviewSection{
 			Enabled:     true,
-			ApplyScript: "packaging/security/apply-sysctl-harden.sh --apply",
+			ApplyScript: "relaygate security apply-kernel --verify",
 			Content:     RenderKernelHardenConf(&r.Security),
 		}
 	} else {
@@ -135,7 +135,7 @@ func BuildSecurityPreview(r *Resources, packagingRoot, firewallForwardPorts, fir
 		}
 	}
 	perSec, burst := r.Security.EffectiveTCPLocalRateLimit()
-	connP := r.Security.PolicyByID(PolicyConnLimit)
+	connP := r.Security.PolicyByID(PolicyGatewayConnLimit)
 	newP := r.Security.PolicyByID(PolicyGatewayNewConnLimit)
 	prev.Gateway = &GatewayPreviewSection{
 		MaxConnections:         r.Security.EffectiveMaxConnections(),

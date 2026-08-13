@@ -187,7 +187,7 @@
     },
     {
       "type": "bargauge",
-      "title": "异常 flags TopN by rule",
+      "title": "异常 flags TopN（按转发）",
       "id": 4,
       "gridPos": {
         "h": 8,
@@ -271,7 +271,7 @@
           "text": ".*",
           "value": ".*"
         },
-        "description": "Envoy CONNECTION_ID；填具体数字过滤；.* = 不过滤"
+        "description": "网关连接 ID（CONNECTION_ID）；填具体数字过滤；.* = 不过滤"
       }
     ]
   },
@@ -281,7 +281,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "TCP Session Logs",
+  "title": "TCP 会话日志",
   "uid": "relaygate-tcp-session-logs",
   "version": 2
 }

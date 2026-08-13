@@ -126,20 +126,18 @@ export const api = {
   delete: <T>(path: string, body?: unknown) => request<T>("DELETE", path, body),
 }
 
-function pickString(obj: Record<string, unknown>, ...keys: string[]): string {
-  for (const key of keys) {
-    const v = obj[key]
-    if (typeof v === "string") return v
-  }
-  return ""
+/** snake_case API fields only (no PascalCase dual-read). */
+function pickString(obj: Record<string, unknown>, key: string): string {
+  const v = obj[key]
+  return typeof v === "string" ? v : ""
 }
 
 function normalizeOpsResult(raw: unknown): OpsResult {
   const o = (raw ?? {}) as Record<string, unknown>
   return {
-    ok: o.ok === true || o.Ok === true,
-    output: pickString(o, "output", "Output", "body", "Body") || undefined,
-    error: pickString(o, "error", "Error") || undefined,
+    ok: o.ok === true,
+    output: (pickString(o, "output") || pickString(o, "body")) || undefined,
+    error: pickString(o, "error") || undefined,
   }
 }
 
@@ -175,8 +173,8 @@ export async function getUpstreams(): Promise<{
   }
   const obj = (data ?? {}) as Record<string, unknown>
   return {
-    upstreams: normalizeUpstreams(obj.upstreams ?? obj.Upstreams),
-    lifecycle: normalizeLifecycle(obj.lifecycle ?? obj.Lifecycle),
+    upstreams: normalizeUpstreams(obj.upstreams),
+    lifecycle: normalizeLifecycle(obj.lifecycle),
   }
 }
 
@@ -190,7 +188,7 @@ export async function createUpstream(body: {
   const data = await api.post<unknown>("/api/upstreams", body)
   const o = (data ?? {}) as Record<string, unknown>
   return {
-    ok: o.ok === true || o.Ok === true,
+    ok: o.ok === true,
   }
 }
 
@@ -222,14 +220,14 @@ export async function createUpstreamsBatch(body: {
 }> {
   const normalize = (data: unknown) => {
     const o = (data ?? {}) as Record<string, unknown>
-    const raw = o.results ?? o.Results
+    const raw = o.results
     const results: BatchUpstreamResult[] = Array.isArray(raw)
       ? raw.map((item) => {
           const row = (item ?? {}) as Record<string, unknown>
-          const rulesRaw = row.forwards ?? row.Forwards
+          const rulesRaw = row.forwards
           return {
-            name: String(row.name ?? row.Name ?? ""),
-            ok: row.ok === true || row.Ok === true,
+            name: String(row.name ?? ""),
+            ok: row.ok === true,
             error:
               typeof row.error === "string"
                 ? row.error
@@ -243,9 +241,9 @@ export async function createUpstreamsBatch(body: {
         })
       : []
     return {
-      ok: o.ok === true || o.Ok === true,
-      succeeded: Number(o.succeeded ?? o.Succeeded ?? 0),
-      failed: Number(o.failed ?? o.Failed ?? 0),
+      ok: o.ok === true,
+      succeeded: Number(o.succeeded ?? 0),
+      failed: Number(o.failed ?? 0),
       results,
     }
   }
@@ -272,9 +270,9 @@ export async function updateUpstream(
 ): Promise<{ ok: boolean; cascaded_forwards?: number }> {
   const data = await api.put<unknown>(`/api/upstreams/${encodeURIComponent(name)}`, body)
   const o = (data ?? {}) as Record<string, unknown>
-  const cascaded = o.cascaded_forwards ?? o.CascadedForwards
+  const cascaded = o.cascaded_forwards
   return {
-    ok: o.ok === true || o.Ok === true,
+    ok: o.ok === true,
     cascaded_forwards: typeof cascaded === "number" ? cascaded : undefined,
   }
 }
@@ -287,9 +285,9 @@ export async function createForward(body: {
 }): Promise<{ ok: boolean; forwards?: Forward[]; upstream?: string }> {
   const data = await api.post<unknown>("/api/forwards", body)
   const o = (data ?? {}) as Record<string, unknown>
-  const forwardsRaw = o.forwards ?? o.Forwards
+  const forwardsRaw = o.forwards
   return {
-    ok: o.ok === true || o.Ok === true,
+    ok: o.ok === true,
     forwards: Array.isArray(forwardsRaw) ? forwardsRaw.map((r) => normalizeForward(r)) : undefined,
     upstream: typeof o.upstream === "string" ? o.upstream : undefined,
   }
@@ -308,16 +306,16 @@ export async function createUpstreamEntries(
     body,
   )
   const o = (data ?? {}) as Record<string, unknown>
-  const forwardsRaw = o.forwards ?? o.Forwards
+  const forwardsRaw = o.forwards
   return {
-    ok: o.ok === true || o.Ok === true,
+    ok: o.ok === true,
     forwards: Array.isArray(forwardsRaw) ? forwardsRaw.map((r) => normalizeForward(r)) : undefined,
   }
 }
 
 export async function deleteUpstream(name: string): Promise<{ removed_forwards?: number }> {
   const data = await api.delete<Record<string, unknown>>(`/api/upstreams/${encodeURIComponent(name)}`)
-  const removed = data.removed_forwards ?? data.RemovedForwards
+  const removed = data.removed_forwards
   return { removed_forwards: typeof removed === "number" ? removed : undefined }
 }
 
@@ -325,7 +323,7 @@ export async function promoteUpstream(name: string): Promise<{ changed?: number 
   const data = await api.post<Record<string, unknown>>(
     `/api/upstreams/${encodeURIComponent(name)}/promote`,
   )
-  const changed = data.changed ?? data.Changed
+  const changed = data.changed
   return { changed: typeof changed === "number" ? changed : undefined }
 }
 
@@ -348,19 +346,19 @@ function normalizeLastApply(raw: string): string {
 export async function getApplyPreview(): Promise<ApplyPreview> {
   const data = await api.get<Record<string, unknown>>("/api/apply/preview")
   return {
-    summary: pickString(data, "summary", "Summary"),
-    last_apply: normalizeLastApply(pickString(data, "last_apply", "LastApply")),
-    needs_reload: data.needs_reload === true || data.NeedsReload === true,
-    needs_firewall: data.needs_firewall === true || data.NeedsFirewall === true,
-    apply_mode: normalizeApplyMode(data.apply_mode ?? data.ApplyMode),
-    confirm_phrase: pickString(data, "confirm_phrase", "ConfirmPhrase") || undefined,
+    summary: pickString(data, "summary"),
+    last_apply: normalizeLastApply(pickString(data, "last_apply")),
+    needs_reload: data.needs_reload === true,
+    needs_firewall: data.needs_firewall === true,
+    apply_mode: normalizeApplyMode(data.apply_mode),
+    confirm_phrase: pickString(data, "confirm_phrase") || undefined,
     bootstrap_migrated:
-      data.bootstrap_migrated === true || data.BootstrapMigrated === true
+      data.bootstrap_migrated === true
         ? true
-        : data.bootstrap_migrated === false || data.BootstrapMigrated === false
+        : data.bootstrap_migrated === false
           ? false
           : undefined,
-    needs_hard_reload: data.needs_hard_reload === true || data.NeedsHardReload === true,
+    needs_hard_reload: data.needs_hard_reload === true,
   }
 }
 
@@ -394,17 +392,17 @@ export async function getChanges(limit = 50): Promise<ChangeEntry[]> {
 export async function getChangeDetail(stamp: string): Promise<ChangeDetail> {
   const data = await api.get<Record<string, unknown>>(`/api/changes/${encodeURIComponent(stamp)}`)
   return {
-    stamp: pickString(data, "stamp", "Stamp") || stamp,
-    summary: pickString(data, "summary", "Summary"),
+    stamp: pickString(data, "stamp") || stamp,
+    summary: pickString(data, "summary"),
   }
 }
 
 export async function rollbackPreview(stamp: string): Promise<RollbackPreview> {
   const data = await api.post<Record<string, unknown>>("/api/rollback/preview", { stamp })
   return {
-    stamp: pickString(data, "stamp", "Stamp") || stamp,
-    summary: pickString(data, "summary", "Summary"),
-    found: data.found === true || data.Found === true,
+    stamp: pickString(data, "stamp") || stamp,
+    summary: pickString(data, "summary"),
+    found: data.found === true,
   }
 }
 
@@ -424,9 +422,17 @@ export async function getSecurityProfiles(): Promise<Profile[]> {
   return normalizeProfiles(data)
 }
 
-export async function previewSecurity(policies?: unknown[]): Promise<SecurityPreview> {
-  if (policies && policies.length > 0) {
-    return normalizeSecurityPreview(await api.post("/api/security/preview", { policies }))
+export async function previewSecurity(draft?: {
+  access?: unknown
+  protections?: unknown[]
+}): Promise<SecurityPreview> {
+  if (draft && (draft.access || (draft.protections && draft.protections.length > 0))) {
+    return normalizeSecurityPreview(
+      await api.post("/api/security/preview", {
+        access: draft.access,
+        protections: draft.protections,
+      }),
+    )
   }
   return normalizeSecurityPreview(await api.get("/api/security/preview"))
 }
@@ -434,10 +440,11 @@ export async function previewSecurity(policies?: unknown[]): Promise<SecurityPre
 export async function mergeSecurityProfile(name: string): Promise<SecurityProfileMerge> {
   const data = await api.post<Record<string, unknown>>("/api/security/profile-apply", { name })
   return {
-    name: pickString(data, "name", "Name") || name,
-    description: pickString(data, "description", "Description"),
-    scenario: pickString(data, "scenario", "Scenario") || undefined,
-    policies: (data.policies as unknown[]) ?? (data.Policies as unknown[]) ?? [],
+    name: pickString(data, "name") || name,
+    description: pickString(data, "description"),
+    scenario: pickString(data, "scenario") || undefined,
+    access: data.access,
+    protections: (data.protections as unknown[]) ?? [],
   }
 }
 
@@ -455,10 +462,6 @@ export async function opsSmoke(host: string): Promise<OpsResult> {
 
 export async function opsCanary(host: string): Promise<OpsResult> {
   return normalizeOpsResult(await api.post("/api/ops/canary", { host }))
-}
-
-export async function opsFirewallCheck(): Promise<OpsResult> {
-  return normalizeOpsResult(await api.post("/api/ops/firewall-check"))
 }
 
 export async function opsProfilePreview(name: string): Promise<OpsResult> {
@@ -534,13 +537,13 @@ export async function getFleetOverview(): Promise<FleetOverview> {
 
 export async function getFleetStatus(): Promise<FleetStatusOverview> {
   const data = await api.get<Record<string, unknown>>("/api/ops/fleet/status")
-  const nodesRaw = data.nodes ?? data.Nodes
+  const nodesRaw = data.nodes
   const nodes: FleetNodeStatus[] = Array.isArray(nodesRaw)
     ? nodesRaw.map((n) => {
         const row = (n ?? {}) as Record<string, unknown>
-        const status = String(row.status ?? row.Status ?? "unknown")
+        const status = String(row.status ?? "unknown")
         return {
-          name: String(row.name ?? row.Name ?? ""),
+          name: String(row.name ?? ""),
           role: row.role ? String(row.role) : undefined,
           status: status as FleetNodeStatus["status"],
           applied_version: row.applied_version ? String(row.applied_version) : undefined,
@@ -574,8 +577,8 @@ export async function opsFleetPublish(confirm: string): Promise<FleetPublishResp
     const data = await api.post<Record<string, unknown>>("/api/ops/fleet/publish", { confirm })
     return {
       ok: data.ok === true,
-      output: pickString(data, "output", "Output") || undefined,
-      error: pickString(data, "error", "Error") || undefined,
+      output: pickString(data, "output") || undefined,
+      error: pickString(data, "error") || undefined,
       version: data.version ? String(data.version) : undefined,
     }
   } catch (err) {
@@ -583,8 +586,8 @@ export async function opsFleetPublish(confirm: string): Promise<FleetPublishResp
       const data = err.body as Record<string, unknown>
       return {
         ok: false,
-        output: pickString(data, "output", "Output") || undefined,
-        error: pickString(data, "error", "Error") || err.message,
+        output: pickString(data, "output") || undefined,
+        error: pickString(data, "error") || err.message,
       }
     }
     throw err
@@ -608,7 +611,7 @@ export async function opsFleetJoin(body: {
     const hintsRaw = data.manual_hints
     return {
       ok: data.ok === true,
-      error: pickString(data, "error", "Error") || undefined,
+      error: pickString(data, "error") || undefined,
       name: data.name ? String(data.name) : undefined,
       token: data.token ? String(data.token) : undefined,
       bootstrap_hint: data.bootstrap_hint ? String(data.bootstrap_hint) : undefined,
@@ -618,7 +621,7 @@ export async function opsFleetJoin(body: {
   } catch (err) {
     if (err instanceof ApiError && err.body && typeof err.body === "object") {
       const data = err.body as Record<string, unknown>
-      return { ok: false, error: pickString(data, "error", "Error") || err.message }
+      return { ok: false, error: pickString(data, "error") || err.message }
     }
     throw err
   }
@@ -638,14 +641,14 @@ export async function opsFleetLeave(body: {
     const hintsRaw = data.manual_hints
     return {
       ok: data.ok === true,
-      error: pickString(data, "error", "Error") || undefined,
+      error: pickString(data, "error") || undefined,
       name: data.name ? String(data.name) : undefined,
       manual_hints: Array.isArray(hintsRaw) ? hintsRaw.map((h) => String(h)) : undefined,
     }
   } catch (err) {
     if (err instanceof ApiError && err.body && typeof err.body === "object") {
       const data = err.body as Record<string, unknown>
-      return { ok: false, error: pickString(data, "error", "Error") || err.message }
+      return { ok: false, error: pickString(data, "error") || err.message }
     }
     throw err
   }
@@ -680,9 +683,9 @@ export type ConfigPutResult = {
 export async function getConfigResources(): Promise<ConfigResources> {
   const data = await api.get<Record<string, unknown>>("/api/config/resources")
   return {
-    content: pickString(data, "content", "Content"),
-    mtime: pickString(data, "mtime", "Mtime"),
-    etag: pickString(data, "etag", "ETag", "Etag"),
+    content: pickString(data, "content"),
+    mtime: pickString(data, "mtime"),
+    etag: pickString(data, "etag"),
   }
 }
 
@@ -698,33 +701,33 @@ export async function putConfigResources(body: {
 }): Promise<ConfigPutResult> {
   const data = await api.put<Record<string, unknown>>("/api/config/resources", body)
   return {
-    ok: data.ok === true || data.Ok === true,
-    mtime: pickString(data, "mtime", "Mtime"),
-    etag: pickString(data, "etag", "ETag", "Etag"),
-    diff: pickString(data, "diff", "Diff") || undefined,
-    message: pickString(data, "message", "Message") || undefined,
+    ok: data.ok === true,
+    mtime: pickString(data, "mtime"),
+    etag: pickString(data, "etag"),
+    diff: pickString(data, "diff") || undefined,
+    message: pickString(data, "message") || undefined,
   }
 }
 
 function normalizeValidateResult(raw: unknown): ConfigValidateResult {
   const o = (raw ?? {}) as Record<string, unknown>
-  const errorsRaw = o.errors ?? o.Errors
+  const errorsRaw = o.errors
   const errors: ConfigYAMLError[] = []
   if (Array.isArray(errorsRaw)) {
     for (const item of errorsRaw) {
       const e = (item ?? {}) as Record<string, unknown>
-      const line = e.line ?? e.Line
+      const line = e.line
       errors.push({
         line: typeof line === "number" ? line : undefined,
-        path: pickString(e, "path", "Path") || undefined,
-        msg: pickString(e, "msg", "Msg", "message", "Message") || "error",
+        path: pickString(e, "path") || undefined,
+        msg: (pickString(e, "msg") || pickString(e, "message")) || "error",
       })
     }
   }
   return {
-    ok: o.ok === true || o.Ok === true,
+    ok: o.ok === true,
     errors: errors.length ? errors : undefined,
-    diff: pickString(o, "diff", "Diff") || undefined,
+    diff: pickString(o, "diff") || undefined,
   }
 }
 
@@ -779,24 +782,24 @@ export async function getPortMap(): Promise<{
   rows: PortMapRow[]
 }> {
   const data = await api.get<Record<string, unknown>>("/api/port-map")
-  const rowsRaw = data.rows ?? data.Rows
+  const rowsRaw = data.rows
   const rows: PortMapRow[] = Array.isArray(rowsRaw)
     ? rowsRaw.map((item) => {
         const o = (item ?? {}) as Record<string, unknown>
         return {
-          upstream: String(o.upstream ?? o.Upstream ?? ""),
-          entry: String(o.entry ?? o.Entry ?? ""),
-          protocol: String(o.protocol ?? o.Protocol ?? ""),
-          listen_port: Number(o.listen_port ?? o.ListenPort ?? 0) || 0,
-          upstream_address: String(o.upstream_address ?? o.UpstreamAddress ?? ""),
-          upstream_port: Number(o.upstream_port ?? o.UpstreamPort ?? 0) || 0,
-          enabled: o.enabled === true || o.Enabled === true,
-          forward_name: String(o.forward_name ?? o.ForwardName ?? ""),
+          upstream: String(o.upstream ?? ""),
+          entry: String(o.entry ?? ""),
+          protocol: String(o.protocol ?? ""),
+          listen_port: Number(o.listen_port ?? 0) || 0,
+          upstream_address: String(o.upstream_address ?? ""),
+          upstream_port: Number(o.upstream_port ?? 0) || 0,
+          enabled: o.enabled === true,
+          forward_name: String(o.forward_name ?? ""),
         }
       })
     : []
   return {
-    gateway_public_ip: String(data.gateway_public_ip ?? data.GatewayPublicIP ?? ""),
+    gateway_public_ip: String(data.gateway_public_ip ?? ""),
     rows,
   }
 }

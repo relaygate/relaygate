@@ -10,16 +10,17 @@
 
 ## 1. 策略目录（Policy catalog）
 
-配置载体：`resources.yaml` → `security.policies[]`（`id`、`type`、`enabled`、`params`）。
+配置载体：`resources.yaml` → `security.access`（来源 ACL）与 `security.protections[]`（`id`/`type`/`enabled`/`params`）。
 
 | ID | 中文名 | English | Threat | 领域 | 生效方式 |
 |----|--------|---------|--------|------|----------|
-| `kernel_syn` | SYN 洪泛加固 | SYN flood hardening | T1 | 内核 | `apply-sysctl-harden.sh --apply` |
+| `kernel_syn` | SYN 洪泛加固 | SYN flood hardening | T1 | 内核 | `relaygate security apply-kernel --verify` |
 | `firewall_new_conn_limit` | 防火墙新建连接限速 | Firewall new-connection rate limit | T1, T4 | 防火墙 | `firewall apply` |
 | `gateway_new_conn_limit` | 网关新建连接限速 | Gateway new-connection rate limit | T1, T4 | 网关 | `reload` |
-| `conn_limit` | 并发连接上限 | Connection limit | T2 | 网关 | `reload` |
-| `allowlist` | 来源访问控制 | Source access control | T5 | 防火墙 | `firewall apply` |
-| `udp_limit` | UDP 包速限制 | UDP PPS limit | T6 | 防火墙 | `firewall apply` |
+| `gateway_conn_limit` | 并发连接上限 | Connection limit | T2 | 网关 | `reload` |
+| `firewall_udp_limit` | UDP 包速限制 | UDP PPS limit | T6 | 防火墙 | `firewall apply` |
+
+访问控制（非 protections 成员）：`security.access`（enabled / deny / allow）— T5 — 防火墙 — `firewall apply`。
 
 关闭策略时的行为（不伤 established）：
 
@@ -27,9 +28,9 @@
 |------|--------|
 | `firewall_new_conn_limit` | 防火墙使用极高 new 速率 |
 | `gateway_new_conn_limit` | 网关省略本地新建连接限速过滤器 |
-| `conn_limit` | 网关使用极高 `max_connections` |
-| `allowlist` | 忽略严格 allow/deny（仍保留默认 drop 未开放端口） |
-| `udp_limit` | 防火墙 UDP 使用极高 PPS |
+| `gateway_conn_limit` | 网关使用极高 `max_connections` |
+| `security.access` | 忽略严格 allow/deny（仍保留默认 drop 未开放端口） |
+| `firewall_udp_limit` | 防火墙 UDP 使用极高 PPS |
 | `kernel_syn` | 仅 YAML 标记；是否卸载内核叠加由运维在本机处理 |
 
 ---
@@ -39,11 +40,11 @@
 | ID | 攻击 Attack | 推荐策略 | 备注 |
 |----|-------------|----------|------|
 | T1 | SYN Flood | `kernel_syn` + `firewall_new_conn_limit` + `gateway_new_conn_limit` | 加固握手；勿动 established |
-| T2 | 连接耗尽 | `conn_limit` + 新建连接限速 | idle 勿过短误杀长连 |
-| T3 | 慢连接（Slowloris-style） | `conn_limit`（辅助） | 主要靠 idle / 上游超时 |
+| T2 | 连接耗尽 | `gateway_conn_limit` + 新建连接限速 | idle 勿过短误杀长连 |
+| T3 | 慢连接（Slowloris-style） | `gateway_conn_limit`（辅助） | 主要靠 idle / 上游超时 |
 | T4 | 新建连接洪泛 | `firewall_new_conn_limit` + `gateway_new_conn_limit` | 防火墙 new + 网关本地限速 |
-| T5 | 端口扫描 / 探测 | `allowlist` + 默认 drop | SSH 独立限速 |
-| T6 | UDP 反射 / 放大 | `udp_limit` | 非抗 volumetric |
+| T5 | 端口扫描 / 探测 | `security.access` + 默认 drop | SSH 独立限速 |
+| T6 | UDP 反射 / 放大 | `firewall_udp_limit` | 非抗 volumetric |
 | T7 | 带宽型 DDoS | —（云侧） | 本机减负 only |
 | T8 | 凭证滥用 | —（ops） | token / 确认词 / standby |
 | T9 | 配置篡改 / 漂移 | —（ops） | 确认词、`firewall check` |
@@ -58,10 +59,10 @@
 | 攻击 | 内核 | 防火墙 | 网关 | 本产品策略 |
 |------|------|--------|------|------------|
 | T1 | ● SYN cookies | ○ | — | `kernel_syn` |
-| T2 | ○ FD | ● new RL | ● conn limit | `firewall_new_conn_limit`, `gateway_new_conn_limit`, `conn_limit` |
+| T2 | ○ FD | ● new RL | ● conn limit | `firewall_new_conn_limit`, `gateway_new_conn_limit`, `gateway_conn_limit` |
 | T4 | ○ | ● | ● local RL | `firewall_new_conn_limit`, `gateway_new_conn_limit` |
-| T5 | — | ● ACL | — | `allowlist` |
-| T6 | — | ● UDP PPS | ○ | `udp_limit` |
+| T5 | — | ● ACL | — | `security.access` |
+| T6 | — | ● UDP PPS | ○ | `firewall_udp_limit` |
 | T7 | — | — | — | **out of scope**（云清洗） |
 
 领域 vs 执行组件、落地顺序见 [docs/security-domains.md](../../docs/security-domains.md)。完整矩阵见 [README.md](README.md).

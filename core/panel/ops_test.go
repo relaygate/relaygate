@@ -157,11 +157,11 @@ func TestApplyPreviewClassify(t *testing.T) {
 		t.Fatal(err)
 	}
 	res.Security.EnsureSecurityDefaults()
-	p := res.Security.PolicyByID(resources.PolicyAllowlist)
-	if p == nil {
-		t.Fatal("missing allowlist policy")
+	a := res.Security.Access
+	if a == nil {
+		t.Fatal("missing security.access")
 	}
-	p.Params.Deny = append(p.Params.Deny, "203.0.113.10/32")
+	a.Deny = append(a.Deny, "203.0.113.10/32")
 	if err := resources.Save(filepath.Join(config.ResolveDataDir(srv.cfg.Root), "resources.yaml"), res); err != nil {
 		t.Fatal(err)
 	}

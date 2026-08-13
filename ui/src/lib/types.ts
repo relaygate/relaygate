@@ -146,7 +146,7 @@ export interface SecurityPreview {
     listeners_with_rate_limit: number
     enabled_tcp_forwards: number
     rate_limit_enabled: boolean
-    conn_limit_enabled: boolean
+    gateway_conn_limit_enabled: boolean
   }
   notes: string[]
 }
@@ -155,7 +155,8 @@ export interface SecurityProfileMerge {
   name: string
   description: string
   scenario?: string
-  policies: unknown[]
+  access?: unknown
+  protections: unknown[]
 }
 
 export interface OpsResult {
@@ -164,10 +165,9 @@ export interface OpsResult {
   error?: string
 }
 
-function pick<T>(obj: Record<string, unknown>, ...keys: string[]): T | undefined {
-  for (const key of keys) {
-    if (obj[key] !== undefined) return obj[key] as T
-  }
+/** Read a snake_case JSON field (API encoding is snake_case only; no PascalCase dual-read). */
+function field<T>(obj: Record<string, unknown>, key: string): T | undefined {
+  if (obj[key] !== undefined) return obj[key] as T
   return undefined
 }
 
@@ -192,20 +192,18 @@ function asStringArray(v: unknown): string[] {
 
 export function normalizeUpstream(raw: unknown): Upstream {
   const o = (raw ?? {}) as Record<string, unknown>
-  const tcpRaw = pick(o, "tcp", "TCP")
-  const udpRaw = pick(o, "udp", "UDP")
   const parseProto = (v: unknown): ProtoPort | undefined => {
     if (!v || typeof v !== "object") return undefined
-    const port = asNumber(pick(v as Record<string, unknown>, "port", "Port"))
+    const port = asNumber(field((v as Record<string, unknown>), "port"))
     if (port < 1) return undefined
     return { port }
   }
   return {
-    name: asString(pick(o, "name", "Name")),
-    address: asString(pick(o, "address", "Address")),
-    tcp: parseProto(tcpRaw),
-    udp: parseProto(udpRaw),
-    enabled: asBool(pick(o, "enabled", "Enabled")),
+    name: asString(field(o, "name")),
+    address: asString(field(o, "address")),
+    tcp: parseProto(field(o, "tcp")),
+    udp: parseProto(field(o, "udp")),
+    enabled: asBool(field(o, "enabled")),
   }
 }
 
@@ -234,27 +232,27 @@ export function normalizeLifecycle(raw: unknown): Record<string, UpstreamLifecyc
 function normalizeLifecycleEntry(raw: unknown): UpstreamLifecycle {
   const o = (raw ?? {}) as Record<string, unknown>
   return {
-    name: asString(pick(o, "name", "Name")),
-    upstream_enabled: asBool(pick(o, "upstream_enabled", "UpstreamEnabled", "server_enabled", "ServerEnabled")),
-    validation_enabled: asBool(pick(o, "validation_enabled", "ValidationEnabled")),
-    production_enabled: asBool(pick(o, "production_enabled", "ProductionEnabled")),
-    validation_ports: asStringArray(pick(o, "validation_ports", "ValidationPorts")),
-    production_ports: asStringArray(pick(o, "production_ports", "ProductionPorts")),
-    validation_forward_count: asNumber(pick(o, "validation_forward_count", "ValidationForwardCount", "validation_rule_count", "ValidationRuleCount")),
-    production_forward_count: asNumber(pick(o, "production_forward_count", "ProductionForwardCount", "production_rule_count", "ProductionRuleCount")),
-    protocols: asStringArray(pick(o, "protocols", "Protocols")),
+    name: asString(field(o, "name")),
+    upstream_enabled: asBool(field(o, "upstream_enabled")),
+    validation_enabled: asBool(field(o, "validation_enabled")),
+    production_enabled: asBool(field(o, "production_enabled")),
+    validation_ports: asStringArray(field(o, "validation_ports")),
+    production_ports: asStringArray(field(o, "production_ports")),
+    validation_forward_count: asNumber(field(o, "validation_forward_count")),
+    production_forward_count: asNumber(field(o, "production_forward_count")),
+    protocols: asStringArray(field(o, "protocols")),
   }
 }
 
 export function normalizeForward(raw: unknown): Forward {
   const o = (raw ?? {}) as Record<string, unknown>
   return {
-    name: asString(pick(o, "name", "Name")),
-    entry: asString(pick(o, "entry", "Entry")),
-    upstream: asString(pick(o, "upstream", "Upstream", "server", "Server")),
-    protocol: asString(pick(o, "protocol", "Protocol")),
-    listen_port: asNumber(pick(o, "listen_port", "ListenPort")),
-    enabled: asBool(pick(o, "enabled", "Enabled")),
+    name: asString(field(o, "name")),
+    entry: asString(field(o, "entry")),
+    upstream: asString(field(o, "upstream")),
+    protocol: asString(field(o, "protocol")),
+    listen_port: asNumber(field(o, "listen_port")),
+    enabled: asBool(field(o, "enabled")),
   }
 }
 
@@ -266,65 +264,67 @@ export function normalizeForwards(raw: unknown): Forward[] {
 export function normalizeACL(raw: unknown): ACL {
   const o = (raw ?? {}) as Record<string, unknown>
   return {
-    deny: asStringArray(pick(o, "deny", "Deny")),
-    allow: asStringArray(pick(o, "allow", "Allow")),
+    deny: asStringArray(field(o, "deny")),
+    allow: asStringArray(field(o, "allow")),
   }
 }
 
 export function normalizeEnvoy(raw: unknown): EnvoyStatus {
   const o = (raw ?? {}) as Record<string, unknown>
   return {
-    ready: asBool(pick(o, "ready", "Ready")),
-    ready_body: asString(pick(o, "ready_body", "ReadyBody")),
-    healthy_clusters: asNumber(pick(o, "healthy_clusters", "HealthyClusters")),
-    cluster_lines: asStringArray(pick(o, "cluster_lines", "ClusterLines")),
-    error: asString(pick(o, "error", "Error")) || undefined,
-    stats: (pick(o, "stats", "Stats") as Record<string, string>) ?? undefined,
+    ready: asBool(field(o, "ready")),
+    ready_body: asString(field(o, "ready_body")),
+    healthy_clusters: asNumber(field(o, "healthy_clusters")),
+    cluster_lines: asStringArray(field(o, "cluster_lines")),
+    error: asString(field(o, "error")) || undefined,
+    stats: field<Record<string, string>>(o, "stats"),
   }
 }
 
 export function normalizeTraffic(raw: unknown): TrafficStatus {
   const o = (raw ?? {}) as Record<string, unknown>
-  const topRaw = pick<unknown[]>(o, "top_limited_forwards", "TopLimitedRules")
+  const topRaw = field<unknown[]>(o, "top_limited_forwards")
   const top: ForwardRateLimit[] = Array.isArray(topRaw)
     ? topRaw.map((item) => {
         const r = (item ?? {}) as Record<string, unknown>
         return {
-          forward: asString(pick(r, "forward", "Forward", "rule", "Rule")),
-          prefix: asString(pick(r, "prefix", "Prefix")),
-          hits_5m: asNumber(pick(r, "hits_5m", "Hits5m")),
+          forward: asString(field(r, "forward")),
+          prefix: asString(field(r, "prefix")),
+          hits_5m: asNumber(field(r, "hits_5m")),
         }
       })
     : []
   return {
-    tcp_active_connections: asNumber(pick(o, "tcp_active_connections", "TCPActiveConnections")),
-    udp_active_sessions: asNumber(pick(o, "udp_active_sessions", "UDPActiveSessions")),
-    local_rate_limited_5m: asNumber(pick(o, "local_rate_limited_5m", "LocalRateLimited5m")),
+    tcp_active_connections: asNumber(field(o, "tcp_active_connections")),
+    udp_active_sessions: asNumber(field(o, "udp_active_sessions")),
+    local_rate_limited_5m: asNumber(field(o, "local_rate_limited_5m")),
     top_limited_forwards: top,
-    error: asString(pick(o, "error", "Error")) || undefined,
+    error: asString(field(o, "error")) || undefined,
   }
 }
 
 export function normalizeSession(raw: unknown): Session {
   const o = (raw ?? {}) as Record<string, unknown>
   return {
-    authenticated: asBool(pick(o, "authenticated", "Authenticated")),
-    csrf: asString(pick(o, "csrf", "CSRF")) || undefined,
-    lang: asString(pick(o, "lang", "Lang")) || undefined,
-    role: asString(pick(o, "role", "Role")) || undefined,
-    standby: asBool(pick(o, "standby", "Standby")),
-    grafana_enabled: asBool(pick(o, "grafana_enabled", "GrafanaEnabled")),
+    authenticated: asBool(field(o, "authenticated")),
+    csrf: asString(field(o, "csrf")) || undefined,
+    lang: asString(field(o, "lang")) || undefined,
+    role: asString(field(o, "role")) || undefined,
+    standby: asBool(field(o, "standby")),
+    grafana_enabled: asBool(field(o, "grafana_enabled")),
   }
 }
 
 export function normalizeChangeEntries(raw: unknown): ChangeEntry[] {
-  const arr = Array.isArray(raw) ? raw : pick<unknown[]>(raw as Record<string, unknown>, "entries", "Entries") ?? []
+  const arr = Array.isArray(raw)
+    ? raw
+    : field<unknown[]>(raw as Record<string, unknown>, "entries") ?? []
   return arr.map((item) => {
     const o = (item ?? {}) as Record<string, unknown>
     return {
-      stamp: asString(pick(o, "stamp", "Stamp")),
-      summary: asString(pick(o, "summary", "Summary")),
-      path: asString(pick(o, "path", "Path")) || undefined,
+      stamp: asString(field(o, "stamp")),
+      summary: asString(field(o, "summary")),
+      path: asString(field(o, "path")) || undefined,
     }
   })
 }
@@ -332,74 +332,68 @@ export function normalizeChangeEntries(raw: unknown): ChangeEntry[] {
 export function normalizeProfiles(raw: unknown): Profile[] {
   const arr = Array.isArray(raw)
     ? raw
-    : pick<unknown[]>(raw as Record<string, unknown>, "profiles", "Profiles") ?? []
+    : field<unknown[]>(raw as Record<string, unknown>, "profiles") ?? []
   return arr.map((item) => {
     const o = (item ?? {}) as Record<string, unknown>
     return {
-      name: asString(pick(o, "name", "Name")),
-      description: asString(pick(o, "description", "Description")),
-      scenario: asString(pick(o, "scenario", "Scenario")) || undefined,
+      name: asString(field(o, "name")),
+      description: asString(field(o, "description")),
+      scenario: asString(field(o, "scenario")) || undefined,
     }
   })
 }
 
 export function normalizeSecurityPreview(raw: unknown): SecurityPreview {
   const o = (raw ?? {}) as Record<string, unknown>
-  const orderRaw = pick<unknown[]>(o, "execution_order", "ExecutionOrder") ?? []
-  const surfacesRaw = pick<unknown[]>(o, "surfaces", "Surfaces") ?? []
-  const kernelRaw = pick(o, "kernel", "Kernel") as Record<string, unknown> | undefined
-  const firewallRaw = pick(o, "firewall", "Firewall") as Record<string, unknown> | undefined
-  const gatewayRaw = pick(o, "gateway", "Gateway") as Record<string, unknown> | undefined
+  const orderRaw = field<unknown[]>(o, "execution_order") ?? []
+  const surfacesRaw = field<unknown[]>(o, "surfaces") ?? []
+  const kernelRaw = field<Record<string, unknown>>(o, "kernel")
+  const firewallRaw = field<Record<string, unknown>>(o, "firewall")
+  const gatewayRaw = field<Record<string, unknown>>(o, "gateway")
   return {
     execution_order: orderRaw.map((item) => {
       const r = (item ?? {}) as Record<string, unknown>
       return {
-        order: asNumber(pick(r, "order", "Order")),
-        layer: asString(pick(r, "layer", "Layer")),
-        component: asString(pick(r, "component", "Component")),
-        action: asString(pick(r, "action", "Action")),
-        policies: asStringArray(pick(r, "policies", "Policies")),
+        order: asNumber(field(r, "order")),
+        layer: asString(field(r, "layer")),
+        component: asString(field(r, "component")),
+        action: asString(field(r, "action")),
+        policies: asStringArray(field(r, "policies")),
       }
     }),
     surfaces: surfacesRaw.map((item) => {
       const r = (item ?? {}) as Record<string, unknown>
       return {
-        policy_id: asString(pick(r, "policy_id", "PolicyID")),
-        layers: asStringArray(pick(r, "layers", "Layers")),
-        apply_path: asString(pick(r, "apply_path", "ApplyPath")),
-        overlap_note: asString(pick(r, "overlap_note", "OverlapNote")) || undefined,
+        policy_id: asString(field(r, "policy_id")),
+        layers: asStringArray(field(r, "layers")),
+        apply_path: asString(field(r, "apply_path")),
+        overlap_note: asString(field(r, "overlap_note")) || undefined,
       }
     }),
     kernel: kernelRaw
       ? {
-          enabled: asBool(pick(kernelRaw, "enabled", "Enabled")),
-          apply_script: asString(pick(kernelRaw, "apply_script", "ApplyScript")) || undefined,
-          content: asString(pick(kernelRaw, "content", "Content")) || undefined,
+          enabled: asBool(field(kernelRaw, "enabled")),
+          apply_script: asString(field(kernelRaw, "apply_script")) || undefined,
+          content: asString(field(kernelRaw, "content")) || undefined,
         }
       : undefined,
     firewall: firewallRaw
       ? {
-          forward_ports: asString(pick(firewallRaw, "forward_ports", "ForwardPorts")),
-          gateway_excerpt: asString(pick(firewallRaw, "gateway_excerpt", "GatewayExcerpt")),
+          forward_ports: asString(field(firewallRaw, "forward_ports")),
+          gateway_excerpt: asString(field(firewallRaw, "gateway_excerpt")),
         }
       : undefined,
     gateway: gatewayRaw
       ? {
-          max_connections: asNumber(pick(gatewayRaw, "max_connections", "MaxConnections")),
-          local_ratelimit_per_sec: asNumber(
-            pick(gatewayRaw, "local_ratelimit_per_sec", "LocalRateLimitPerSec"),
-          ),
-          local_ratelimit_burst: asNumber(
-            pick(gatewayRaw, "local_ratelimit_burst", "LocalRateLimitBurst"),
-          ),
-          listeners_with_rate_limit: asNumber(
-            pick(gatewayRaw, "listeners_with_rate_limit", "ListenersWithRateLimit"),
-          ),
-          enabled_tcp_forwards: asNumber(pick(gatewayRaw, "enabled_tcp_forwards", "EnabledTCPForwards")),
-          rate_limit_enabled: asBool(pick(gatewayRaw, "rate_limit_enabled", "RateLimitEnabled")),
-          conn_limit_enabled: asBool(pick(gatewayRaw, "conn_limit_enabled", "ConnLimitEnabled")),
+          max_connections: asNumber(field(gatewayRaw, "max_connections")),
+          local_ratelimit_per_sec: asNumber(field(gatewayRaw, "local_ratelimit_per_sec")),
+          local_ratelimit_burst: asNumber(field(gatewayRaw, "local_ratelimit_burst")),
+          listeners_with_rate_limit: asNumber(field(gatewayRaw, "listeners_with_rate_limit")),
+          enabled_tcp_forwards: asNumber(field(gatewayRaw, "enabled_tcp_forwards")),
+          rate_limit_enabled: asBool(field(gatewayRaw, "rate_limit_enabled")),
+          gateway_conn_limit_enabled: asBool(field(gatewayRaw, "gateway_conn_limit_enabled")),
         }
       : undefined,
-    notes: asStringArray(pick(o, "notes", "Notes")),
+    notes: asStringArray(field(o, "notes")),
   }
 }

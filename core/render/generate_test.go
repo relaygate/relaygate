@@ -9,19 +9,19 @@ import (
 
 func testResources() *resources.Resources {
 	sec := resources.DefaultSecurity()
-	for i := range sec.Policies {
-		switch sec.Policies[i].ID {
+	for i := range sec.Protections {
+		switch sec.Protections[i].ID {
 		case resources.PolicyFirewallNewConnLimit:
-			sec.Policies[i].Params.TCPPerIP = "40/second"
-			sec.Policies[i].Params.Burst = 80
+			sec.Protections[i].Params.TCPPerIP = "40/second"
+			sec.Protections[i].Params.Burst = 80
 		case resources.PolicyGatewayNewConnLimit:
-			sec.Policies[i].Params.PerSec = 200
-			sec.Policies[i].Params.Burst = 400
-		case resources.PolicyUDPLimit:
-			sec.Policies[i].Params.UDPPPSPerIP = "600/second"
-			sec.Policies[i].Params.UDPBurst = 1200
-		case resources.PolicyConnLimit:
-			sec.Policies[i].Params.MaxConnections = 1024
+			sec.Protections[i].Params.PerSec = 200
+			sec.Protections[i].Params.Burst = 400
+		case resources.PolicyFirewallUDPLimit:
+			sec.Protections[i].Params.UDPPPSPerIP = "600/second"
+			sec.Protections[i].Params.UDPBurst = 1200
+		case resources.PolicyGatewayConnLimit:
+			sec.Protections[i].Params.MaxConnections = 1024
 		}
 	}
 	return &resources.Resources{
@@ -102,9 +102,9 @@ func TestRenderNFTIncludesPortsAndRateLimits(t *testing.T) {
 
 func TestRenderNFTIncludesACLSets(t *testing.T) {
 	r := testResources()
-	p := r.Security.PolicyByID(resources.PolicyAllowlist)
-	p.Params.Deny = []string{"1.2.3.4/32", "10.0.0.0/8"}
-	p.Params.Allow = []string{"203.0.113.0/24"}
+	a := r.Security.Access
+	a.Deny = []string{"1.2.3.4/32", "10.0.0.0/8"}
+	a.Allow = []string{"203.0.113.0/24"}
 	_, nft, err := Render(r)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
@@ -304,10 +304,10 @@ func TestRenderRespectsDisabledNewConnRateLimit(t *testing.T) {
 
 func TestRenderRespectsDisabledSourceACL(t *testing.T) {
 	r := testResources()
-	p := r.Security.PolicyByID(resources.PolicyAllowlist)
-	p.Params.Deny = []string{"1.2.3.4/32"}
-	p.Params.Allow = []string{"203.0.113.0/24"}
-	p.Enabled = false
+	a := r.Security.Access
+	a.Deny = []string{"1.2.3.4/32"}
+	a.Allow = []string{"203.0.113.0/24"}
+	a.Enabled = false
 	_, nft, err := Render(r)
 	if err != nil {
 		t.Fatalf("Render: %v", err)

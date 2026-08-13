@@ -109,7 +109,7 @@ RelayGate 安装器（bootstrap · 预编译 release tar）
   --token / -t <token>     接入令牌（来自 fleet join）
 
 子命令默认非交互。
-control → ENABLE_PANEL=1；node → ENABLE_PANEL=0 ENABLE_GRAFANA=0。
+control → PANEL_ENABLED=1；node → PANEL_ENABLED=0 GRAFANA_ENABLED=0。
 安装角色只用 control / node（不是 primary；也不是 agent）。
 agent 是节点上的拉取/心跳进程（relaygate agent / relaygate-agent.service），不是安装子命令。
 
@@ -119,16 +119,24 @@ agent 是节点上的拉取/心跳进程（relaygate agent / relaygate-agent.ser
   → 解压到 /opt/relaygate（保留 .env / data/）
   → relaygate setup → apply → panel 或 agent install → smoke
 
-环境变量（高级）:
+环境变量（高级，按组）:
+  # 安装 / 路径 / 版本
   RELAYGATE_VERSION=<tag|sha|latest>  # 默认 latest
   RELAYGATE_TAR=/path/to.tar.gz       # 本地包，跳过下载
   RELAYGATE_INSTALL_DIR=/opt/relaygate
+  RELAYGATE_DATA_DIR / RELAYGATE_SECRETS_DIR
   GH_TOKEN / GITHUB_TOKEN
   FROM_SOURCE=1 / RELAYGATE_GIT_FALLBACK=1 / RELAYGATE_SOURCE_DIR
   RELAYGATE_REPO_URL
+  # 本机节点身份
   GATEWAY_NAME / GATEWAY_PUBLIC_IP / GATEWAY_SSH_PORT
-  ENABLE_PANEL / ENABLE_GRAFANA / APPLY_FIREWALL
-  CONTROL_URL / AGENT_TOKEN / AGENT_TOKEN_FILE   # 节点（通常由 node 子命令写入）
+  # Panel / 观测
+  PANEL_ENABLED / PANEL_BIND / PANEL_ROLE / GRAFANA_ENABLED
+  # 机群连接（节点；通常由 node 子命令写入）
+  CONTROL_URL / AGENT_TOKEN / AGENT_TOKEN_FILE
+  # 安全落地（分层，勿混用）
+  APPLY_FIREWALL          # 安装/CLI 一次性应用防火墙
+  SECURITY_AUTO_APPLY     # 节点 agent 拉取后是否自动应用主机侧
 EOF
 }
 
@@ -271,40 +279,44 @@ Prepare_System() {
     die "未检测到安装；请用 control 或 node 安装"
   fi
   if [[ "$ACTION" == "upgrade" && -f "$INSTALL_DIR/.env" ]]; then
+    migrate_legacy_env_keys "$INSTALL_DIR/.env"
     # shellcheck disable=SC1091
     set -a; source "$INSTALL_DIR/.env"; set +a
     # .env 也可能含 VERSION=；恢复安装器版本意图
     VERSION="${RELAYGATE_VERSION:-$_rg_version}"
     SECRETS_DIR="${RELAYGATE_SECRETS_DIR:-$SECRETS_DIR}"
+    # 兼容：若进程环境仍只有旧键名（极少），映射到新名
+    PANEL_ENABLED="${PANEL_ENABLED:-${ENABLE_PANEL:-}}"
+    GRAFANA_ENABLED="${GRAFANA_ENABLED:-${ENABLE_GRAFANA:-}}"
   fi
   # 角色由子命令决定：control / node；upgrade 沿用已有 .env
   if [[ "$ROLE" == "control" ]]; then
-    ENABLE_PANEL="${ENABLE_PANEL:-1}"
-    ENABLE_GRAFANA="${ENABLE_GRAFANA:-1}"
+    PANEL_ENABLED="${PANEL_ENABLED:-1}"
+    GRAFANA_ENABLED="${GRAFANA_ENABLED:-1}"
   elif [[ "$ROLE" == "node" ]]; then
-    ENABLE_PANEL="${ENABLE_PANEL:-0}"
-    ENABLE_GRAFANA="${ENABLE_GRAFANA:-0}"
+    PANEL_ENABLED="${PANEL_ENABLED:-0}"
+    GRAFANA_ENABLED="${GRAFANA_ENABLED:-0}"
     [[ -n "${CONTROL_URL:-}" ]] || die "节点接入需要 --control（主控地址）"
     [[ -n "${GATEWAY_NAME:-}" ]] || die "节点接入需要 --name（网关名）"
     [[ -n "${AGENT_TOKEN:-}" || -n "${AGENT_TOKEN_FILE:-}" ]] || die "节点接入需要 --token（接入令牌）"
   elif [[ "$ACTION" == "upgrade" ]]; then
     # 升级：角色来自已 source 的 .env
-    ENABLE_PANEL="${ENABLE_PANEL:-1}"
-    if [[ "${ENABLE_PANEL}" == "0" ]]; then
-      ENABLE_GRAFANA="${ENABLE_GRAFANA:-0}"
+    PANEL_ENABLED="${PANEL_ENABLED:-1}"
+    if [[ "${PANEL_ENABLED}" == "0" ]]; then
+      GRAFANA_ENABLED="${GRAFANA_ENABLED:-0}"
     else
-      ENABLE_GRAFANA="${ENABLE_GRAFANA:-1}"
+      GRAFANA_ENABLED="${GRAFANA_ENABLED:-1}"
     fi
   else
     die "请指定子命令：control / node / upgrade / uninstall（见 --help）"
   fi
-  ok "OS=${PRETTY_NAME:-$OS_ID} arch=${ARCH} role=${ROLE:-from-env} panel=${ENABLE_PANEL}"
+  ok "OS=${PRETTY_NAME:-$OS_ID} arch=${ARCH} role=${ROLE:-from-env} panel=${PANEL_ENABLED}"
 }
 
 Install_Packages() {
   log "阶段 2/5 · 基础包 + Docker"
   local pkgs=(ca-certificates curl openssl nftables)
-  [[ "${ENABLE_PANEL}" == "1" ]] && pkgs+=(sudo)
+  [[ "${PANEL_ENABLED}" == "1" ]] && pkgs+=(sudo)
   if { is_true "$FROM_SOURCE" || is_true "$GIT_FALLBACK"; } && [[ -z "$TAR_PATH" ]]; then
     pkgs+=(git)
   fi
@@ -584,6 +596,31 @@ upsert_env_file() {
   fi
 }
 
+
+# 升级时将旧键硬切迁移到长期名（产品侧无双读；仅安装器改写 .env）。
+migrate_legacy_env_keys() {
+  local file="${1:-}"
+  [[ -n "$file" && -f "$file" ]] || return 0
+  if grep -qE '^ENABLE_PANEL=' "$file" 2>/dev/null && ! grep -qE '^PANEL_ENABLED=' "$file" 2>/dev/null; then
+    local v
+    v="$(grep -E '^ENABLE_PANEL=' "$file" | head -n1 | cut -d= -f2-)"
+    upsert_env_file "$file" PANEL_ENABLED "${v}"
+    warn "已迁移 ENABLE_PANEL → PANEL_ENABLED=${v}（请改用新键；旧键将删除）"
+  fi
+  if grep -qE '^ENABLE_GRAFANA=' "$file" 2>/dev/null && ! grep -qE '^GRAFANA_ENABLED=' "$file" 2>/dev/null; then
+    local v
+    v="$(grep -E '^ENABLE_GRAFANA=' "$file" | head -n1 | cut -d= -f2-)"
+    upsert_env_file "$file" GRAFANA_ENABLED "${v}"
+    warn "已迁移 ENABLE_GRAFANA → GRAFANA_ENABLED=${v}"
+  fi
+  if grep -qE '^ENABLE_PANEL=' "$file" 2>/dev/null; then
+    sed -i '/^ENABLE_PANEL=/d' "$file"
+  fi
+  if grep -qE '^ENABLE_GRAFANA=' "$file" 2>/dev/null; then
+    sed -i '/^ENABLE_GRAFANA=/d' "$file"
+  fi
+}
+
 # Docker 拒绝 cpus limit > 宿主机核数；按 nproc 自动封顶并写入 .env。
 tune_compose_cpu_limits() {
   local host_cpus envoy_lim prom_lim
@@ -629,9 +666,9 @@ write_agent_join_creds() {
   if [[ -f "${INSTALL_DIR}/.env" ]]; then
     upsert_env_file "${INSTALL_DIR}/.env" CONTROL_URL "${CONTROL_URL}"
     upsert_env_file "${INSTALL_DIR}/.env" AGENT_TOKEN_FILE "$tok"
-    upsert_env_file "${INSTALL_DIR}/.env" ENABLE_PANEL "0"
+    upsert_env_file "${INSTALL_DIR}/.env" PANEL_ENABLED "0"
     upsert_env_file "${INSTALL_DIR}/.env" PANEL_ROLE "standby"
-    upsert_env_file "${INSTALL_DIR}/.env" ENABLE_GRAFANA "${ENABLE_GRAFANA:-0}"
+    upsert_env_file "${INSTALL_DIR}/.env" GRAFANA_ENABLED "${GRAFANA_ENABLED:-0}"
     [[ -n "${GATEWAY_NAME:-}" ]] && upsert_env_file "${INSTALL_DIR}/.env" GATEWAY_NAME "$GATEWAY_NAME"
   fi
   log "已写入节点 agent 令牌: ${tok}"
@@ -648,7 +685,7 @@ Invoke_Product() {
   umask 022
   export RELAYGATE_INSTALL_DIR="$INSTALL_DIR" RELAYGATE_SECRETS_DIR="$SECRETS_DIR"
   export RELAYGATE_DATA_DIR="${RELAYGATE_DATA_DIR:-$INSTALL_DIR/data}"
-  export NONINTERACTIVE ENABLE_PANEL ENABLE_GRAFANA
+  export NONINTERACTIVE PANEL_ENABLED GRAFANA_ENABLED
   export GATEWAY_NAME="${GATEWAY_NAME:-}" GATEWAY_PUBLIC_IP="${GATEWAY_PUBLIC_IP:-}" GATEWAY_SSH_PORT="${GATEWAY_SSH_PORT:-}"
   export APPLY_FIREWALL FIREWALL_CONFIRM="${FIREWALL_CONFIRM:-}"
   export CONTROL_URL="${CONTROL_URL:-}" AGENT_TOKEN="${AGENT_TOKEN:-}" AGENT_TOKEN_FILE="${AGENT_TOKEN_FILE:-}"
@@ -670,10 +707,10 @@ Invoke_Product() {
 
   # shellcheck disable=SC1091
   set -a; source .env; set +a
-  ENABLE_PANEL="${ENABLE_PANEL:-1}"
-  if [[ "$ENABLE_PANEL" == "1" ]]; then
+  PANEL_ENABLED="${PANEL_ENABLED:-1}"
+  if [[ "$PANEL_ENABLED" == "1" ]]; then
     local grafana_url=""
-    if [[ "${ENABLE_GRAFANA:-1}" == "1" || ",${COMPOSE_PROFILES:-}," == *",with-grafana,"* ]]; then
+    if [[ "${GRAFANA_ENABLED:-1}" == "1" || ",${COMPOSE_PROFILES:-}," == *",with-grafana,"* ]]; then
       grafana_url="http://127.0.0.1:3000"
     fi
     log "→ relaygate panel install"
@@ -741,7 +778,7 @@ Invoke_Product() {
       ENABLE_NOW=1 ./bin/relaygate agent install || die "agent install 失败"
       systemctl restart relaygate-agent 2>/dev/null || true
     else
-      warn "ENABLE_PANEL=0 但未检测到 CONTROL_URL/AGENT_TOKEN；跳过 agent install"
+      warn "PANEL_ENABLED=0 但未检测到 CONTROL_URL/AGENT_TOKEN；跳过 agent install"
     fi
   fi
 
@@ -766,7 +803,7 @@ Show_Result() {
   ok "RelayGate ${ACTION} 成功（${elapsed}s） version=${VERSION:-?} arch=${ARCH}"
   log "目录: ${INSTALL_DIR}  密钥: ${SECRETS_DIR}"
   log "运维: cd ${INSTALL_DIR} && ./bin/relaygate reload|smoke|doctor"
-  if [[ "${ENABLE_PANEL:-1}" == "1" ]]; then
+  if [[ "${PANEL_ENABLED:-1}" == "1" ]]; then
     log "Panel: http://${GATEWAY_PUBLIC_IP:-<IP>}:9000 （默认 PANEL_BIND=0.0.0.0:9000）"
     log "默认管理员密码: relaygate（密钥文件 panel_admin_password；生产务必改密）"
     log "升级: curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh | sudo bash -s -- upgrade"

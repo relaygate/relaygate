@@ -212,7 +212,7 @@ func runFirewall(args []string) int {
 func runSecurity(args []string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "usage: relaygate security list|kernel-conf|apply-kernel|verify")
-		fmt.Fprintln(os.Stderr, "  名单与参数编辑 security.policies；防火墙用 sudo relaygate firewall apply")
+		fmt.Fprintln(os.Stderr, "  名单与参数编辑 security.access / security.protections；防火墙用 sudo relaygate firewall apply")
 		return 2
 	}
 	root := mustRoot()
@@ -224,28 +224,33 @@ func runSecurity(args []string) int {
 			return exitErr(err)
 		}
 		res.Security.EnsureSecurityDefaults()
-		for _, p := range res.Security.Policies {
+		if a := res.Security.Access; a != nil {
+			state := "on"
+			if !a.Enabled {
+				state = "off"
+			}
+			fmt.Printf("access (firewall ACL) [%s]\n", state)
+			for _, c := range a.Deny {
+				fmt.Printf("  deny: %s\n", c)
+			}
+			for _, c := range a.Allow {
+				fmt.Printf("  allow: %s\n", c)
+			}
+		}
+		for _, p := range res.Security.Protections {
 			state := "on"
 			if !p.Enabled {
 				state = "off"
 			}
 			tags := strings.Join(p.AttackTags, ",")
 			fmt.Printf("%s (%s) [%s] %s\n", p.ID, p.Type, tags, state)
-			if p.ID == resources.PolicyAllowlist {
-				for _, c := range p.Params.Deny {
-					fmt.Printf("  deny: %s\n", c)
-				}
-				for _, c := range p.Params.Allow {
-					fmt.Printf("  allow: %s\n", c)
-				}
-			}
 			if p.ID == resources.PolicyKernelSyn && p.Enabled {
 				fmt.Printf("  tcp_syncookies=%d tcp_max_syn_backlog=%d\n",
 					p.Params.TcpSyncookies, p.Params.TcpMaxSynBacklog)
 			}
 		}
 		fmt.Println("防火墙策略生效: validate + sudo relaygate firewall apply；网关策略: reload；内核(kernel_syn): relaygate security apply-kernel --verify")
-		fmt.Println("节点 agent 拉取后默认自动应用主机侧（ENABLE_PANEL=0）；主控默认不自动应用（见 SECURITY_AUTO_APPLY）")
+		fmt.Println("节点 agent 拉取后默认自动应用主机侧（PANEL_ENABLED=0）；主控默认不自动应用（见 SECURITY_AUTO_APPLY）")
 		return 0
 	case "kernel-conf":
 		res, err := resources.Load(resPath)
@@ -362,8 +367,8 @@ func runProfile(args []string) int {
 			return exitErr(err)
 		}
 		fmt.Print(sum.String())
-		fmt.Println("已写入 defaults。请: relaygate validate && relaygate reload")
-		fmt.Println("若改了防火墙档位，另需: sudo relaygate firewall apply")
+		fmt.Println("已写入档位（defaults / security）。请: relaygate validate && relaygate reload")
+		fmt.Println("若改了防火墙策略，另需: sudo relaygate firewall apply；内核: relaygate security apply-kernel --verify")
 		return 0
 	case "help", "-h", "--help":
 		fmt.Fprintln(os.Stderr, "usage: relaygate profile list|show|apply")
@@ -791,7 +796,7 @@ func runAgent(args []string) int {
 			return exitErr(err)
 		}
 		fmt.Printf("已拉取并落盘版本 %s（applied 未更新）\n", ver)
-		fmt.Println("提示: 由 agent run 的 AfterPull 热更新成功后才会上报 applied；也可手动 relaygate reload。")
+		fmt.Println("提示: agent run 完成拉取后落地（内核→防火墙→网关）成功后才会上报 applied；也可手动 security apply-kernel / firewall apply / reload。")
 		return 0
 	case "run":
 		if _, err := dataplane.LoadEnv(root); err != nil {

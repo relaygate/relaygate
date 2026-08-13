@@ -58,7 +58,7 @@ func materializeGatewayNft(packagingRoot, sshPort, forwardPortsInclude string, s
 		tcpRate = resources.DisabledFirewallRatePerIP
 		tcpBurst = resources.DisabledFirewallBurst
 	}
-	if !sec.PolicyEnabled(resources.PolicyUDPLimit) {
+	if !sec.PolicyEnabled(resources.PolicyFirewallUDPLimit) {
 		udpRate = resources.DisabledFirewallRatePerIP
 		udpBurst = resources.DisabledFirewallBurst
 	}

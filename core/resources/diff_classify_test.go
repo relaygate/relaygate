@@ -21,7 +21,7 @@ func TestChangeSummaryClassify(t *testing.T) {
 		},
 		{
 			name:    "security policy nft params firewall only",
-			summary: ChangeSummary{SecurityChanged: []string{"security.policies.firewall_new_conn_limit.params.tcp_per_ip 30/second→60/second"}},
+			summary: ChangeSummary{SecurityChanged: []string{"security.protections.firewall_new_conn_limit.params.tcp_per_ip 30/second→60/second"}},
 			wantFW:  true,
 		},
 		{
@@ -106,13 +106,39 @@ func TestChangeSummaryClassify(t *testing.T) {
 		},
 		{
 			name:    "security policy nft disabled firewall only",
-			summary: ChangeSummary{SecurityChanged: []string{"security.policies.firewall_new_conn_limit.enabled true→false"}},
+			summary: ChangeSummary{SecurityChanged: []string{"security.protections.firewall_new_conn_limit.enabled true→false"}},
 			wantFW:  true,
 		},
 		{
-			name:    "security policy allowlist firewall only",
-			summary: ChangeSummary{SecurityChanged: []string{"security.policies.allowlist.enabled true→false"}},
+			name:    "security access firewall only",
+			summary: ChangeSummary{SecurityChanged: []string{"security.access.enabled true→false"}},
 			wantFW:  true,
+		},
+		{
+			name:    "kernel_syn only — no firewall surface",
+			summary: ChangeSummary{SecurityChanged: []string{"security.protections.kernel_syn.enabled true→false"}},
+		},
+		{
+			name:       "gateway_new_conn_limit only — reload, not firewall",
+			summary:    ChangeSummary{SecurityChanged: []string{"security.protections.gateway_new_conn_limit.enabled true→false"}},
+			wantReload: true,
+			wantHot:    true,
+		},
+		{
+			name:       "gateway_conn_limit only — reload, not firewall",
+			summary:    ChangeSummary{SecurityChanged: []string{"security.protections.gateway_conn_limit.params.max_connections 1024→2048"}},
+			wantReload: true,
+			wantHot:    true,
+		},
+		{
+			name: "gateway + firewall policies both",
+			summary: ChangeSummary{SecurityChanged: []string{
+				"security.protections.gateway_new_conn_limit.enabled true→false",
+				"security.protections.firewall_new_conn_limit.enabled true→false",
+			}},
+			wantReload: true,
+			wantFW:     true,
+			wantHot:    true,
 		},
 	}
 

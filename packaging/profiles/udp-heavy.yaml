@@ -1,7 +1,8 @@
 # UDP 侧重：放宽 UDP PPS，缩短 UDP idle
+# 不写 access：合并时保留节点当前名单
 name: udp-heavy
 scenario: udp_heavy
-description: 适合 UDP 包率较高的业务；放宽 nft UDP PPS，仍需云侧挡大流量洪泛
+description: 适合 UDP 包率较高的业务；放宽防火墙 UDP PPS，仍需云侧挡大流量洪泛
 
 defaults:
   default_upstream_tcp_port: 7777
@@ -16,26 +17,26 @@ defaults:
     healthy_threshold: 2
 
 security:
-  policies:
+  protections:
     - id: firewall_new_conn_limit
-      type: new_conn_limit_firewall
+      type: firewall_new_conn_limit
       enabled: true
       params:
         tcp_per_ip: 40/second
         burst: 80
     - id: gateway_new_conn_limit
-      type: new_conn_limit_gateway
+      type: gateway_new_conn_limit
       enabled: true
       params:
         per_sec: 400
         burst: 800
-    - id: conn_limit
-      type: conn_limit
+    - id: gateway_conn_limit
+      type: gateway_conn_limit
       enabled: true
       params:
         max_connections: 2048
-    - id: udp_limit
-      type: udp_limit
+    - id: firewall_udp_limit
+      type: firewall_udp_limit
       enabled: true
       params:
         udp_pps_per_ip: 1200/second

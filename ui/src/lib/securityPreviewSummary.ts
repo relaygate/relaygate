@@ -26,32 +26,32 @@ export function parseKernelParams(content: string | undefined): PreviewKv[] {
 
 export function buildComponentSummaries(
   preview: SecurityPreview,
-  policies: SecurityState,
+  state: SecurityState,
   disabledLabel: string,
 ): ComponentPreviewSummary[] {
-  const kernelPolicy = policyById(policies, "kernel_syn")
+  const kernelPolicy = policyById(state, "kernel_syn")
   const kernelEnabled = Boolean(preview.kernel?.enabled && kernelPolicy?.enabled)
   const kernelParams = kernelEnabled
     ? parseKernelParams(preview.kernel?.content)
     : [{ key: "kernel_syn", value: disabledLabel }]
 
-  const allowlist = policyById(policies, "allowlist")
-  const fwLimit = policyById(policies, "firewall_new_conn_limit")
-  const udpLimit = policyById(policies, "udp_limit")
+  const access = state.access
+  const fwLimit = policyById(state, "firewall_new_conn_limit")
+  const udpLimit = policyById(state, "firewall_udp_limit")
   const firewallParams: PreviewKv[] = []
   let firewallEnabled = false
 
-  if (allowlist?.enabled) {
+  if (access?.enabled) {
     firewallEnabled = true
-    const deny = allowlist.params.deny ?? []
-    const allow = allowlist.params.allow ?? []
+    const deny = access.deny ?? []
+    const allow = access.allow ?? []
     firewallParams.push({ key: "acl.deny", value: String(deny.length) })
     firewallParams.push({ key: "acl.allow", value: String(allow.length) })
     if (allow.length > 0) {
       firewallParams.push({ key: "acl.mode", value: "strict" })
     }
   } else {
-    firewallParams.push({ key: "allowlist", value: disabledLabel })
+    firewallParams.push({ key: "access", value: disabledLabel })
   }
 
   if (fwLimit?.enabled) {
@@ -67,20 +67,20 @@ export function buildComponentSummaries(
     firewallParams.push({ key: "udp_pps_per_ip", value: udpLimit.params.udp_pps_per_ip ?? "—" })
     firewallParams.push({ key: "udp_burst", value: String(udpLimit.params.udp_burst ?? 0) })
   } else {
-    firewallParams.push({ key: "udp_limit", value: disabledLabel })
+    firewallParams.push({ key: "firewall_udp_limit", value: disabledLabel })
   }
 
-  const gatewayRate = policyById(policies, "gateway_new_conn_limit")
-  const connLimit = policyById(policies, "conn_limit")
+  const gatewayRate = policyById(state, "gateway_new_conn_limit")
+  const connLimit = policyById(state, "gateway_conn_limit")
   const g = preview.gateway
   const gatewayParams: PreviewKv[] = []
   let gatewayEnabled = false
 
-  if (connLimit?.enabled && g?.conn_limit_enabled) {
+  if (connLimit?.enabled && g?.gateway_conn_limit_enabled) {
     gatewayEnabled = true
     gatewayParams.push({ key: "max_connections", value: String(g.max_connections) })
   } else {
-    gatewayParams.push({ key: "conn_limit", value: disabledLabel })
+    gatewayParams.push({ key: "gateway_conn_limit", value: disabledLabel })
   }
 
   if (gatewayRate?.enabled && g?.rate_limit_enabled) {

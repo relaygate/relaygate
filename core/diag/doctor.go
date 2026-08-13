@@ -49,7 +49,7 @@ func Run(opt Options) error {
 	if err != nil {
 		return err
 	}
-	if opt.EnablePanel || env.EnablePanel == "1" {
+	if opt.EnablePanel || env.PanelEnabled == "1" {
 		opt.EnablePanel = true
 	}
 	if opt.EnableGraf || strings.Contains(env.Raw["COMPOSE_PROFILES"], "with-grafana") {
@@ -150,14 +150,14 @@ func Run(opt Options) error {
 		if role != "primary" && role != "standby" {
 			return fmt.Errorf("PANEL_ROLE=%q 无效（须 primary|standby）", env.PanelRole)
 		}
-		if role == "standby" && env.EnablePanel == "1" {
-			fmt.Println("WARN: PANEL_ROLE=standby 但 ENABLE_PANEL=1（只读 Panel；纯节点通常 ENABLE_PANEL=0）")
+		if role == "standby" && env.PanelEnabled == "1" {
+			fmt.Println("WARN: PANEL_ROLE=standby 但 PANEL_ENABLED=1（只读 Panel；纯节点通常 PANEL_ENABLED=0）")
 		}
-		if role == "primary" && env.EnablePanel != "1" {
-			fmt.Println("WARN: PANEL_ROLE=primary 但 ENABLE_PANEL!=1（主控通常需要 Panel）")
+		if role == "primary" && env.PanelEnabled != "1" {
+			fmt.Println("WARN: PANEL_ROLE=primary 但 PANEL_ENABLED!=1（主控通常需要 Panel）")
 		}
-		fmt.Printf("PANEL_ROLE=%s ENABLE_PANEL=%s DRAIN_WAIT=%ds ENVOY_ADMIN_PORT=%s\n",
-			env.PanelRole, env.EnablePanel, env.DrainWait, env.EnvoyAdminPort)
+		fmt.Printf("PANEL_ROLE=%s PANEL_ENABLED=%s DRAIN_WAIT=%ds ENVOY_ADMIN_PORT=%s\n",
+			env.PanelRole, env.PanelEnabled, env.DrainWait, env.EnvoyAdminPort)
 		return nil
 	})
 
@@ -344,7 +344,7 @@ func dualActiveOrNLBHints(root string, env dataplane.Env) bool {
 		return true
 	}
 	// Standby-style primary (panel disabled) is typical for dual-active secondaries mislabeled.
-	return role == "primary" && env.EnablePanel != "1"
+	return role == "primary" && env.PanelEnabled != "1"
 }
 
 func httpGetBody(url string) (string, error) {

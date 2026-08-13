@@ -22,9 +22,10 @@ func VerifyNftablesLoaded(root string) error {
 	return nil
 }
 
-// ApplyNftablesConfirmed renders and applies nftables from current resources.yaml
-// without interactive confirm (caller already gated via SECURITY_AUTO_APPLY / Panel).
+// ApplyNftablesConfirmed renders and applies the firewall ruleset from current
+// resources.yaml without interactive confirm (caller already gated via
+// SECURITY_AUTO_APPLY / Panel).
 func ApplyNftablesConfirmed(root string) error {
-	fmt.Println("nftables：按 resources.yaml 渲染并应用防火墙规则集")
+	fmt.Println("防火墙：按 resources.yaml 渲染并应用规则集")
 	return FirewallApplyConfirmed(root)
 }

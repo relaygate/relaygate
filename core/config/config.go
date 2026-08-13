@@ -192,14 +192,14 @@ type Env struct {
 	PrometheusRemoteWriteURL string
 	ComposeProjectName       string
 	PanelRole                string
-	EnablePanel              string
-	EnableGrafana            string
+	PanelEnabled             string // PANEL_ENABLED (1=主控 Panel；0=纯节点)
+	GrafanaEnabled           string // GRAFANA_ENABLED (1=启 with-grafana；空则看 COMPOSE_PROFILES)
 	ImageTag                 string
 	SecretsDir               string
 	GrafanaURL               string
 	DataDir                  string
 	DrainWait                int
-	ApplyFirewall            string
+	ApplyFirewall            string // APPLY_FIREWALL：安装/CLI 一次性落地防火墙（≠ SECURITY_AUTO_APPLY）
 	NonInteractive           string
 	FirewallConfirm          string
 	TCPPort                  string
@@ -209,9 +209,9 @@ type Env struct {
 	XDSEnabled bool
 	// XDSPort is the loopback ADS listen port (default 18000).
 	XDSPort string
-	// SecurityAutoApply controls host-side sysctl + nftables after agent pull.
-	// Empty = default: on only when ENABLE_PANEL=0 (pure node); off on control (ENABLE_PANEL=1).
-	// Explicit 1/0 overrides the default. Never auto-apply host modules on production control unless set to 1.
+	// SecurityAutoApply controls host-side kernel + firewall after agent pull.
+	// Empty = default: on only when PANEL_ENABLED=0 (pure node); off on control (PANEL_ENABLED=1).
+	// Explicit 1/0 overrides the default. Never auto-apply host domains on production control unless set to 1.
 	SecurityAutoApply string
 	Raw               map[string]string
 }
@@ -257,8 +257,8 @@ func LoadEnv(root string) (Env, error) {
 		PrometheusRemoteWriteURL: Getenv("PROMETHEUS_REMOTE_WRITE_URL", ""),
 		ComposeProjectName:       Getenv("COMPOSE_PROJECT_NAME", ""),
 		PanelRole:                Getenv("PANEL_ROLE", "primary"),
-		EnablePanel:              Getenv("ENABLE_PANEL", "1"),
-		EnableGrafana:            Getenv("ENABLE_GRAFANA", ""),
+		PanelEnabled:             Getenv("PANEL_ENABLED", "1"),
+		GrafanaEnabled:           Getenv("GRAFANA_ENABLED", ""),
 		ImageTag:                 Getenv("IMAGE_TAG", "local"),
 		SecretsDir:               Getenv("RELAYGATE_SECRETS_DIR", DefaultSecretsDir),
 		GrafanaURL:               Getenv("GRAFANA_URL", ""),
@@ -278,10 +278,10 @@ func LoadEnv(root string) (Env, error) {
 }
 
 // HostSecurityAutoApply reports whether agent pull should apply host-side
-// sysctl and nftables (in addition to Envoy HotApply).
+// kernel and firewall domains (in addition to gateway HotApply).
 // Explicit SECURITY_AUTO_APPLY wins; when unset, defaults to true only for
-// pure nodes (ENABLE_PANEL=0). Control hosts (ENABLE_PANEL=1) stay off by default
-// so upgrades never rewrite firewall/sysctl on the production control plane.
+// pure nodes (PANEL_ENABLED=0). Control hosts (PANEL_ENABLED=1) stay off by default
+// so upgrades never rewrite firewall/kernel on the production control plane.
 func (e Env) HostSecurityAutoApply() bool {
 	switch strings.ToLower(strings.TrimSpace(e.SecurityAutoApply)) {
 	case "1", "true", "yes", "on":
@@ -289,7 +289,7 @@ func (e Env) HostSecurityAutoApply() bool {
 	case "0", "false", "no", "off":
 		return false
 	default:
-		return strings.TrimSpace(e.EnablePanel) == "0"
+		return strings.TrimSpace(e.PanelEnabled) == "0"
 	}
 }
 

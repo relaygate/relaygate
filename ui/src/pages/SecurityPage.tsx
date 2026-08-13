@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
-import { EyeIcon } from "lucide-react"
+import { EyeIcon, PlusIcon, ShieldPlusIcon } from "lucide-react"
 
+import { EmptyState } from "@/components/layout/EmptyState"
 import { Page, PageHeader } from "@/components/layout/PageParts"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -38,19 +39,21 @@ import {
 } from "@/lib/api"
 import { matchesConfirm } from "@/lib/confirm"
 import {
+  addProtection,
+  availableCatalogEntries,
   cloneSecurityState,
-  defaultSecurityState,
   findInvalidAllowlistEntry,
   normalizeAllowlistEntries,
   parseAllowlistLines,
+  parsePolicyParamsJson,
   parseSecurityPolicies,
   patchSecurityPolicies,
   policiesEqual,
-  policiesFromMerge,
-  policyById,
+  policyLayer,
+  securityFromMerge,
+  stringifyPolicyParams,
+  validateAccess,
   SECURITY_LOCAL_SOURCE,
-  SECURITY_POLICY_IDS,
-  validatePolicyParams,
   type SecurityPolicy,
   type SecurityPolicyId,
   type SecurityState,
@@ -66,7 +69,7 @@ export function SecurityPage() {
   const [draftPolicies, setDraftPolicies] = useState<SecurityState | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [applyingNft, setApplyingNft] = useState(false)
+  const [applyingFirewall, setApplyingFirewall] = useState(false)
   const [sourceLoading, setSourceLoading] = useState(false)
   const [denyText, setDenyText] = useState("")
   const [allowText, setAllowText] = useState("")
@@ -78,6 +81,11 @@ export function SecurityPage() {
   const [preview, setPreview] = useState<SecurityPreview | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewing, setPreviewing] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
+  const [addSelected, setAddSelected] = useState<SecurityPolicyId | null>(null)
+  /** Local JSON text per protection id (open params editor). */
+  const [paramsText, setParamsText] = useState<Record<string, string>>({})
+  const [paramsInvalid, setParamsInvalid] = useState<Record<string, boolean>>({})
 
   const dirty = useMemo(
     () =>
@@ -87,17 +95,33 @@ export function SecurityPage() {
     [savedPolicies, draftPolicies],
   )
 
+  const catalogAvailable = useMemo(
+    () => (draftPolicies ? availableCatalogEntries(draftPolicies) : []),
+    [draftPolicies],
+  )
+
+  function syncParamsEditors(state: SecurityState) {
+    const texts: Record<string, string> = {}
+    const invalid: Record<string, boolean> = {}
+    for (const p of state.protections) {
+      texts[p.id] = stringifyPolicyParams(p.params)
+      invalid[p.id] = false
+    }
+    setParamsText(texts)
+    setParamsInvalid(invalid)
+  }
+
   const loadSaved = useCallback(async () => {
     const data = await getConfigResources()
     const parsed = cloneSecurityState(parseSecurityPolicies(data.content))
     setSavedPolicies(parsed)
     setDraftPolicies(cloneSecurityState(parsed))
-    const allowlist = parsed.policies.find((p) => p.id === "allowlist")
-    setDenyText((allowlist?.params.deny ?? []).join("\n"))
-    setAllowText((allowlist?.params.allow ?? []).join("\n"))
+    setDenyText((parsed.access.deny ?? []).join("\n"))
+    setAllowText((parsed.access.allow ?? []).join("\n"))
     setSelectedSource(SECURITY_LOCAL_SOURCE)
     setPreview(null)
     setPreviewOpen(false)
+    syncParamsEditors(parsed)
     return parsed
   }, [])
 
@@ -124,21 +148,15 @@ export function SecurityPage() {
     setDraftPolicies((prev) => {
       if (!prev) return prev
       return {
-        policies: prev.policies.map((p) =>
-          p.id === id ? { ...p, ...patch, params: { ...p.params, ...patch.params } } : p,
-        ),
-      }
-    })
-    setPreview(null)
-    setPreviewOpen(false)
-  }
-
-  function patchParam(id: SecurityPolicyId, key: string, value: string | number) {
-    setDraftPolicies((prev) => {
-      if (!prev) return prev
-      return {
-        policies: prev.policies.map((p) =>
-          p.id === id ? { ...p, params: { ...p.params, [key]: value } } : p,
+        ...prev,
+        protections: prev.protections.map((p) =>
+          p.id === id
+            ? {
+                ...p,
+                ...patch,
+                params: patch.params ? { ...patch.params } : { ...p.params },
+              }
+            : p,
         ),
       }
     })
@@ -150,43 +168,75 @@ export function SecurityPage() {
     setDraftPolicies((prev) => {
       if (!prev) return prev
       return {
-        policies: prev.policies.map((p) =>
-          p.id === "allowlist" ? { ...p, params: { ...p.params, [list]: entries } } : p,
-        ),
+        ...prev,
+        access: { ...prev.access, [list]: entries },
       }
     })
     setPreview(null)
     setPreviewOpen(false)
   }
 
+  function patchAccessEnabled(enabled: boolean) {
+    setDraftPolicies((prev) => {
+      if (!prev) return prev
+      return { ...prev, access: { ...prev.access, enabled } }
+    })
+    setPreview(null)
+    setPreviewOpen(false)
+  }
+
+  function handleParamsTextChange(id: SecurityPolicyId, text: string) {
+    setParamsText((prev) => ({ ...prev, [id]: text }))
+    const parsed = parsePolicyParamsJson(text)
+    if (!parsed) {
+      setParamsInvalid((prev) => ({ ...prev, [id]: true }))
+      return
+    }
+    setParamsInvalid((prev) => ({ ...prev, [id]: false }))
+    patchPolicy(id, { params: parsed })
+  }
+
+  function openAddModal() {
+    const first = catalogAvailable[0]?.id ?? null
+    setAddSelected(first)
+    setAddOpen(true)
+  }
+
+  function confirmAddProtection() {
+    if (!draftPolicies || standby || !addSelected) return
+    const next = addProtection(draftPolicies, addSelected)
+    setDraftPolicies(next)
+    syncParamsEditors(next)
+    setPreview(null)
+    setPreviewOpen(false)
+    setAddOpen(false)
+    setAddSelected(null)
+    toast.success(t("security.add_protection_toast"))
+  }
+
   async function savePolicies() {
     if (!draftPolicies || standby || !dirty) return
-    const normalizedPolicies = draftPolicies.policies.map((p) => {
-      if (p.id !== "allowlist") return p
-      return {
-        ...p,
-        params: {
-          ...p.params,
-          deny: normalizeAllowlistEntries(p.params.deny ?? []),
-          allow: normalizeAllowlistEntries(p.params.allow ?? []),
-        },
-      }
-    })
-    const nextState = { policies: normalizedPolicies }
-    const allowlist = normalizedPolicies.find((p) => p.id === "allowlist")
-    setDenyText((allowlist?.params.deny ?? []).join("\n"))
-    setAllowText((allowlist?.params.allow ?? []).join("\n"))
+    const badJson = draftPolicies.protections.find((p) => paramsInvalid[p.id])
+    if (badJson) {
+      toast.error(t("security.params_json_invalid"))
+      return
+    }
+    const nextState: SecurityState = {
+      access: {
+        ...draftPolicies.access,
+        deny: normalizeAllowlistEntries(draftPolicies.access.deny ?? []),
+        allow: normalizeAllowlistEntries(draftPolicies.access.allow ?? []),
+      },
+      protections: draftPolicies.protections.map((p) => ({ ...p, params: { ...p.params } })),
+    }
+    setDenyText(nextState.access.deny.join("\n"))
+    setAllowText(nextState.access.allow.join("\n"))
     setDraftPolicies(nextState)
-    for (const p of normalizedPolicies) {
-      const invalid = validatePolicyParams(p)
-      if (invalid) {
-        if (invalid.startsWith("allowlist:")) {
-          toast.error(t("security.toast_invalid_cidr", { entry: invalid.slice("allowlist:".length) }))
-        } else {
-          toast.error(t("security.toast_invalid_param", { field: invalid }))
-        }
-        return
-      }
+    syncParamsEditors(nextState)
+    const accessInvalid = validateAccess(nextState.access)
+    if (accessInvalid) {
+      toast.error(t("security.toast_invalid_cidr", { entry: accessInvalid.slice("access:".length) }))
+      return
     }
     setSaving(true)
     try {
@@ -205,9 +255,9 @@ export function SecurityPage() {
     }
   }
 
-  async function handleApplyNft() {
+  async function handleApplyFirewall() {
     if (standby || !matchesConfirm(applyConfirm)) return
-    setApplyingNft(true)
+    setApplyingFirewall(true)
     try {
       await applyFirewall(applyConfirm.trim())
       toast.success(t("security.toast_firewall_ok"))
@@ -216,7 +266,7 @@ export function SecurityPage() {
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : t("security.toast_firewall_fail"))
     } finally {
-      setApplyingNft(false)
+      setApplyingFirewall(false)
     }
   }
 
@@ -225,7 +275,10 @@ export function SecurityPage() {
     setPreviewOpen(true)
     setPreviewing(true)
     try {
-      const result = await previewSecurity(draftPolicies.policies)
+      const result = await previewSecurity({
+        access: draftPolicies.access,
+        protections: draftPolicies.protections,
+      })
       setPreview(result)
     } catch (err) {
       setPreviewOpen(false)
@@ -250,12 +303,13 @@ export function SecurityPage() {
         toast.success(t("security.toast_local_loaded"))
       } else {
         const merged = await mergeSecurityProfile(value)
-        const policies = policiesFromMerge(merged.policies)
-        const next = cloneSecurityState({ policies })
+        const next = cloneSecurityState(
+          securityFromMerge({ access: merged.access, protections: merged.protections }),
+        )
         setDraftPolicies(next)
-        const allowlist = policyById(next, "allowlist")
-        setDenyText((allowlist?.params.deny ?? []).join("\n"))
-        setAllowText((allowlist?.params.allow ?? []).join("\n"))
+        setDenyText((next.access.deny ?? []).join("\n"))
+        setAllowText((next.access.allow ?? []).join("\n"))
+        syncParamsEditors(next)
         setPreview(null)
         setPreviewOpen(false)
         toast.success(t("security.toast_scenario_loaded", { name: scenarioLabel(value) }))
@@ -270,9 +324,7 @@ export function SecurityPage() {
 
   function handleAllowlistBlur(list: "deny" | "allow") {
     if (!draftPolicies) return
-    const p = policyById(draftPolicies, "allowlist")
-    if (!p) return
-    const normalized = normalizeAllowlistEntries(p.params[list] ?? [])
+    const normalized = normalizeAllowlistEntries(draftPolicies.access[list] ?? [])
     patchAllowlist(list, normalized)
     const text = normalized.join("\n")
     if (list === "deny") setDenyText(text)
@@ -317,167 +369,25 @@ export function SecurityPage() {
     )
   }
 
-  function renderParams(p: SecurityPolicy) {
-    const par = p.params
-    switch (p.id) {
-      case "kernel_syn":
-        return (
-          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            <Field>
-              <FieldLabel>{t("security.param.tcp_syncookies")}</FieldLabel>
-              <div className="flex h-9 items-center gap-2">
-                <Switch
-                  checked={(par.tcp_syncookies ?? 1) === 1}
-                  disabled={standby || !p.enabled}
-                  onCheckedChange={(v) => patchParam(p.id, "tcp_syncookies", v ? 1 : 0)}
-                  aria-label={t("security.param.tcp_syncookies")}
-                />
-                <span className="text-xs text-muted-foreground">
-                  {(par.tcp_syncookies ?? 1) === 1 ? t("security.param.on") : t("security.param.off")}
-                </span>
-              </div>
-            </Field>
-            <Field>
-              <FieldLabel>{t("security.param.tcp_max_syn_backlog")}</FieldLabel>
-              <Input
-                type="number"
-                value={par.tcp_max_syn_backlog ?? 8192}
-                disabled={standby || !p.enabled}
-                className="font-mono text-xs"
-                onChange={(e) =>
-                  patchParam(p.id, "tcp_max_syn_backlog", Number.parseInt(e.target.value, 10) || 0)
-                }
-              />
-            </Field>
-            <Field>
-              <FieldLabel>{t("security.param.tcp_synack_retries")}</FieldLabel>
-              <Input
-                type="number"
-                value={par.tcp_synack_retries ?? 2}
-                disabled={standby || !p.enabled}
-                className="font-mono text-xs"
-                onChange={(e) =>
-                  patchParam(p.id, "tcp_synack_retries", Number.parseInt(e.target.value, 10) || 0)
-                }
-              />
-            </Field>
-            <Field>
-              <FieldLabel>{t("security.param.tcp_syn_retries")}</FieldLabel>
-              <Input
-                type="number"
-                value={par.tcp_syn_retries ?? 3}
-                disabled={standby || !p.enabled}
-                className="font-mono text-xs"
-                onChange={(e) =>
-                  patchParam(p.id, "tcp_syn_retries", Number.parseInt(e.target.value, 10) || 0)
-                }
-              />
-            </Field>
-            <Field>
-              <FieldLabel>{t("security.param.tcp_abort_on_overflow")}</FieldLabel>
-              <div className="flex h-9 items-center gap-2">
-                <Switch
-                  checked={(par.tcp_abort_on_overflow ?? 0) === 1}
-                  disabled={standby || !p.enabled}
-                  onCheckedChange={(v) => patchParam(p.id, "tcp_abort_on_overflow", v ? 1 : 0)}
-                  aria-label={t("security.param.tcp_abort_on_overflow")}
-                />
-                <span className="text-xs text-muted-foreground">
-                  {(par.tcp_abort_on_overflow ?? 0) === 1 ? t("security.param.on") : t("security.param.off")}
-                </span>
-              </div>
-            </Field>
-          </div>
-        )
-      case "firewall_new_conn_limit":
-        return (
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            <Field>
-              <FieldLabel>{t("security.param.tcp_per_ip")}</FieldLabel>
-              <Input
-                value={par.tcp_per_ip ?? ""}
-                disabled={standby || !p.enabled}
-                className="font-mono text-xs"
-                onChange={(e) => patchParam(p.id, "tcp_per_ip", e.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel>{t("security.param.burst")}</FieldLabel>
-              <Input
-                type="number"
-                value={par.burst ?? 0}
-                disabled={standby || !p.enabled}
-                className="font-mono text-xs"
-                onChange={(e) => patchParam(p.id, "burst", Number.parseInt(e.target.value, 10) || 0)}
-              />
-            </Field>
-          </div>
-        )
-      case "gateway_new_conn_limit":
-        return (
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            <Field>
-              <FieldLabel>{t("security.param.per_sec")}</FieldLabel>
-              <Input
-                type="number"
-                value={par.per_sec ?? 0}
-                disabled={standby || !p.enabled}
-                className="font-mono text-xs"
-                onChange={(e) => patchParam(p.id, "per_sec", Number.parseInt(e.target.value, 10) || 0)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel>{t("security.param.burst")}</FieldLabel>
-              <Input
-                type="number"
-                value={par.burst ?? 0}
-                disabled={standby || !p.enabled}
-                className="font-mono text-xs"
-                onChange={(e) => patchParam(p.id, "burst", Number.parseInt(e.target.value, 10) || 0)}
-              />
-            </Field>
-          </div>
-        )
-      case "conn_limit":
-        return (
-          <Field className="mt-2 max-w-xs">
-            <FieldLabel>{t("security.param.max_connections")}</FieldLabel>
-            <Input
-              type="number"
-              value={par.max_connections ?? 0}
-              disabled={standby || !p.enabled}
-              className="font-mono text-xs"
-              onChange={(e) => patchParam(p.id, "max_connections", Number.parseInt(e.target.value, 10) || 0)}
-            />
-          </Field>
-        )
-      case "udp_limit":
-        return (
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            <Field>
-              <FieldLabel>{t("security.param.udp_pps")}</FieldLabel>
-              <Input
-                value={par.udp_pps_per_ip ?? ""}
-                disabled={standby || !p.enabled}
-                className="font-mono text-xs"
-                onChange={(e) => patchParam(p.id, "udp_pps_per_ip", e.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel>{t("security.param.udp_burst")}</FieldLabel>
-              <Input
-                type="number"
-                value={par.udp_burst ?? 0}
-                disabled={standby || !p.enabled}
-                className="font-mono text-xs"
-                onChange={(e) => patchParam(p.id, "udp_burst", Number.parseInt(e.target.value, 10) || 0)}
-              />
-            </Field>
-          </div>
-        )
-      default:
-        return null
-    }
+  function renderParamsJson(p: SecurityPolicy) {
+    const text = paramsText[p.id] ?? stringifyPolicyParams(p.params)
+    const invalid = Boolean(paramsInvalid[p.id])
+    return (
+      <Field className="mt-2" data-invalid={invalid ? true : undefined}>
+        <FieldLabel htmlFor={`sec-params-${p.id}`}>{t("security.params_json_label")}</FieldLabel>
+        <FieldDescription>{t("security.params_json_hint")}</FieldDescription>
+        <Textarea
+          id={`sec-params-${p.id}`}
+          value={text}
+          disabled={standby || saving || !p.enabled}
+          className="min-h-28 font-mono text-xs"
+          aria-invalid={invalid ? true : undefined}
+          spellCheck={false}
+          onChange={(e) => handleParamsTextChange(p.id, e.target.value)}
+        />
+        {invalid ? <FieldError>{t("security.params_json_invalid")}</FieldError> : null}
+      </Field>
+    )
   }
 
   const previewSummaries = useMemo(() => {
@@ -485,9 +395,8 @@ export function SecurityPage() {
     return buildComponentSummaries(preview, draftPolicies, t("security.preview_disabled"))
   }, [preview, draftPolicies, t])
 
-  const allowlistPolicy = draftPolicies ? policyById(draftPolicies, "allowlist") : null
-  const denyEntries = allowlistPolicy?.params.deny ?? []
-  const allowEntries = allowlistPolicy?.params.allow ?? []
+  const denyEntries = draftPolicies?.access.deny ?? []
+  const allowEntries = draftPolicies?.access.allow ?? []
 
   const confirmPlaceholder = i18n.language.toLowerCase().startsWith("zh") ? "确认" : "Confirm"
 
@@ -504,11 +413,7 @@ export function SecurityPage() {
               disabled={standby || loading || profilesLoading || sourceLoading}
             >
               <SelectTrigger className="h-7 w-44 min-w-0 max-w-[12rem] text-[0.8rem]" size="sm">
-                {sourceLoading ? (
-                  <Spinner className="size-3.5" />
-                ) : (
-                  <SelectValue />
-                )}
+                {sourceLoading ? <Spinner className="size-3.5" /> : <SelectValue />}
               </SelectTrigger>
               <SelectContent alignItemWithTrigger className="z-[100] min-w-0 w-(--anchor-width)">
                 <SelectItem value={SECURITY_LOCAL_SOURCE}>
@@ -524,6 +429,15 @@ export function SecurityPage() {
             <Button
               size="sm"
               variant="outline"
+              onClick={openAddModal}
+              disabled={standby || loading || saving || sourceLoading || !draftPolicies}
+            >
+              <PlusIcon data-icon="inline-start" />
+              {t("security.add_protection")}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
               onClick={() => handlePreview()}
               disabled={loading || !draftPolicies || previewing || sourceLoading}
             >
@@ -533,7 +447,7 @@ export function SecurityPage() {
             <Button
               size="sm"
               onClick={savePolicies}
-              disabled={standby || loading || saving || applyingNft || sourceLoading || !dirty}
+              disabled={standby || loading || saving || applyingFirewall || sourceLoading || !dirty}
             >
               {saving ? <Spinner data-icon="inline-start" /> : null}
               {t("security.save")}
@@ -545,9 +459,9 @@ export function SecurityPage() {
                 setApplyConfirm("")
                 setApplyOpen(true)
               }}
-              disabled={standby || loading || saving || applyingNft || sourceLoading}
+              disabled={standby || loading || saving || applyingFirewall || sourceLoading}
             >
-              {applyingNft ? <Spinner data-icon="inline-start" /> : null}
+              {applyingFirewall ? <Spinner data-icon="inline-start" /> : null}
               {t("security.apply_firewall")}
             </Button>
           </>
@@ -561,44 +475,122 @@ export function SecurityPage() {
         </div>
       ) : (
         <ul className="divide-y divide-border/50 rounded-md border border-border/40">
-          {SECURITY_POLICY_IDS.map((id) => {
-            const p = policyById(draftPolicies, id) ?? defaultSecurityState().policies[0]
-            return (
-              <li key={id} className="px-3 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-[13px] font-medium text-foreground">
-                        {t(`security.policy.${id}`)}
-                      </p>
-                      {p.attack_tags.map((tag) => (
-                        <Badge key={tag} variant="outline" className="text-[10px] font-mono">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
+          <li className="px-3 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-medium text-foreground">{t("security.policy.access")}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{t("security.access_hint")}</p>
+              </div>
+              <Switch
+                checked={draftPolicies.access.enabled}
+                disabled={standby || saving}
+                onCheckedChange={(v) => patchAccessEnabled(v)}
+                aria-label={t("security.policy.access")}
+              />
+            </div>
+            {draftPolicies.access.enabled ? (
+              <div className={cn("mt-3 grid gap-4 lg:grid-cols-2")}>
+                {renderAllowlistTextarea("deny", denyText, setDenyText, denyEntries)}
+                {renderAllowlistTextarea("allow", allowText, setAllowText, allowEntries)}
+              </div>
+            ) : null}
+          </li>
+          {draftPolicies.protections.map((p) => (
+            <li key={p.id} className="px-3 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-[13px] font-medium text-foreground">
+                      {t(`security.policy.${p.id}`)}
+                    </p>
+                    <Badge variant="secondary" className="text-[10px]">
+                      {t(`security.preview_component_${policyLayer(p.id)}`)}
+                    </Badge>
+                    {p.attack_tags.map((tag) => (
+                      <Badge key={tag} variant="outline" className="text-[10px] font-mono">
+                        {tag}
+                      </Badge>
+                    ))}
                   </div>
-                  <Switch
-                    checked={p.enabled}
-                    disabled={standby || saving}
-                    onCheckedChange={(v) => patchPolicy(id, { enabled: v })}
-                    aria-label={t(`security.policy.${id}`)}
-                  />
                 </div>
-                {renderParams(p)}
-                {id === "allowlist" && p.enabled ? (
-                  <div className={cn("mt-3 grid gap-4 lg:grid-cols-2")}>
-                    {renderAllowlistTextarea("deny", denyText, setDenyText, denyEntries)}
-                    {renderAllowlistTextarea("allow", allowText, setAllowText, allowEntries)}
-                  </div>
-                ) : null}
-              </li>
-            )
-          })}
+                <Switch
+                  checked={p.enabled}
+                  disabled={standby || saving}
+                  onCheckedChange={(v) => patchPolicy(p.id, { enabled: v })}
+                  aria-label={t(`security.policy.${p.id}`)}
+                />
+              </div>
+              {renderParamsJson(p)}
+            </li>
+          ))}
         </ul>
       )}
 
       <p className="text-xs text-muted-foreground">{t("security.save_hint")}</p>
+
+      <Dialog
+        open={addOpen}
+        onOpenChange={(open) => {
+          setAddOpen(open)
+          if (!open) setAddSelected(null)
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t("security.add_protection_title")}</DialogTitle>
+            <DialogDescription>{t("security.add_protection_desc")}</DialogDescription>
+          </DialogHeader>
+          {catalogAvailable.length === 0 ? (
+            <EmptyState
+              compact
+              icon={ShieldPlusIcon}
+              title={t("security.add_protection_full")}
+              description={t("security.add_protection_full_hint")}
+            />
+          ) : (
+            <ul className="max-h-[min(50vh,20rem)] space-y-2 overflow-y-auto">
+              {catalogAvailable.map((entry) => {
+                const selected = addSelected === entry.id
+                return (
+                  <li key={entry.id}>
+                    <button
+                      type="button"
+                      disabled={standby}
+                      onClick={() => setAddSelected(entry.id)}
+                      className={cn(
+                        "flex w-full flex-col gap-1 rounded-md border px-3 py-2.5 text-left transition-colors",
+                        selected
+                          ? "border-foreground/40 bg-muted/40"
+                          : "border-border/60 hover:bg-muted/20",
+                      )}
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium">{t(`security.policy.${entry.id}`)}</span>
+                        <Badge variant="secondary" className="text-[10px]">
+                          {t(`security.preview_component_${entry.layer}`)}
+                        </Badge>
+                      </div>
+                      <span className="font-mono text-[11px] text-muted-foreground">{entry.type}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAddOpen(false)}>
+              {t("ops.cancel")}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={confirmAddProtection}
+              disabled={standby || catalogAvailable.length === 0 || !addSelected}
+            >
+              {t("security.add_protection_confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={previewOpen}
@@ -669,7 +661,7 @@ export function SecurityPage() {
       <Dialog
         open={applyOpen}
         onOpenChange={(open) => {
-          if (!applyingNft) {
+          if (!applyingFirewall) {
             setApplyOpen(open)
             if (!open) setApplyConfirm("")
           }
@@ -691,22 +683,22 @@ export function SecurityPage() {
               <Input
                 value={applyConfirm}
                 onChange={(e) => setApplyConfirm(e.target.value)}
-                disabled={standby || applyingNft}
+                disabled={standby || applyingFirewall}
                 autoComplete="off"
                 placeholder={confirmPlaceholder}
               />
             </Field>
           </FieldGroup>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setApplyOpen(false)} disabled={applyingNft}>
+            <Button variant="ghost" onClick={() => setApplyOpen(false)} disabled={applyingFirewall}>
               {t("ops.cancel")}
             </Button>
             <Button
               variant="destructive"
-              onClick={handleApplyNft}
-              disabled={standby || applyingNft || !matchesConfirm(applyConfirm)}
+              onClick={handleApplyFirewall}
+              disabled={standby || applyingFirewall || !matchesConfirm(applyConfirm)}
             >
-              {applyingNft ? <Spinner data-icon="inline-start" /> : null}
+              {applyingFirewall ? <Spinner data-icon="inline-start" /> : null}
               {t("security.apply_firewall")}
             </Button>
           </DialogFooter>

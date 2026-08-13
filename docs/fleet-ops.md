@@ -10,8 +10,8 @@
 
 | 角色 | 环境模板 | 要点 |
 |------|----------|------|
-| **主控** | [`packaging/control/env.example`](../packaging/control/env.example) | `ENABLE_PANEL=1`；可选本机转发与中心观测 |
-| **节点** | [`packaging/node/env.example`](../packaging/node/env.example) | `ENABLE_PANEL=0`；`CONTROL_URL` + `AGENT_TOKEN_FILE`；本机 `agent run` |
+| **主控** | [`packaging/control/env.example`](../packaging/control/env.example) | `PANEL_ENABLED=1`；可选本机转发与中心观测 |
+| **节点** | [`packaging/node/env.example`](../packaging/node/env.example) | `PANEL_ENABLED=0`；`CONTROL_URL` + `AGENT_TOKEN_FILE`；本机 `agent run` |
 
 ## 发布到机群
 

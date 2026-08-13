@@ -49,7 +49,7 @@ func Run(opts RunOptions) error {
 		}
 		fmt.Printf("已拉取配置版本 %s\n", ver)
 		if applied := LocalAppliedVersion(opts.Root); applied != "" && applied == ver {
-			fmt.Printf("本机已对齐版本 %s，跳过重复落地（避免反复应用 nftables/sysctl）\n", ver)
+			fmt.Printf("本机已对齐版本 %s，跳过重复落地（避免反复应用内核/防火墙/网关）\n", ver)
 			return
 		}
 		if opts.AfterPull == nil {

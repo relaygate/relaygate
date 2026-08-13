@@ -11,10 +11,10 @@ import (
 
 // GrafanaEnabled reports whether the with-grafana compose profile is active.
 func GrafanaEnabled(env Env) bool {
-	if env.EnableGrafana == "1" {
+	if env.GrafanaEnabled == "1" {
 		return true
 	}
-	if env.EnableGrafana == "0" {
+	if env.GrafanaEnabled == "0" {
 		return false
 	}
 	profiles := env.Raw["COMPOSE_PROFILES"]

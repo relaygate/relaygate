@@ -12,14 +12,14 @@ RelayGate（单一产品）
 │    模板：packaging/control/env.example
 └─ 节点组件（node）
      agent + 本机热更新 + Envoy
-     无完整 Panel（ENABLE_PANEL=0）
+     无完整 Panel（PANEL_ENABLED=0）
      模板：packaging/node/env.example
      需 CONTROL_URL + AGENT_TOKEN_FILE
 ```
 
 | | 主控 | 节点 |
 |--|------|------|
-| Panel | `ENABLE_PANEL=1`（可写） | `ENABLE_PANEL=0` |
+| Panel | `PANEL_ENABLED=1`（可写） | `PANEL_ENABLED=0` |
 | 机群动作 | `fleet publish` / `join` / `leave` / `status` | `agent run` / `agent pull` |
 | 观测 | 可选中心 Grafana/Loki | 日志出站；不启完整观测栈 |
 
@@ -52,7 +52,7 @@ RelayGate（单一产品）
 | 状态总览 | `/` | 本机与机群健康 |
 | 上游管理 | `/upstreams` | 上游增删与启用 |
 | 转发规则 | `/forwards` | 入口 → 上游 |
-| 安全策略 | `/security` | 统一 `security.policies`（含来源访问控制） |
+| 安全策略 | `/security` | `security.access` + `security.protections` |
 | 配置编辑 | `/config` | 编辑意图（落盘） |
 | 配置应用 | `/apply` | 本机应用 · 发布到机群 |
 | 运维工具 | `/ops` | 本机诊断 / 摘流 / 探测 / 防火墙 / 档位 |

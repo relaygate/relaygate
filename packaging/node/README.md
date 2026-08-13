@@ -2,7 +2,7 @@
 
 「节点」是安装角色（`install.sh node`）；本机常驻的拉取/心跳进程叫 **agent**（`relaygate agent` / systemd `relaygate-agent`）。
 
-- `env.example`：复制为产品根 `.env`（`ENABLE_PANEL=0`，填写 `CONTROL_URL` 与 `AGENT_TOKEN_FILE`）
+- `env.example`：复制为产品根 `.env`（`PANEL_ENABLED=0`，填写 `CONTROL_URL` 与 `AGENT_TOKEN_FILE`）
 - **推荐**：主控 `fleet join` / Panel「接入」生成一句话命令，目标机 root 执行即可安装并启动 `relaygate-agent`
 - 常驻：`relaygate agent run`（或 systemd `relaygate-agent`：心跳 + 拉配置 + 本机热更新）
 

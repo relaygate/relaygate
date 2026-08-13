@@ -22,7 +22,7 @@ func TestHostSecurityAutoApplyDefaults(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			e := Env{EnablePanel: tc.panel, SecurityAutoApply: tc.auto}
+			e := Env{PanelEnabled: tc.panel, SecurityAutoApply: tc.auto}
 			if got := e.HostSecurityAutoApply(); got != tc.want {
 				t.Fatalf("HostSecurityAutoApply()=%v want %v", got, tc.want)
 			}

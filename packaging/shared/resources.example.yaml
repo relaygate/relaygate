@@ -34,9 +34,13 @@ defaults:
     base_ejection_time: 30s
 
 security:
-  policies:
+  access:
+    enabled: true
+    deny: []
+    allow: []
+  protections:
     - id: kernel_syn
-      type: kernel
+      type: kernel_syn
       enabled: true
       attack_tags: [T1]
       params:
@@ -46,34 +50,27 @@ security:
         tcp_syn_retries: 3
         tcp_abort_on_overflow: 0
     - id: firewall_new_conn_limit
-      type: new_conn_limit_firewall
+      type: firewall_new_conn_limit
       enabled: true
       attack_tags: [T1, T4]
       params:
         tcp_per_ip: 30/second
         burst: 60
     - id: gateway_new_conn_limit
-      type: new_conn_limit_gateway
+      type: gateway_new_conn_limit
       enabled: true
       attack_tags: [T1, T4]
       params:
         per_sec: 200
         burst: 400
-    - id: conn_limit
-      type: conn_limit
+    - id: gateway_conn_limit
+      type: gateway_conn_limit
       enabled: true
       attack_tags: [T2]
       params:
         max_connections: 1024
-    - id: allowlist
-      type: allowlist
-      enabled: true
-      attack_tags: [T5]
-      params:
-        deny: []
-        allow: []
-    - id: udp_limit
-      type: udp_limit
+    - id: firewall_udp_limit
+      type: firewall_udp_limit
       enabled: true
       attack_tags: [T6]
       params:

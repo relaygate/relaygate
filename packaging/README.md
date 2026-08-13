@@ -5,7 +5,7 @@
 | 目录 | 角色 | 内容 |
 |------|------|------|
 | [`control/`](control/) | 主控组件 | `env.example`（Panel + 发布/名册）；中心观测相关见 `grafana/` `loki/` `observability/` |
-| [`node/`](node/) | 节点组件 | `env.example`（`ENABLE_PANEL=0`、`CONTROL_URL`、`AGENT_TOKEN_FILE`） |
+| [`node/`](node/) | 节点组件 | `env.example`（`PANEL_ENABLED=0`、`CONTROL_URL`、`AGENT_TOKEN_FILE`） |
 | [`shared/`](shared/) | 共用 | 默认 `.env`、resources、历史 inventory 模板 |
 | 根下 Compose/采集 | 共用运行时 | `compose.yaml`、`prometheus/`、`fluent-bit/`、`firewall/`、`sysctl/`、`profiles/` |
 | [`security/`](security/) | 可选宿主机加固 | [威胁分析](security/threat-analysis.md)（术语/纵深防御）、能力矩阵、SYN sysctl、long-lived TCP 脚本（协同 `firewall/` / `sysctl/`，非替代） |

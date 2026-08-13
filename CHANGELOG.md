@@ -6,13 +6,23 @@
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-08-13
+
 ### Added
+
+- 安全四域（内核 / 防火墙 / 网卡预留 / 网关）；Panel「安全」页与 `relaygate security apply-kernel|kernel-conf`
 
 ### Changed
 
-### Fixed
-
-### Security
+- **破坏性：** 环境变量重命名（无双读）：`ENABLE_PANEL` → `PANEL_ENABLED`，`ENABLE_GRAFANA` → `GRAFANA_ENABLED`。升级请用 `install.sh upgrade`（会改写 `.env`），或手动改键后重启相关服务。`APPLY_FIREWALL`（安装/CLI 一次性）与 `SECURITY_AUTO_APPLY`（节点拉取后自动应用主机侧）分层保留，勿混用。
+- **破坏性：** `security.policies[]` 拆为 `security.access`（来源 ACL）与 `security.protections[]`（限速/加固）；防护 id 对齐领域前缀（`gateway_conn_limit` / `firewall_udp_limit`），type≡id；**无**旧键/旧 id 兼容。详见 [security-domains](docs/security-domains.md)。
+- **破坏性：** 策略 id/type、preview/status JSON、CLI 子命令按领域名对齐；**无**旧 id（如 `sysctl_syn` / `nft_new_conn_limit` / `envoy_new_conn_limit` / `allowlist` / `conn_limit` / `udp_limit`）与旧 status 键兼容。请改写 `resources.yaml` / profiles；特权 helper 动作为 `kernel-harden-apply`（调用 `security apply-kernel`）。
+- 中性档位配置替换游戏化 profile 名；场景合并默认不覆盖 `security.access`（仅显式写 access 的档位如 `strict-allowlist` / `host-harden-only`）
+- 节点 agent 拉取后落地：先判断 kernel_syn，关闭则跳过内核域（不再先调用 apply 再校验），避免误报/多余加载
+- 删除 Panel 未引用的限流/防火墙检查 i18n 与 `opsFirewallCheck` 客户端包装；产品变量名对齐防火墙域（`applyingFirewall`）
+- 修正 `gateways.env.example` 仍指向已删除 `push-fleet-key.sh` 的说明
+- Panel API 解析去掉 PascalCase / 旧字段双读；Grafana 看板标题领域化（网关/上游/下游/网卡）
+- 删除薄包装 `packaging/security/apply-sysctl-harden.sh`（统一 `security apply-kernel`）
 
 ## [0.1.12] - 2026-08-04
 

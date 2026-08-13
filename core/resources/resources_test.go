@@ -403,11 +403,11 @@ func TestChangeSummaryStringEmpty(t *testing.T) {
 func TestDiffDefaultsAndSecurity(t *testing.T) {
 	before := sampleResources()
 	before.Security.PolicyByID(PolicyGatewayNewConnLimit).Params.PerSec = 200
-	before.Security.PolicyByID(PolicyUDPLimit).Params.UDPPPSPerIP = "500/second"
+	before.Security.PolicyByID(PolicyFirewallUDPLimit).Params.UDPPPSPerIP = "500/second"
 	after := sampleResources()
 	after.Security.PolicyByID(PolicyGatewayNewConnLimit).Params.PerSec = 400
-	after.Security.PolicyByID(PolicyUDPLimit).Params.UDPPPSPerIP = "1200/second"
-	after.Security.PolicyByID(PolicyAllowlist).Params.Deny = []string{"1.2.3.4/32"}
+	after.Security.PolicyByID(PolicyFirewallUDPLimit).Params.UDPPPSPerIP = "1200/second"
+	after.Security.Access.Deny = []string{"1.2.3.4/32"}
 	sum := Diff(before, after)
 	if len(sum.SecurityChanged) == 0 {
 		t.Fatalf("expected security change: %+v", sum)
@@ -420,16 +420,16 @@ func TestDiffDefaultsAndSecurity(t *testing.T) {
 
 func TestAllowlistNormalize(t *testing.T) {
 	r := sampleResources()
-	p := r.Security.PolicyByID(PolicyAllowlist)
-	p.Params.Deny = append(p.Params.Deny, "8.8.8.8")
-	p.Params.Allow = append(p.Params.Allow, "10.0.0.0/8")
+	a := r.Security.Access
+	a.Deny = append(a.Deny, "8.8.8.8")
+	a.Allow = append(a.Allow, "10.0.0.0/8")
 	if err := r.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if p.Params.Deny[0] != "8.8.8.8/32" {
-		t.Fatalf("deny normalized: %+v", p.Params.Deny)
+	if a.Deny[0] != "8.8.8.8/32" {
+		t.Fatalf("deny normalized: %+v", a.Deny)
 	}
-	p.Params.Deny = nil
+	a.Deny = nil
 	if err := r.Validate(); err != nil {
 		t.Fatal(err)
 	}

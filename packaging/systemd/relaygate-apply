@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Root-owned privileged helper for Panel ops (compose/docker / nftables / sysctl).
+# Root-owned privileged helper for Panel ops (compose/docker / firewall / kernel).
 # Installed to /usr/local/libexec/relaygate/apply (root:root 0755).
 # Invoked only via sudoers whitelist from user relaygate; never writable by that user.
 #
 # Allowed subcommands (argv[1]):
-#   reload              — Envoy reload via docker (default if omitted; backward compatible)
-#   firewall-check      — render + nftables syntax check (no ruleset change)
-#   firewall-apply      — apply nftables (Panel already confirmed 确认/Confirm)
-#   sysctl-harden-apply — apply sysctl overlay from resources.yaml
-#   rollback [STAMP]    — restore backup + recreate Envoy
+#   reload               — gateway reload via docker (default if omitted)
+#   firewall-check       — render + firewall syntax check (no ruleset change)
+#   firewall-apply       — apply firewall (Panel already confirmed 确认/Confirm)
+#   kernel-harden-apply  — apply kernel overlay from resources.yaml
+#   rollback [STAMP]     — restore backup + recreate gateway
 #
 # No shell, no arbitrary args, no docker.sock for the Panel user.
 set -euo pipefail
@@ -56,13 +56,13 @@ case "$cmd" in
     export APPLY_FIREWALL=1
     exec "$BIN" firewall apply
     ;;
-  sysctl-harden-apply)
+  kernel-harden-apply)
     if [[ "$#" -ne 0 ]]; then
-      echo "ERROR: sysctl-harden-apply takes no arguments" >&2
+      echo "ERROR: kernel-harden-apply takes no arguments" >&2
       exit 2
     fi
     export RELAYGATE_CONFIRM=Confirm
-    exec "$BIN" security apply-sysctl
+    exec "$BIN" security apply-kernel
     ;;
   rollback)
     stamp="${1:-}"
@@ -77,7 +77,7 @@ case "$cmd" in
     ;;
   *)
     echo "ERROR: disallowed helper command: ${cmd}" >&2
-    echo "allowed: reload | firewall-check | firewall-apply | sysctl-harden-apply | rollback [STAMP]" >&2
+    echo "allowed: reload | firewall-check | firewall-apply | kernel-harden-apply | rollback [STAMP]" >&2
     exit 2
     ;;
 esac

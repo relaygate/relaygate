@@ -8,7 +8,7 @@
   "panels": [
     {
       "type": "stat",
-      "title": "Envoy Up",
+      "title": "网关就绪",
       "id": 1,
       "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
       "targets": [
@@ -30,7 +30,7 @@
     },
     {
       "type": "stat",
-      "title": "Healthy Upstreams",
+      "title": "健康上游",
       "id": 2,
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
       "targets": [
@@ -97,7 +97,7 @@
     },
     {
       "type": "timeseries",
-      "title": "TCP Downstream Connections (by gateway / cluster)",
+      "title": "TCP 下游连接（按网关 / 集群）",
       "id": 10,
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
       "targets": [
@@ -112,7 +112,7 @@
     },
     {
       "type": "timeseries",
-      "title": "UDP Downstream Sessions",
+      "title": "UDP 下游会话",
       "id": 11,
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
       "targets": [
@@ -127,7 +127,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Upstream Throughput (bytes/s)",
+      "title": "上游吞吐（字节/秒）",
       "id": 12,
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
       "targets": [
@@ -147,7 +147,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Circuit Breaker / Overflow",
+      "title": "网关溢出 / 限流",
       "id": 13,
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
       "targets": [
@@ -167,7 +167,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Upstream Membership Healthy",
+      "title": "上游成员健康",
       "id": 14,
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
       "targets": [
@@ -182,7 +182,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Host Network Traffic",
+      "title": "主机网卡流量",
       "id": 15,
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
       "targets": [
@@ -202,13 +202,13 @@
     }
   ],
   "schemaVersion": 39,
-  "tags": ["relaygate", "envoy", "multi-gateway"],
+  "tags": ["relaygate", "gateway", "multi-gateway"],
   "templating": {
     "list": [
       {
         "name": "gateway",
         "type": "query",
-        "label": "Gateway",
+        "label": "网关",
         "datasource": { "type": "prometheus", "uid": "prometheus" },
         "query": "label_values(up{job=\"envoy\"}, gateway)",
         "refresh": 2,
@@ -222,7 +222,7 @@
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "RelayGate Multi-Gateway Overview",
+  "title": "RelayGate 多网关概览",
   "uid": "relaygate-gateway-overview",
   "version": 1
 }

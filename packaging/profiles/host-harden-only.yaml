@@ -1,7 +1,7 @@
-# 仅主机加固：保留 kernel_syn，关闭防火墙 / 网关业务限速（仍保留默认策略结构）
+# 仅主机加固：保留 kernel_syn，关闭防火墙 / 网关业务限速与 access
 name: host-harden-only
 scenario: host_harden_only
-description: 仅内核 SYN 加固；nft 与 Envoy 限速策略关闭，由外部高防或上游承担
+description: 仅内核 SYN 加固；防火墙与网关限速关闭，由外部高防或上游承担
 
 defaults:
   default_upstream_tcp_port: 7777
@@ -16,22 +16,21 @@ defaults:
     healthy_threshold: 2
 
 security:
-  policies:
+  access:
+    enabled: false
+  protections:
     - id: kernel_syn
-      type: kernel
+      type: kernel_syn
       enabled: true
     - id: firewall_new_conn_limit
-      type: new_conn_limit_firewall
+      type: firewall_new_conn_limit
       enabled: false
     - id: gateway_new_conn_limit
-      type: new_conn_limit_gateway
+      type: gateway_new_conn_limit
       enabled: false
-    - id: conn_limit
-      type: conn_limit
+    - id: gateway_conn_limit
+      type: gateway_conn_limit
       enabled: false
-    - id: allowlist
-      type: allowlist
-      enabled: false
-    - id: udp_limit
-      type: udp_limit
+    - id: firewall_udp_limit
+      type: firewall_udp_limit
       enabled: false

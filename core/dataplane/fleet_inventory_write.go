@@ -121,7 +121,7 @@ func upsertCSV(list []string, name string) []string {
 func writeInventoryFile(path string, vars map[string]string) error {
 	var b strings.Builder
 	b.WriteString("# RelayGate fleet inventory（Panel/CLI 维护；勿写入 SSH 私钥或密码）\n")
-	b.WriteString("# 网关节点：ENABLE_PANEL=0（见 packaging/node/env.example）\n\n")
+	b.WriteString("# 网关节点：PANEL_ENABLED=0（见 packaging/node/env.example）\n\n")
 	matrix := strings.TrimSpace(vars["GATEWAY_MATRIX"])
 	b.WriteString("GATEWAY_MATRIX=")
 	b.WriteString(matrix)

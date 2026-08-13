@@ -1,7 +1,7 @@
-# 严格 allowlist：启用 allow 名单模式，示例占位 CIDR（生产须替换）
+# 严格 access：启用 allow 名单模式，示例占位 CIDR（生产须替换）
 name: strict-allowlist
 scenario: strict_allowlist
-description: 严格来源 allowlist；仅列出的 CIDR 可访问转发端口（示例地址须替换）
+description: 严格来源访问控制；仅列出的 CIDR 可访问转发端口（示例地址须替换）
 
 defaults:
   default_upstream_tcp_port: 7777
@@ -16,34 +16,32 @@ defaults:
     healthy_threshold: 2
 
 security:
-  policies:
-    - id: allowlist
-      type: allowlist
-      enabled: true
-      params:
-        deny: []
-        allow:
-          - 203.0.113.10/32
-          - 203.0.113.20/32
+  access:
+    enabled: true
+    deny: []
+    allow:
+      - 203.0.113.10/32
+      - 203.0.113.20/32
+  protections:
     - id: firewall_new_conn_limit
-      type: new_conn_limit_firewall
+      type: firewall_new_conn_limit
       enabled: true
       params:
         tcp_per_ip: 25/second
         burst: 50
     - id: gateway_new_conn_limit
-      type: new_conn_limit_gateway
+      type: gateway_new_conn_limit
       enabled: true
       params:
         per_sec: 150
         burst: 300
-    - id: conn_limit
-      type: conn_limit
+    - id: gateway_conn_limit
+      type: gateway_conn_limit
       enabled: true
       params:
         max_connections: 1024
-    - id: udp_limit
-      type: udp_limit
+    - id: firewall_udp_limit
+      type: firewall_udp_limit
       enabled: true
       params:
         udp_pps_per_ip: 500/second

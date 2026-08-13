@@ -35,8 +35,8 @@ func (c ChangeSummary) Empty() bool {
 		len(c.SecurityChanged) == 0 && len(c.MetaChanged) == 0
 }
 
-// ApplySurface classifies which execution surfaces a ChangeSummary needs.
-// Envoy reload vs nft apply stay separate. With XDS_ENABLED=0, ops always HardReload.
+// ApplySurface classifies which product domains a ChangeSummary needs.
+// Gateway reload vs firewall apply stay separate. With XDS_ENABLED=0, ops always HardReload.
 type ApplySurface struct {
 	NeedsReload     bool // upstreams / forwards / Envoy defaults / hard meta
 	NeedsFirewall   bool // security policies / enabled listen ports
@@ -88,9 +88,6 @@ func securityEntryAffectsEnvoy(entry string) bool {
 }
 
 func (c ChangeSummary) needsFirewall() bool {
-	if len(c.SecurityChanged) > 0 {
-		return true
-	}
 	if len(c.PortChanges) > 0 {
 		return true
 	}
@@ -103,6 +100,7 @@ func (c ChangeSummary) needsFirewall() bool {
 			return true
 		}
 	}
+	// Per-entry: kernel / gateway-only policy diffs must not force firewall apply.
 	for _, d := range c.SecurityChanged {
 		if securityEntryAffectsFirewall(d) {
 			return true
@@ -124,11 +122,6 @@ func securityEntryAffectsFirewall(entry string) bool {
 	return false
 }
 
-func defaultsEntryAffectsNftables(entry string) bool {
-	_, needsFirewall := PolicyApplySurfaces(entry)
-	return needsFirewall
-}
-
 func defaultsEntryAffectsEnvoy(entry string) bool {
 	entry = strings.TrimSpace(entry)
 	if entry == "" {
@@ -138,7 +131,7 @@ func defaultsEntryAffectsEnvoy(entry string) bool {
 		return false
 	}
 	field, _, _ := strings.Cut(entry, " ")
-	return !strings.HasPrefix(field, "security.policies.")
+	return !strings.HasPrefix(field, "security.protections.") && !strings.HasPrefix(field, "security.access")
 }
 
 func (c ChangeSummary) String() string {

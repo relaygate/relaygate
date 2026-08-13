@@ -56,8 +56,8 @@ type versionResp struct {
 }
 
 // PullOnce fetches the current published config and writes it to local DataDir.
-// It does NOT update applied-version — that happens only after HotApply succeeds
-// (see MarkApplied / Run AfterPull).
+// It does NOT update applied-version — that happens only after AfterPull succeeds
+// (kernel → nic skip → firewall → gateway HotApply; see MarkApplied / Run).
 func (c *Client) PullOnce(root string) (version string, err error) {
 	req, err := http.NewRequest(http.MethodGet, c.ControlURL+"/api/agent/config", nil)
 	if err != nil {
@@ -124,7 +124,7 @@ func localInstallIdentity(root string) (name, publicIP string) {
 	return name, publicIP
 }
 
-// MarkApplied records that version was successfully HotApplied (incl. xDS ACK).
+// MarkApplied records that version was successfully materialised (AfterPull OK).
 func MarkApplied(root, version string) error {
 	version = strings.TrimSpace(version)
 	if version == "" {

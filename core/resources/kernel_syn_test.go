@@ -10,7 +10,7 @@ func TestEffectiveKernelSynDefaults(t *testing.T) {
 	s := DefaultSecurity()
 	p := s.EffectiveKernelSyn()
 	if p == nil {
-		t.Fatal("want enabled sysctl")
+		t.Fatal("want enabled kernel_syn")
 	}
 	if p.TcpSyncookies != DefaultTcpSyncookies ||
 		p.TcpMaxSynBacklog != DefaultTcpMaxSynBacklog ||

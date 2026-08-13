@@ -57,7 +57,7 @@ groups:
           severity: warning
         annotations:
           summary: "{{ $labels.gateway }} 集群 {{ $labels.envoy_cluster_name }} 连接接近上限"
-          description: "活跃上游连接持续 >800（默认熔断上限 1024 的约 80%；tcp-longlived=4096 时约 3277）。请核对 security.policies[conn_limit].params.max_connections 与上游容量。"
+          description: "活跃上游连接持续 >800（默认熔断上限 1024 的约 80%；tcp-longlived=4096 时约 3277）。请核对 security.protections[gateway_conn_limit].params.max_connections 与上游容量。"
 
   - name: gateway-traffic
     rules:

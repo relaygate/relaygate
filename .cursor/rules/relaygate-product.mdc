@@ -21,7 +21,10 @@ alwaysApply: true
 | 升级 | 升级 | `install.sh upgrade`（读现有 `.env` 保留角色） | 长串 `env KEY=… bash -s -- -y` |
 | 守护进程 | （运维文案说「节点拉取 / 心跳」；高级/命令可写 agent） | `relaygate agent`；systemd `relaygate-agent`；包 `core/agent`；HTTP `/api/agent/*` | 把 agent 说成与主控对等的「第二种产品角色」 |
 | 节点凭证 / 主控地址 | — | `AGENT_TOKEN` / `AGENT_TOKEN_FILE`；`CONTROL_URL` | `PRIMARY_URL` |
+| Panel 启停 / 绑定 | — | `PANEL_ENABLED` · `PANEL_BIND` · `PANEL_ROLE` | `ENABLE_PANEL` |
+| Grafana 启停 | — | `GRAFANA_ENABLED`（对齐 `GRAFANA_*`） | `ENABLE_GRAFANA`；勿用 `PANEL_GRAFANA_ENABLED` |
 | Panel 写保护 | 主控 / 只读 | 内部 `PANEL_ROLE=primary\|standby` | 对外说「secondary」 |
+| 安全落地（分层） | — | `APPLY_FIREWALL`（安装/CLI 一次性）；`SECURITY_AUTO_APPLY`（拉取后主机侧） | 勿把二者当别名混用 |
 
 机群稳态：节点上的 **agent** 拉取配置版本 → 本机落盘 → 本机热更新；SSH 不进正式菜单。
 

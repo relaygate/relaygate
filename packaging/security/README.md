@@ -1,6 +1,6 @@
 # 网关安全防护（Security · 运维）
 
-通用 **四层（L4）** 南北向网关。防护按 **攻击类型** 组织为可开关的 **安全策略（security.policies[]）**；配置真相源为 `resources.yaml` 的 `security` 段。
+通用 **四层（L4）** 南北向网关。防护按 **攻击类型** 组织为可开关的 **安全策略（security.access / security.protections[]）**；配置真相源为 `resources.yaml` 的 `security` 段。
 
 领域命名与落地顺序（**本版无兼容、以当前代码为准**）见 [docs/security-domains.md](../../docs/security-domains.md)。
 
@@ -20,14 +20,14 @@
 产品主文案只用领域简称：**内核 / 防火墙 / 网卡（预留）/ 网关**。执行组件（sysctl、nftables、Envoy）仅脚本与高级帮助。完整约定见 [docs/security-domains.md](../../docs/security-domains.md)。
 
 ```text
-resources.yaml  security.policies[]
+resources.yaml  security.access / security.protections[]
         │
-        ├─ 防火墙 ─ allowlist、firewall_new_conn_limit、udp_limit
+        ├─ 防火墙 ─ access、firewall_new_conn_limit、firewall_udp_limit
         │         → relaygate firewall apply（Panel：应用安全策略）
         │         → 节点 agent 拉取后可自动应用（见 SECURITY_AUTO_APPLY）
         │         执行：nftables
         │
-        ├─ 网关 ─── conn_limit、gateway_new_conn_limit
+        ├─ 网关 ─── gateway_conn_limit、gateway_new_conn_limit
         │         → HotApply / reload；节点 agent 拉取后 HotApply
         │         执行：Envoy
         │
@@ -40,10 +40,11 @@ resources.yaml  security.policies[]
 
 落地顺序：**内核 →（网卡 skip）→ 防火墙 → 网关**。入站路径上防火墙在网卡下游。
 
-- **防火墙**：来源 allow/deny、新建 TCP 限速、UDP PPS。`source-acl` 不是独立中间层，只是 `allowlist` 的 `params`。
+- **防火墙**：来源 allow/deny、新建 TCP 限速、UDP PPS。`source-acl` 不是独立中间层，只是 `security.access` 的 deny/allow。
 - **内核**：SYN cookies 等；保存 YAML 不会自动改内核，须 apply-kernel 或节点自动落地。
 - **「应用安全策略」** 在 UI 上仅指 **防火墙**；勿与内核或网关 reload 混在同一危险按钮。
-- **SECURITY_AUTO_APPLY**：未设置时，`ENABLE_PANEL=0`（纯节点）默认自动应用主机侧；`ENABLE_PANEL=1`（主控）默认关闭。显式 `1`/`0` 可覆盖。
+- **SECURITY_AUTO_APPLY**：未设置时，`PANEL_ENABLED=0`（纯节点）默认自动应用主机侧；`PANEL_ENABLED=1`（主控）默认关闭。显式 `1`/`0` 可覆盖。
+- **与 `APPLY_FIREWALL` 分层**：`APPLY_FIREWALL=1` 只用于**安装/CLI 一次性**应用防火墙；运行时节点拉取后的自动落地只用 `SECURITY_AUTO_APPLY`（二者勿混用、勿指望互为别名）。
 
 ---
 
@@ -51,12 +52,12 @@ resources.yaml  security.policies[]
 
 | 攻击（Threat） | 策略 ID | type | 领域 | 参数（params） | 保存后如何生效 |
 |----------------|---------|------|------|----------------|----------------|
-| **T1** SYN Flood | `kernel_syn` | kernel | 内核 | （脚本常量） | `apply-sysctl-harden.sh --apply` |
-| **T1/T4** 新建连接洪泛（防火墙） | `firewall_new_conn_limit` | new_conn_limit_firewall | 防火墙 | `tcp_per_ip`、`burst` | **应用安全策略** |
-| **T1/T4** 新建连接洪泛（网关） | `gateway_new_conn_limit` | new_conn_limit_gateway | 网关 | `per_sec`、`burst` | reload |
-| **T2** 连接耗尽 | `conn_limit` | conn_limit | 网关 | `max_connections` | reload |
-| **T5** 扫描 / 探测 | `allowlist` | allowlist | 防火墙 | `deny` / `allow` CIDR | **应用安全策略** |
-| **T6** UDP 反射 / 噪声 | `udp_limit` | udp_limit | 防火墙 | `udp_pps_per_ip`、`udp_burst` | **应用安全策略** |
+| **T1** SYN Flood | `kernel_syn` | kernel_syn | 内核 | （脚本常量） | `relaygate security apply-kernel --verify` |
+| **T1/T4** 新建连接洪泛（防火墙） | `firewall_new_conn_limit` | firewall_new_conn_limit | 防火墙 | `tcp_per_ip`、`burst` | **应用安全策略** |
+| **T1/T4** 新建连接洪泛（网关） | `gateway_new_conn_limit` | gateway_new_conn_limit | 网关 | `per_sec`、`burst` | reload |
+| **T2** 连接耗尽 | `gateway_conn_limit` | gateway_conn_limit | 网关 | `max_connections` | reload |
+| **T5** 扫描 / 探测 | `security.access` | — | 防火墙 | `deny` / `allow` CIDR | **应用安全策略** |
+| **T6** UDP 反射 / 噪声 | `firewall_udp_limit` | firewall_udp_limit | 防火墙 | `udp_pps_per_ip`、`udp_burst` | **应用安全策略** |
 
 每条策略含：`id`、`type`、`enabled`、`attack_tags[]`、`params`。关闭某策略时渲染层使用「放行」等效值，**不伤 established 长连接**。
 
@@ -64,40 +65,37 @@ resources.yaml  security.policies[]
 
 ```yaml
 security:
-  policies:
+  access:
+    enabled: true
+    deny: []
+    allow: []
+  protections:
     - id: kernel_syn
-      type: kernel
+      type: kernel_syn
       enabled: true
       attack_tags: [T1]
     - id: firewall_new_conn_limit
-      type: new_conn_limit_firewall
+      type: firewall_new_conn_limit
       enabled: true
       attack_tags: [T1, T4]
       params:
         tcp_per_ip: 30/second
         burst: 60
     - id: gateway_new_conn_limit
-      type: new_conn_limit_gateway
+      type: gateway_new_conn_limit
       enabled: true
       attack_tags: [T1, T4]
       params:
         per_sec: 200
         burst: 400
-    - id: conn_limit
-      type: conn_limit
+    - id: gateway_conn_limit
+      type: gateway_conn_limit
       enabled: true
       attack_tags: [T2]
       params:
         max_connections: 1024
-    - id: allowlist
-      type: allowlist
-      enabled: true
-      attack_tags: [T5]
-      params:
-        deny: []
-        allow: []
-    - id: udp_limit
-      type: udp_limit
+    - id: firewall_udp_limit
+      type: firewall_udp_limit
       enabled: true
       attack_tags: [T6]
       params:
@@ -113,13 +111,13 @@ security:
 
 ### Panel
 
-1. **安全策略**（`/security`）— 开关、参数、allowlist deny/allow 名单；保存后点 **应用安全策略**（nft）
+1. **安全策略**（`/security`）— 开关、参数、access deny/allow 名单；保存后点 **应用安全策略**（nft）
 2. **配置应用** — Envoy/转发相关变更：本机应用（reload）；nft 待办显示为「安全策略」
 
 ### CLI
 
 ```bash
-relaygate security list          # 含 allowlist 名单
+relaygate security list          # 含 access 名单
 relaygate security kernel-conf   # 按配置渲染内核（sysctl）叠加（stdout）
 relaygate security apply-kernel --verify   # 内核（sysctl）：按配置应用并校验
 relaygate security verify        # 校验内核 / 防火墙 / 网关 ready
@@ -127,20 +125,20 @@ relaygate security verify        # 校验内核 / 防火墙 / 网关 ready
 relaygate validate
 relaygate reload                 # 网关（含 gateway_new_conn_limit）
 sudo relaygate firewall apply    # 防火墙（与 Panel「应用安全策略」同效）
-# 兼容脚本（优先读 resources.yaml）：
-sudo ./packaging/security/apply-sysctl-harden.sh --apply --verify
 
 relaygate profile apply tcp-longlived
+# 可选内核加固（与上表 kernel_syn 同源）:
+# sudo RELAYGATE_CONFIRM=Confirm relaygate security apply-kernel --verify
 ```
 
-节点 agent：`relaygate agent run` 拉取成功后按序落地 **内核 →（网卡 skip）→ 防火墙 → 网关**（主机侧受 `SECURITY_AUTO_APPLY` / `ENABLE_PANEL` 约束）；失败不更新 applied-version。状态见 DataDir `security-apply-status.json`（领域键 `kernel` / `nic` / `firewall` / `gateway`）与 journal。
+节点 agent：`relaygate agent run` 拉取成功后按序落地 **内核 →（网卡 skip）→ 防火墙 → 网关**（主机侧受 `SECURITY_AUTO_APPLY` / `PANEL_ENABLED` 约束）；失败不更新 applied-version。状态见 DataDir `security-apply-status.json`（领域键 `kernel` / `nic` / `firewall` / `gateway`）与 journal。
 `nft-newconn-syn.snippet.nft` 仅对照说明，**禁止**用它 flush 正式规则集。
 
 ---
 
 ## 应用场景（packaging/profiles）
 
-Panel **安全策略**页可选择场景模板填入 `security.policies` 与相关 defaults（须保存后才写入磁盘）：
+Panel **安全策略**页可选择场景模板填入 `security.protections` 与相关 defaults（须保存后才写入磁盘）：
 
 | 模板 | scenario | 说明 |
 |------|----------|------|
@@ -165,7 +163,7 @@ CLI：`relaygate profile apply <name>` 会写入 defaults + 合并 security 参�
 - **网关**：`max_connections`、本地新建连接限速等从 policies 推导
 - **策略与领域**：每条 policy 落在哪一域（防火墙与网关的新建连接限速为独立策略）
 
-未保存的编辑可通过 POST 携带 `policies[]` 预览。
+未保存的编辑可通过 POST 携带 `access` + `protections[]` 预览。
 
 ---
 
@@ -176,12 +174,12 @@ CLI：`relaygate profile apply <name>` 会写入 defaults + 合并 security 参�
 | 1 | 内核 | sysctl SYN cookies / backlog | kernel_syn |
 | — | 网卡 | （预留） | — |
 | 2 | 防火墙 | established,related accept | — |
-| 3 | 防火墙 | allowlist deny | allowlist |
-| 4 | 防火墙 | allowlist allow strict | allowlist |
+| 3 | 防火墙 | access deny | access |
+| 4 | 防火墙 | access allow strict | access |
 | 5 | 防火墙 | 新建 TCP 每 IP 限速 | firewall_new_conn_limit |
-| 6 | 防火墙 | UDP 每 IP PPS | udp_limit |
+| 6 | 防火墙 | UDP 每 IP PPS | firewall_udp_limit |
 | 7 | 网关 | listener 本地令牌桶 | gateway_new_conn_limit |
-| 8 | 网关 | cluster max_connections | conn_limit |
+| 8 | 网关 | cluster max_connections | gateway_conn_limit |
 
 `firewall_new_conn_limit` 与 `gateway_new_conn_limit` 为 **两条独立策略**，可分别开关与调参；若两者均启用，须先后通过。
 
@@ -191,10 +189,10 @@ CLI：`relaygate profile apply <name>` 会写入 defaults + 合并 security 参�
 
 | 组件 | 作用 | 与策略的关系 |
 |------|------|----------------|
-| `packaging/profiles/*.yaml` | 批量写入 `defaults` + `security.policies` 参数 | 不自动改策略开关 |
+| `packaging/profiles/*.yaml` | 批量写入 `defaults` + `security.protections` 参数 | 不自动改策略开关 |
 | `packaging/sysctl/gateway.conf` | 基线 somaxconn / 缓冲 | `relaygate setup --sysctl` |
 | `sysctl-tcp-harden.conf` | SYN cookies 等 | 对应 `kernel_syn` |
-| `gateway.nft` + render | 正式 nft 规则 | 读取 `security.policies` 有效值 |
+| `gateway.nft` + render | 正式 nft 规则 | 读取 `security.protections` 有效值 |
 
 ---
 
@@ -207,11 +205,20 @@ CLI：`relaygate profile apply <name>` 会写入 defaults + 合并 security 参�
 | 项 | default-l4 | tcp-longlived | 说明 |
 |----|------------|---------------|------|
 | `tcp_idle_timeout` | 3600s | **14400s** | 稀疏小包下勿过早掐断长连 |
-| `conn_limit.max_connections` | 1024 | **4096** | 提高并发槽位 |
+| `gateway_conn_limit.max_connections` | 1024 | **4096** | 提高并发槽位 |
 | `max_pending_requests` | 256 | **1024** | 配套 pending |
 | `firewall_new_conn_limit` | 30/s · 60 | **40/s · 80** | 仅 new；略放宽以容纳重连潮 |
 | `gateway_new_conn_limit` | 200 · 400 | **150 · 300** | 仍低于短连接洪泛档；约束握手滥用 |
 
 **铁律不变：** `established,related` 先 accept；禁止对已建会话做 PPS。近 MTU 体量攻击 **不是** 靠本档限速清洗。
 
-调高 `max_connections` 后请核对 Prometheus `EnvoyConnectionsNearLimit`（默认按 1024 的 80%=800；本档约 **3277**）。辅助脚本：`packaging/security/apply-tcp-longlived.sh`。
+调高 `max_connections` 后请核对 Prometheus `EnvoyConnectionsNearLimit`（默认按 1024 的 80%=800；本档约 **3277**）。
+
+建议操作顺序：
+
+```bash
+relaygate profile apply tcp-longlived
+sudo RELAYGATE_CONFIRM=Confirm relaygate security apply-kernel --verify   # 可选
+# 热更新本机应用（Panel/CLI，须确认词）
+# 若改了防火墙策略: sudo relaygate firewall apply（须确认词）
+```

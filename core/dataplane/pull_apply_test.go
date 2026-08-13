@@ -1,6 +1,7 @@
 package dataplane
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,16 +22,16 @@ func TestAfterPullApplySkipsHostWhenControlDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	env := Env{EnablePanel: "1", SecurityAutoApply: "", XDSEnabled: true}
+	env := Env{PanelEnabled: "1", SecurityAutoApply: "", XDSEnabled: true}
 	err := AfterPullApply(PullApplyOptions{
-		Root:      root,
-		Env:       env,
-		Stdout:    os.Stdout,
-		Stderr:    os.Stderr,
-		SkipEnvoy: true,
+		Root:        root,
+		Env:         env,
+		Stdout:      os.Stdout,
+		Stderr:      os.Stderr,
+		SkipGateway: true,
 	})
 	if err != nil {
-		t.Fatalf("expected host skip + skip envoy ok: %v", err)
+		t.Fatalf("expected host skip + skip gateway ok: %v", err)
 	}
 	stPath := filepath.Join(data, "security-apply-status.json")
 	b, err := os.ReadFile(stPath)
@@ -52,7 +53,7 @@ func TestAfterPullApplySkipsHostWhenControlDefault(t *testing.T) {
 	}
 }
 
-func TestAfterPullApplyFailsClosedOnSysctlVerify(t *testing.T) {
+func TestAfterPullApplyFailsClosedOnKernelApply(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("RELAYGATE_DATA_DIR", filepath.Join(root, "data"))
 	data := filepath.Join(root, "data")
@@ -66,18 +67,18 @@ func TestAfterPullApplyFailsClosedOnSysctlVerify(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Force host auto on but we are not root — ApplySysctlHarden should fail
+	// Force host auto on but we are not root — ApplyKernelHarden should fail
 	// before verify when helper is unset.
 	if IsRoot() {
 		t.Skip("running as root; skip fail-closed non-root path")
 	}
-	env := Env{EnablePanel: "0", SecurityAutoApply: "1", XDSEnabled: true}
+	env := Env{PanelEnabled: "0", SecurityAutoApply: "1", XDSEnabled: true}
 	err := AfterPullApply(PullApplyOptions{
-		Root:      root,
-		Env:       env,
-		Stdout:    os.Stdout,
-		Stderr:    os.Stderr,
-		SkipEnvoy: true,
+		Root:        root,
+		Env:         env,
+		Stdout:      os.Stdout,
+		Stderr:      os.Stderr,
+		SkipGateway: true,
 	})
 	if err == nil {
 		t.Fatal("expected failure when host apply cannot run")
@@ -92,5 +93,45 @@ func TestAfterPullApplyFailsClosedOnSysctlVerify(t *testing.T) {
 	}
 	if !strings.Contains(string(b), `"failed_at": "kernel"`) {
 		t.Fatalf("want failed_at kernel, got %s", b)
+	}
+}
+
+func TestAfterPullApplySkipsKernelWhenPolicyOff(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("RELAYGATE_DATA_DIR", filepath.Join(root, "data"))
+	data := filepath.Join(root, "data")
+	if err := os.MkdirAll(data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	res := &resources.Resources{Security: resources.DefaultSecurity()}
+	sp := res.Security.PolicyByID(resources.PolicyKernelSyn)
+	sp.Enabled = false
+	if err := resources.Save(filepath.Join(data, "resources.yaml"), res); err != nil {
+		t.Fatal(err)
+	}
+
+	env := Env{PanelEnabled: "0", SecurityAutoApply: "1", XDSEnabled: true}
+	_ = AfterPullApply(PullApplyOptions{
+		Root:        root,
+		Env:         env,
+		Stdout:      os.Stdout,
+		Stderr:      os.Stderr,
+		SkipGateway: true,
+	})
+	// Non-root CI usually fails at firewall; kernel must already be recorded as skipped.
+	stPath := filepath.Join(data, "security-apply-status.json")
+	b, err := os.ReadFile(stPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st PullApplyStatus
+	if err := json.Unmarshal(b, &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Kernel.Status != LayerStatusSkipped {
+		t.Fatalf("kernel status=%q want skipped; detail=%q body=%s", st.Kernel.Status, st.Kernel.Detail, b)
+	}
+	if st.FailedAt == DomainKernel {
+		t.Fatalf("must not fail at kernel when policy off: %s", b)
 	}
 }

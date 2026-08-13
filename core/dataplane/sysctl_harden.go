@@ -13,7 +13,7 @@ import (
 
 const sysctlHardenDest = "/etc/sysctl.d/99-relaygate-tcp-harden.conf"
 
-// ApplyKernelHardenFromResources writes the sysctl overlay from security.policies[kernel_syn]
+// ApplyKernelHardenFromResources writes the kernel overlay from security.protections[kernel_syn]
 // and loads it via sysctl --system. When the policy is disabled, skips (does not remove
 // an existing overlay). Requires root.
 func ApplyKernelHardenFromResources(root string) error {
@@ -28,7 +28,7 @@ func ApplyKernelHardenFromResources(root string) error {
 		return nil
 	}
 	if !IsRoot() {
-		if handled, err := maybePrivilegedReexec(os.Stdout, os.Stderr, "sysctl-harden-apply"); handled {
+		if handled, err := maybePrivilegedReexec(os.Stdout, os.Stderr, "kernel-harden-apply"); handled {
 			return err
 		}
 		return errNeedRootOrHelper()
@@ -39,7 +39,7 @@ func ApplyKernelHardenFromResources(root string) error {
 	if err := RunCmd(root, "sysctl", "--system"); err != nil {
 		return fmt.Errorf("加载内核参数失败：%w", err)
 	}
-	fmt.Printf("sysctl 已按配置应用：%s\n", sysctlHardenDest)
+	fmt.Printf("内核参数已按配置应用：%s\n", sysctlHardenDest)
 	return nil
 }
 
@@ -76,7 +76,7 @@ func VerifyKernelHarden(root string) error {
 		}
 	}
 	if len(mismatches) > 0 {
-		return fmt.Errorf("sysctl 未按配置生效：%s", strings.Join(mismatches, "；"))
+		return fmt.Errorf("内核参数未按配置生效：%s", strings.Join(mismatches, "；"))
 	}
 	return nil
 }

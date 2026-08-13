@@ -86,31 +86,46 @@ func Load(root, name string) (*Profile, error) {
 	return nil, fmt.Errorf("profile 不存在: %s", name)
 }
 
-// MergeSecurityInto overlays profile security policies onto dst (Panel scenario picker).
+// MergeSecurityInto overlays profile security onto dst (Panel scenario picker).
+// Access is applied only when src.Access != nil (profile YAML omitted access → keep dst).
 func MergeSecurityInto(dst *resources.Security, src resources.Security) {
 	mergeProfileSecurity(dst, src)
 }
 
 func mergeProfileSecurity(dst *resources.Security, src resources.Security) {
 	dst.EnsureSecurityDefaults()
-	if len(src.Policies) == 0 {
+	if src.Access != nil {
+		if dst.Access == nil {
+			dst.Access = resources.DefaultAccess()
+		}
+		dst.Access.Enabled = src.Access.Enabled
+		if src.Access.Deny != nil {
+			dst.Access.Deny = append([]string(nil), src.Access.Deny...)
+		}
+		if src.Access.Allow != nil {
+			dst.Access.Allow = append([]string(nil), src.Access.Allow...)
+		}
+	}
+	if len(src.Protections) == 0 {
 		return
 	}
 	byID := map[string]int{}
-	for i, p := range dst.Policies {
+	for i, p := range dst.Protections {
 		byID[p.ID] = i
 	}
-	for _, sp := range src.Policies {
+	for _, sp := range src.Protections {
 		if idx, ok := byID[sp.ID]; ok {
-			if sp.Enabled != dst.Policies[idx].Enabled {
-				dst.Policies[idx].Enabled = sp.Enabled
+			if sp.Enabled != dst.Protections[idx].Enabled {
+				dst.Protections[idx].Enabled = sp.Enabled
 			}
-			mergePolicyParams(&dst.Policies[idx].Params, sp.Params, sp.ID)
+			mergePolicyParams(&dst.Protections[idx].Params, sp.Params, sp.ID)
 		}
 	}
 }
 
 func mergePolicyParams(dst *resources.PolicyParams, src resources.PolicyParams, id string) {
+	// Built-in merge still touches typed fields only; Extra is preserved separately
+	// and never feeds Effective* (see resources.PolicyParams).
 	switch id {
 	case resources.PolicyFirewallNewConnLimit:
 		if src.TCPPerIP != "" {
@@ -126,11 +141,11 @@ func mergePolicyParams(dst *resources.PolicyParams, src resources.PolicyParams, 
 		if src.Burst > 0 {
 			dst.Burst = src.Burst
 		}
-	case resources.PolicyConnLimit:
+	case resources.PolicyGatewayConnLimit:
 		if src.MaxConnections > 0 {
 			dst.MaxConnections = src.MaxConnections
 		}
-	case resources.PolicyUDPLimit:
+	case resources.PolicyFirewallUDPLimit:
 		if src.UDPPPSPerIP != "" {
 			dst.UDPPPSPerIP = src.UDPPPSPerIP
 		}
@@ -138,6 +153,7 @@ func mergePolicyParams(dst *resources.PolicyParams, src resources.PolicyParams, 
 			dst.UDPBurst = src.UDPBurst
 		}
 	}
+	resources.MergePolicyParamsExtra(dst, src)
 }
 
 // Preview diffs profile against current resources without writing.
@@ -201,8 +217,11 @@ func FormatShow(p *Profile) string {
 	fmt.Fprintf(&b, "  udp_idle_timeout: %s\n", d.UDPIdleTimeout)
 	fmt.Fprintf(&b, "  max_pending_requests: %d\n", d.MaxPendingRequests)
 	p.Security.EnsureSecurityDefaults()
-	for _, pol := range p.Security.Policies {
-		fmt.Fprintf(&b, "security.policies.%s: enabled=%t\n", pol.ID, pol.Enabled)
+	if p.Security.Access != nil {
+		fmt.Fprintf(&b, "security.access.enabled: %t\n", p.Security.Access.Enabled)
+	}
+	for _, pol := range p.Security.Protections {
+		fmt.Fprintf(&b, "security.protections.%s: enabled=%t\n", pol.ID, pol.Enabled)
 	}
 	return b.String()
 }

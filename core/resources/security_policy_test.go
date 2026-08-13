@@ -6,13 +6,15 @@ func TestPolicyEnabledDefaultsOn(t *testing.T) {
 	t.Parallel()
 	var s Security
 	s.EnsureSecurityDefaults()
+	if s.Access == nil || !s.Access.Enabled {
+		t.Fatal("access should default enabled")
+	}
 	for _, id := range []string{
 		PolicyKernelSyn,
 		PolicyFirewallNewConnLimit,
 		PolicyGatewayNewConnLimit,
-		PolicyConnLimit,
-		PolicyAllowlist,
-		PolicyUDPLimit,
+		PolicyGatewayConnLimit,
+		PolicyFirewallUDPLimit,
 	} {
 		if !s.PolicyEnabled(id) {
 			t.Fatalf("%s should default enabled", id)
@@ -23,12 +25,12 @@ func TestPolicyEnabledDefaultsOn(t *testing.T) {
 func TestEffectiveFirewallRatesDisabledPolicies(t *testing.T) {
 	t.Parallel()
 	s := DefaultSecurity()
-	for i := range s.Policies {
-		if s.Policies[i].ID == PolicyFirewallNewConnLimit {
-			s.Policies[i].Enabled = false
+	for i := range s.Protections {
+		if s.Protections[i].ID == PolicyFirewallNewConnLimit {
+			s.Protections[i].Enabled = false
 		}
-		if s.Policies[i].ID == PolicyUDPLimit {
-			s.Policies[i].Enabled = false
+		if s.Protections[i].ID == PolicyFirewallUDPLimit {
+			s.Protections[i].Enabled = false
 		}
 	}
 	n := s.EffectiveFirewallRates()
@@ -43,7 +45,7 @@ func TestEffectiveFirewallRatesDisabledPolicies(t *testing.T) {
 func TestEffectiveMaxConnectionsPolicy(t *testing.T) {
 	t.Parallel()
 	s := DefaultSecurity()
-	p := s.PolicyByID(PolicyConnLimit)
+	p := s.PolicyByID(PolicyGatewayConnLimit)
 	p.Params.MaxConnections = 512
 	if s.EffectiveMaxConnections() != 512 {
 		t.Fatalf("want 512")
@@ -75,13 +77,13 @@ func TestDiffSecurityPolicies(t *testing.T) {
 	t.Parallel()
 	before := DefaultSecurity()
 	after := DefaultSecurity()
-	for i := range after.Policies {
-		if after.Policies[i].ID == PolicyGatewayNewConnLimit {
-			after.Policies[i].Enabled = false
+	for i := range after.Protections {
+		if after.Protections[i].ID == PolicyGatewayNewConnLimit {
+			after.Protections[i].Enabled = false
 		}
 	}
 	parts := DiffSecurityPolicies(before, after)
-	if len(parts) != 1 || parts[0] != "security.policies.gateway_new_conn_limit.enabled true→false" {
+	if len(parts) != 1 || parts[0] != "security.protections.gateway_new_conn_limit.enabled true→false" {
 		t.Fatalf("parts=%v", parts)
 	}
 }
@@ -92,11 +94,12 @@ func TestPolicyApplySurfaces(t *testing.T) {
 		field            string
 		reload, firewall bool
 	}{
-		{"security.policies.firewall_new_conn_limit", false, true},
-		{"security.policies.gateway_new_conn_limit", true, false},
-		{"security.policies.conn_limit", true, false},
-		{"security.policies.allowlist", false, true},
-		{"security.policies.kernel_syn", false, false},
+		{"security.protections.firewall_new_conn_limit", false, true},
+		{"security.protections.gateway_new_conn_limit", true, false},
+		{"security.protections.gateway_conn_limit", true, false},
+		{"security.access", false, true},
+		{"security.access.enabled", false, true},
+		{"security.protections.kernel_syn", false, false},
 	}
 	for _, c := range cases {
 		r, f := PolicyApplySurfaces(c.field)
