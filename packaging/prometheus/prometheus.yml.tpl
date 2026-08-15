@@ -38,7 +38,9 @@ scrape_configs:
           gateway: ${GATEWAY_NAME}
           host: ${GATEWAY_NAME}
 
-# 可选：remote_write 到集中 Prometheus（在 .env 设置 PROMETHEUS_REMOTE_WRITE_URL）
+# 可选：remote_write 到主控（节点 .env 设置 PROMETHEUS_REMOTE_WRITE_URL）
+# 主控 Grafana 只读本机 Prometheus；节点须上报，例如：
+#   PROMETHEUS_REMOTE_WRITE_URL=http://203.0.113.10:9000/api/agent/metrics/write
 # remote_write:
 #   - url: ${PROMETHEUS_REMOTE_WRITE_URL}
 #     queue_config:

@@ -71,10 +71,13 @@ func BenchmarkAlloc(b *testing.B) {
 }
 ```
 
-`b.ReportMetric()` adds custom metrics (e.g., throughput):
+`b.ReportMetric()` adds custom metrics (e.g., throughput). With `b.Loop()`, the timer stops when the loop ends, so compute throughput **after** the loop with `b.Elapsed()` (same pattern as the `testing` package docs):
 
 ```go
-b.ReportMetric(float64(totalBytes)/b.Elapsed().Seconds(), "bytes/s") // b.Elapsed() is only valid inside b.Loop()
+for b.Loop() {
+    // ... measured work; accumulate totalBytes ...
+}
+b.ReportMetric(float64(totalBytes)/b.Elapsed().Seconds(), "bytes/s") // after Loop; not inside
 ```
 
 ### Sub-benchmarks and table-driven

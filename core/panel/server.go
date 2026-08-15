@@ -256,6 +256,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/ops/fleet/leave", s.withAuth(s.apiFleetLeave))
 	mux.HandleFunc("/api/agent/config", s.apiAgentConfig)
 	mux.HandleFunc("/api/agent/heartbeat", s.apiAgentHeartbeat)
+	mux.HandleFunc("/api/agent/metrics/write", s.apiAgentMetricsWrite)
 	mux.HandleFunc("/api/ops/drain", s.withAuthReadonly(s.apiDrain))
 	mux.HandleFunc("/api/ops/smoke", s.withAuthReadonly(s.apiSmoke))
 	mux.HandleFunc("/api/ops/canary", s.withAuthReadonly(s.apiCanary))

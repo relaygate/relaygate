@@ -193,6 +193,8 @@ func writeEnv(opt Options) error {
 	nodeExtras := ""
 	if controlURL != "" {
 		nodeExtras += fmt.Sprintf("CONTROL_URL=%s\n", controlURL)
+		rw := strings.TrimRight(controlURL, "/") + "/api/agent/metrics/write"
+		nodeExtras += fmt.Sprintf("PROMETHEUS_REMOTE_WRITE_URL=%s\n", rw)
 	}
 	if agentTokFile != "" {
 		nodeExtras += fmt.Sprintf("AGENT_TOKEN_FILE=%s\n", agentTokFile)

@@ -26,7 +26,8 @@ export function EmptyState({
   return (
     <Empty
       className={cn(
-        "border border-dashed border-border/60 bg-muted/10",
+        // Override shadcn Empty's flex-1 so nested panes are not stretched tall.
+        "flex-none border border-dashed border-border/60 bg-muted/10",
         compact ? "min-h-28 gap-2 p-4" : "min-h-44 gap-3 p-6",
         className,
       )}

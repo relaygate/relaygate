@@ -79,59 +79,61 @@ export function OverviewPage() {
         />
       </StatGrid>
 
-      <Section title={t("overview.last_apply")}>
-        <OpsLogView
-          value={lastApply}
-          placeholder={
-            <EmptyState
-              icon={ClipboardListIcon}
-              title={t("overview.none")}
-              description={t("overview.none_hint")}
-              className="w-full border-0 bg-transparent"
-            />
-          }
-        />
-      </Section>
-
-      <Section title={t("overview.top_limited")}>
-        {traffic?.top_limited_forwards?.length ? (
-          <div className="rounded-md border border-border/60">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("overview.col_rule")}</TableHead>
-                  <TableHead>{t("overview.col_prefix")}</TableHead>
-                  <TableHead className="text-right">{t("overview.col_hits")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {traffic.top_limited_forwards.map((row) => (
-                  <TableRow key={`${row.forward}-${row.prefix}`}>
-                    <TableCell className="font-medium">{row.forward}</TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      {row.prefix}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {Math.round(row.hits_5m)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        ) : (
-          <EmptyState
-            icon={GaugeIcon}
-            title={t("overview.top_empty")}
-            description={t("overview.top_empty_hint")}
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Section title={t("overview.last_apply")} className="min-w-0">
+          <OpsLogView
+            value={lastApply}
+            placeholder={
+              <EmptyState
+                icon={ClipboardListIcon}
+                title={t("overview.none")}
+                description={t("overview.none_hint")}
+                className="w-full border-0 bg-transparent"
+              />
+            }
           />
-        )}
-        {envoy?.error ? (
-          <Badge variant="outline" className="w-fit text-destructive">
-            {envoy.error}
-          </Badge>
-        ) : null}
-      </Section>
+        </Section>
+
+        <Section title={t("overview.top_limited")} className="min-w-0">
+          {traffic?.top_limited_forwards?.length ? (
+            <div className="rounded-md border border-border/60">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("overview.col_rule")}</TableHead>
+                    <TableHead>{t("overview.col_prefix")}</TableHead>
+                    <TableHead className="text-right">{t("overview.col_hits")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {traffic.top_limited_forwards.map((row) => (
+                    <TableRow key={`${row.forward}-${row.prefix}`}>
+                      <TableCell className="font-medium">{row.forward}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {row.prefix}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {Math.round(row.hits_5m)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <EmptyState
+              icon={GaugeIcon}
+              title={t("overview.top_empty")}
+              description={t("overview.top_empty_hint")}
+            />
+          )}
+          {envoy?.error ? (
+            <Badge variant="outline" className="w-fit text-destructive">
+              {envoy.error}
+            </Badge>
+          ) : null}
+        </Section>
+      </div>
     </Page>
   )
 }

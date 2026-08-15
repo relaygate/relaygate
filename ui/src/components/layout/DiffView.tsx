@@ -115,7 +115,7 @@ export function stripChangeSummaryNoise(
 
 /**
  * Change-summary / unified-diff viewer.
- * Same pane chrome as OpsLogView: min-h-56 + max-h-[28rem], in-panel scroll, auto-scroll.
+ * Same pane chrome as OpsLogView: fixed h-56 viewport, in-panel scroll, auto-scroll.
  */
 export function DiffView({
   value,
@@ -148,56 +148,52 @@ export function DiffView({
     el.scrollTop = el.scrollHeight
   }, [text, empty])
 
-  const shell = cn(
-    "overflow-y-auto thin-scrollbar rounded-md border border-border bg-muted/40 text-foreground",
-    fixedHeight ? "min-h-56 max-h-[28rem]" : "max-h-[32rem]",
-    error && "border-destructive/50 bg-destructive/5",
-    className,
-  )
-
-  if (empty) {
-    const isNode = placeholder != null && typeof placeholder !== "string"
-    return (
-      <div
-        className={cn(
-          shell,
-          isNode
-            ? "flex min-h-56 items-center justify-center border-dashed bg-transparent p-0"
-            : "flex min-h-56 items-center border-dashed px-3 py-3 text-sm text-muted-foreground",
-        )}
-      >
-        {placeholder ?? ""}
-      </div>
-    )
-  }
-
-  const lines = text.replace(/\r\n/g, "\n").split("\n")
-  const asDiff = looksLikeDiff(lines)
-  const asSummary = !asDiff && looksLikeChangeSummary(lines)
+  const paneSize = fixedHeight ? "h-56 min-h-56 max-h-56" : "min-h-56 max-h-[32rem]"
+  const isNodePlaceholder = empty && placeholder != null && typeof placeholder !== "string"
+  const lines = empty ? [] : text.replace(/\r\n/g, "\n").split("\n")
+  const asDiff = !empty && looksLikeDiff(lines)
+  const asSummary = !empty && !asDiff && looksLikeChangeSummary(lines)
 
   return (
-    <div ref={scrollRef} className={shell}>
-      <pre className="m-0 p-3 font-mono text-[12px] leading-[1.55]">
-        {lines.map((line, i) => {
-          const toneClass = asDiff
-            ? diffKindClass[lineKind(line)]
-            : asSummary
-              ? summaryKindClass[summaryKind(line)]
-              : opsToneClass[opsLineTone(line)]
-          return (
-            <div
-              key={i}
-              className={cn(
-                "whitespace-pre-wrap break-all",
-                toneClass,
-                error && "text-destructive",
-              )}
-            >
-              {line || " "}
-            </div>
-          )
-        })}
-      </pre>
+    <div
+      ref={scrollRef}
+      className={cn(
+        "overflow-y-auto thin-scrollbar rounded-md border border-border bg-muted/40 text-foreground",
+        paneSize,
+        error && "border-destructive/50 bg-destructive/5",
+        empty && "flex border-dashed",
+        empty &&
+          (isNodePlaceholder
+            ? "items-center justify-center bg-transparent p-0"
+            : "items-center px-3 py-3 text-sm text-muted-foreground"),
+        className,
+      )}
+    >
+      {empty ? (
+        (placeholder ?? "")
+      ) : (
+        <pre className="m-0 p-3 font-mono text-[12px] leading-[1.55]">
+          {lines.map((line, i) => {
+            const toneClass = asDiff
+              ? diffKindClass[lineKind(line)]
+              : asSummary
+                ? summaryKindClass[summaryKind(line)]
+                : opsToneClass[opsLineTone(line)]
+            return (
+              <div
+                key={i}
+                className={cn(
+                  "whitespace-pre-wrap break-all",
+                  toneClass,
+                  error && "text-destructive",
+                )}
+              >
+                {line || " "}
+              </div>
+            )
+          })}
+        </pre>
+      )}
     </div>
   )
 }

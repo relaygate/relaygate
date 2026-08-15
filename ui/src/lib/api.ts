@@ -570,6 +570,32 @@ export async function getFleetStatus(): Promise<FleetStatusOverview> {
   }
 }
 
+export type FleetPublishResponse = OpsResult & {
+  version?: string
+}
+
+export async function opsFleetPublish(confirm: string): Promise<FleetPublishResponse> {
+  try {
+    const data = await api.post<Record<string, unknown>>("/api/ops/fleet/publish", { confirm })
+    return {
+      ok: data.ok === true,
+      output: pickString(data, "output") || undefined,
+      error: pickString(data, "error") || undefined,
+      version: data.version ? String(data.version) : undefined,
+    }
+  } catch (err) {
+    if (err instanceof ApiError && err.body && typeof err.body === "object") {
+      const data = err.body as Record<string, unknown>
+      return {
+        ok: false,
+        output: pickString(data, "output") || undefined,
+        error: pickString(data, "error") || err.message,
+      }
+    }
+    throw err
+  }
+}
+
 export type FleetJoinResponse = OpsResult & {
   name?: string
   token?: string

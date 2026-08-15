@@ -134,6 +134,7 @@ agent 是节点上的拉取/心跳进程（relaygate agent / relaygate-agent.ser
   PANEL_ENABLED / PANEL_BIND / PANEL_ROLE / GRAFANA_ENABLED
   # 机群连接（节点；通常由 node 子命令写入）
   CONTROL_URL / AGENT_TOKEN / AGENT_TOKEN_FILE
+  PROMETHEUS_REMOTE_WRITE_URL   # 节点指标上报主控；node 安装时由 CONTROL_URL 推导
   # 安全落地（分层，勿混用）
   APPLY_FIREWALL          # 安装/CLI 一次性应用防火墙
   SECURITY_AUTO_APPLY     # 节点 agent 拉取后是否自动应用主机侧
@@ -670,6 +671,11 @@ write_agent_join_creds() {
     upsert_env_file "${INSTALL_DIR}/.env" PANEL_ROLE "standby"
     upsert_env_file "${INSTALL_DIR}/.env" GRAFANA_ENABLED "${GRAFANA_ENABLED:-0}"
     [[ -n "${GATEWAY_NAME:-}" ]] && upsert_env_file "${INSTALL_DIR}/.env" GATEWAY_NAME "$GATEWAY_NAME"
+    # 节点指标经主控 Panel 转发到中心 Prometheus（供主控 Grafana 按 gateway 选择）
+    if [[ -n "${CONTROL_URL:-}" ]]; then
+      local rw_base="${CONTROL_URL%/}"
+      upsert_env_file "${INSTALL_DIR}/.env" PROMETHEUS_REMOTE_WRITE_URL "${rw_base}/api/agent/metrics/write"
+    fi
   fi
   log "已写入节点 agent 令牌: ${tok}"
 }

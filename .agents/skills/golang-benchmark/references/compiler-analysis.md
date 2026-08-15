@@ -219,12 +219,16 @@ GOARCH=arm64 go build -gcflags="-S" ./pkg/parser 2>&1 | head -200
 
 ### Comparing assembly before/after optimization
 
+`-gcflags=-S` writes assembly to **stderr**. Redirect so the file actually captures it — either merge streams with `> file 2>&1`, or send stderr alone with `2> file`. Do **not** use `2>&1 > file` (that leaves stderr on the terminal).
+
 ```bash
-# Before your change
-go build -gcflags="-S" ./pkg/parser 2>&1 > asm-before.txt
+# Before your change (stdout+stderr → file)
+go build -gcflags="-S" ./pkg/parser > asm-before.txt 2>&1
+# equivalent: go build -gcflags="-S" ./pkg/parser 2> asm-before.txt
 
 # After your change
-go build -gcflags="-S" ./pkg/parser 2>&1 > asm-after.txt
+go build -gcflags="-S" ./pkg/parser > asm-after.txt 2>&1
+# equivalent: go build -gcflags="-S" ./pkg/parser 2> asm-after.txt
 
 # Diff the assembly
 diff asm-before.txt asm-after.txt

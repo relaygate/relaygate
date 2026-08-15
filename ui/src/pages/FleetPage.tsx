@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
-import { NetworkIcon, UserPlusIcon } from "lucide-react"
+import { MegaphoneIcon, NetworkIcon, UserPlusIcon } from "lucide-react"
 
 import { tf } from "@/i18n"
 
@@ -29,6 +29,7 @@ import {
   getFleetStatus,
   opsFleetJoin,
   opsFleetLeave,
+  opsFleetPublish,
   opsFleetSync,
   type FleetNode,
   type FleetNodeStatus,
@@ -39,7 +40,7 @@ import { copyText } from "@/lib/clipboard"
 import { matchesConfirm } from "@/lib/confirm"
 import { cn } from "@/lib/utils"
 
-type BusyKey = "join" | "leave" | "sync" | null
+type BusyKey = "join" | "leave" | "sync" | "publish" | null
 
 function fleetStatusLabel(t: (key: string) => string, status: FleetNodeStatus["status"]): string {
   switch (status) {
@@ -142,6 +143,9 @@ export function FleetPage() {
   const [joinCommand, setJoinCommand] = useState("")
   const [joinToken, setJoinToken] = useState("")
 
+  const [publishConfirm, setPublishConfirm] = useState("")
+  const [publishOpen, setPublishOpen] = useState(false)
+
   const [syncName, setSyncName] = useState("")
   const [syncConfirm, setSyncConfirm] = useState("")
   const [syncOpen, setSyncOpen] = useState(false)
@@ -215,6 +219,31 @@ export function FleetPage() {
     }
   }
 
+  function openPublish() {
+    setPublishConfirm("")
+    setPublishOpen(true)
+  }
+
+  async function runPublish() {
+    if (!matchesConfirm(publishConfirm)) return
+    setBusy("publish")
+    try {
+      const res = await opsFleetPublish(publishConfirm.trim())
+      if (res.ok) {
+        toast.success(t("fleet.toast_publish_ok"))
+        setPublishOpen(false)
+        setPublishConfirm("")
+        await loadFleet()
+      } else {
+        toast.error(apiErrorDetail(res, t("fleet.toast_publish_err")))
+      }
+    } catch (err) {
+      toast.error(apiErrorDetail(err, t("fleet.toast_publish_err")))
+    } finally {
+      setBusy(null)
+    }
+  }
+
   function openSync(name: string) {
     setSyncName(name)
     setSyncConfirm("")
@@ -277,6 +306,8 @@ export function FleetPage() {
     statusByName[n.name] = n
   }
   const confirmPlaceholder = i18n.language.toLowerCase().startsWith("zh") ? "确认" : "Confirm"
+  const publishedVersion =
+    status?.published_version || fleet?.published?.version || ""
 
   return (
     <Page>
@@ -297,6 +328,28 @@ export function FleetPage() {
           <AlertDescription>{t("fleet.standby_body")}</AlertDescription>
         </Alert>
       ) : null}
+
+      <FleetCard
+        icon={<MegaphoneIcon className="size-4" />}
+        title={t("fleet.publish_title")}
+        description={t("fleet.publish_desc")}
+        actions={
+          <Button
+            size="sm"
+            variant="caution"
+            onClick={openPublish}
+            disabled={standby || anyBusy}
+            title={t("fleet.publish_run")}
+          >
+            {busy === "publish" ? <Spinner data-icon="inline-start" /> : null}
+            {t("fleet.publish_run")}
+          </Button>
+        }
+      >
+        <p className="font-mono text-xs text-muted-foreground">
+          {t("fleet.publish_current")}: {publishedVersion || t("fleet.publish_none")}
+        </p>
+      </FleetCard>
 
       <FleetCard
         icon={<NetworkIcon className="size-4" />}
@@ -445,6 +498,61 @@ export function FleetPage() {
             >
               {busy === "join" ? <Spinner data-icon="inline-start" /> : null}
               {t("fleet.join_run")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={publishOpen}
+        onOpenChange={(open) => {
+          if (!open && busy !== "publish") {
+            setPublishOpen(false)
+            setPublishConfirm("")
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("fleet.publish_confirm_title")}</DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>{t("fleet.publish_confirm_body")}</p>
+                <p className="text-destructive">{t("fleet.publish_confirm_disconnect")}</p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="publish-confirm">{t("common.confirm_typed_label")}</FieldLabel>
+              <Input
+                id="publish-confirm"
+                value={publishConfirm}
+                onChange={(e) => setPublishConfirm(e.target.value)}
+                disabled={standby || busy === "publish"}
+                autoComplete="off"
+                placeholder={confirmPlaceholder}
+              />
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setPublishOpen(false)
+                setPublishConfirm("")
+              }}
+              disabled={busy === "publish"}
+            >
+              {t("ops.cancel")}
+            </Button>
+            <Button
+              variant="caution"
+              onClick={() => void runPublish()}
+              disabled={standby || busy === "publish" || !matchesConfirm(publishConfirm)}
+            >
+              {busy === "publish" ? <Spinner data-icon="inline-start" /> : null}
+              {t("fleet.publish_run")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -189,47 +189,49 @@ export function ApplyPage() {
         </Alert>
       ) : null}
 
-      <Section title={t("apply.summary")} actions={summaryBadges}>
-        <DiffView
-          value={loading ? "" : summary}
-          placeholder={
-            loading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Spinner />
-                {t("common.loading")}
-              </div>
-            ) : (
-              <EmptyState
-                icon={FileClockIcon}
-                title={t("apply.none")}
-                description={t("apply.none_hint")}
-                className="w-full border-0 bg-transparent"
-              />
-            )
-          }
-        />
-      </Section>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <Section title={t("apply.summary")} actions={summaryBadges}>
+          <DiffView
+            value={loading ? "" : summary}
+            placeholder={
+              loading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Spinner />
+                  {t("common.loading")}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={FileClockIcon}
+                  title={t("apply.none")}
+                  description={t("apply.none_hint")}
+                  className="w-full border-0 bg-transparent"
+                />
+              )
+            }
+          />
+        </Section>
 
-      <Section title={t("overview.last_apply")}>
-        <OpsLogView
-          value={loading ? "" : lastApply}
-          placeholder={
-            loading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Spinner />
-                {t("common.loading")}
-              </div>
-            ) : (
-              <EmptyState
-                icon={FileClockIcon}
-                title={t("apply.none")}
-                description={t("apply.none_hint")}
-                className="w-full border-0 bg-transparent"
-              />
-            )
-          }
-        />
-      </Section>
+        <Section title={t("overview.last_apply")}>
+          <OpsLogView
+            value={loading ? "" : lastApply}
+            placeholder={
+              loading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Spinner />
+                  {t("common.loading")}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={FileClockIcon}
+                  title={t("apply.none")}
+                  description={t("apply.none_hint")}
+                  className="w-full border-0 bg-transparent"
+                />
+              )
+            }
+          />
+        </Section>
+      </div>
 
       {result ? (
         <Section title={t("apply.result")}>

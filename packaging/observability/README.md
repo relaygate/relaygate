@@ -17,7 +17,16 @@
    cd packaging/observability && docker compose up -d
    ```
 
-3. 每台网关边缘 Prometheus（可选）通过 `.env` 的 `PROMETHEUS_REMOTE_WRITE_URL` 联邦到中心。
+3. 每台网关边缘 Prometheus 通过 `.env` 的 `PROMETHEUS_REMOTE_WRITE_URL` 上报到主控：
+
+   ```bash
+   # 节点 .env（示例 IP 为占位；install.sh node / setup 在已有 CONTROL_URL 时会自动写入）
+   PROMETHEUS_REMOTE_WRITE_URL=http://203.0.113.10:9000/api/agent/metrics/write
+   ```
+
+   主控 Panel（`/api/agent/metrics/write`）校验节点令牌后转发到本机 Prometheus remote_write（loopback；须 `--web.enable-remote-write-receiver`）。
+   然后在节点上：`relaygate render --observability`（会同步可读的 `DataDir/prometheus/agent.token`）并仅重建 Prometheus：
+   `docker compose -f packaging/compose.yaml --env-file .env up -d --no-deps --force-recreate prometheus`。
 
 ## 标签约定
 
@@ -37,9 +46,11 @@ Panel `GET /api/status/xds` 返回本机热更新计数器。边缘以 Envoy `en
 
 加一台网关节点后：
 
-1. 用主控 `fleet join` 接入节点并启动 agent  
-2. 在本目录 `prometheus.yml` 增加对应 `targets` 与 `gateway` label  
+1. 用主控 `fleet join` 接入节点并启动 agent（`install.sh node` 会写入 `PROMETHEUS_REMOTE_WRITE_URL`）  
+2. 已装节点若缺该项：补 `.env` 后 `relaygate render --observability`，再 `docker compose … up -d --no-deps --force-recreate prometheus`  
 3. 主控 `relaygate fleet publish`；节点自行拉取对齐  
 4. Grafana 看板按 `gateway` 变量过滤（已有 `gateway-overview`）
+
+（可选）若用集中 scrape 而非 remote_write：在本目录 `prometheus.yml` 增加对应 `targets` 与 `gateway` label。
 
 机群说明见 [docs/fleet-ops.md](../../docs/fleet-ops.md)。

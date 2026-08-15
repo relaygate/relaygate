@@ -33,19 +33,28 @@ func RenderObservability(root string) error {
 	for k, v := range repl {
 		content = strings.ReplaceAll(content, k, v)
 	}
+	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+		return err
+	}
+	// Prometheus 容器以 nobody 运行，须能读 credentials_file；勿直接挂 0600 的 secrets。
+	credPath := filepath.Join(filepath.Dir(out), "agent.token")
+	if err := syncPrometheusAgentToken(env, credPath); err != nil {
+		return err
+	}
 	if strings.TrimSpace(env.PrometheusRemoteWriteURL) != "" {
-		content += fmt.Sprintf(`
+		rw := fmt.Sprintf(`
 
 remote_write:
   - url: %s
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/agent.token
     queue_config:
       max_samples_per_send: 1000
       capacity: 10000
       max_shards: 4
 `, env.PrometheusRemoteWriteURL)
-	}
-	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
-		return err
+		content += rw
 	}
 	tmp := out + ".tmp"
 	if err := os.WriteFile(tmp, []byte(content), 0o644); err != nil {
@@ -55,6 +64,31 @@ remote_write:
 		return err
 	}
 	fmt.Printf("rendered %s (gateway=%s)\n", out, env.GatewayName)
+	return nil
+}
+
+// syncPrometheusAgentToken copies AGENT_TOKEN_FILE into DataDir/prometheus/agent.token
+// with mode 0644 so the Prometheus container (nobody) can read Bearer credentials.
+// Always ensures the path exists so compose volume mounts succeed on control hosts.
+func syncPrometheusAgentToken(env Env, dest string) error {
+	src := strings.TrimSpace(os.Getenv("AGENT_TOKEN_FILE"))
+	if src == "" {
+		src = strings.TrimSpace(env.Raw["AGENT_TOKEN_FILE"])
+	}
+	if src != "" {
+		b, err := os.ReadFile(src)
+		if err != nil {
+			return fmt.Errorf("读取 AGENT_TOKEN_FILE: %w", err)
+		}
+		tmp := dest + ".tmp"
+		if err := os.WriteFile(tmp, b, 0o644); err != nil {
+			return err
+		}
+		return os.Rename(tmp, dest)
+	}
+	if _, err := os.Stat(dest); os.IsNotExist(err) {
+		return os.WriteFile(dest, nil, 0o644)
+	}
 	return nil
 }
 

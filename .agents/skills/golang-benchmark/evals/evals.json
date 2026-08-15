@@ -939,14 +939,14 @@
   {
     "id": 70,
     "name": "cpu-profile-requires-binary-for-symbolization",
-    "description": "Tests knowledge that a CPU profile file captured from a benchmark contains no symbols — the original test binary is required for symbolization",
+    "description": "Tests knowledge that a CPU profile file captured from a benchmark contains no symbols — a matching test binary is required for symbolization, and plain `go test -bench` does not leave that binary behind by default",
     "prompt": "I ran `go test -bench=BenchmarkParse -cpuprofile=cpu.prof ./pkg/parser` on our CI server, then downloaded cpu.prof to my laptop to analyze. When I run `go tool pprof cpu.prof` I see only hex addresses instead of function names. What's missing?",
-    "trap": "Without the skill, the model may suggest rebuilding pprof or using -symbolize=remote — missing that the pprof file is unsymbolized and requires the original compiled test binary (parser.test) to resolve addresses to function names",
+    "trap": "Without the skill, the model may claim that `go test -bench` leaves a parser.test binary next to the profile, or suggest rebuilding pprof / -symbolize=remote — missing that profiles need the matching compiled test binary, which by default is built in a temp dir and deleted when the test exits",
     "assertions": [
       {"id": "70.1", "text": "Explains that cpu.prof contains memory addresses, not function names — it requires the compiled test binary for symbolization"},
-      {"id": "70.2", "text": "States that go test -bench also produces a test binary (e.g., parser.test) alongside the profile"},
-      {"id": "70.3", "text": "Shows the correct command: go tool pprof parser.test cpu.prof (pass the binary as the first argument)"},
-      {"id": "70.4", "text": "Recommends downloading both the .prof file AND the corresponding test binary from CI for remote analysis"}
+      {"id": "70.2", "text": "States that plain `go test -bench` builds the test binary in a temporary directory and deletes it when finished — it does not leave parser.test (or similar) beside the profile by default"},
+      {"id": "70.3", "text": "Shows how to keep a binary for symbolization, e.g. `go test -c -o parser.test ./pkg/parser` then run `./parser.test -test.bench=BenchmarkParse -test.cpuprofile=cpu.prof`, and analyze with `go tool pprof parser.test cpu.prof`"},
+      {"id": "70.4", "text": "Recommends that CI retain/upload both the .prof file AND the matching test binary (via `-c` / `-o`) for remote symbolization"}
     ]
   },
   {
