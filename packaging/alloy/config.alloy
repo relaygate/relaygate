@@ -1,12 +1,9 @@
 // RelayGate：Alloy 采集 Envoy TCP access → 中心 Loki（Compose profile with-logs）
 // 替代原 Fluent Bit 路径；指标仍由本机 Prometheus（with-metrics）负责。
 //
-// 采样语义（近似 Fluent Bit sample.lua）：
-//   - flags ≠ "-" 的异常会话：始终保留
-//   - duration_ms < 2000（默认短会话阈值）：始终保留
-//   - 其余按 LOG_SAMPLE_RATE（默认 1.0=全量）概率保留
-// 差异：短会话阈值在配置中固定为 2000ms；若需改阈值请编辑本文件中的
-//   duration_ms >= 2000，勿依赖 LOG_SHORT_SESSION_MS（该变量仅文档兼容说明）。
+// 采样：默认全量保留（与 LOG_SAMPLE_RATE=1.0 一致）。
+// Alloy stage.match 不支持 | json 管道，故未在 River 内复刻「异常/短会话优先」Lua 逻辑；
+// 降采样请在 Loki 查询侧过滤 flags/duration，或后续再加独立 process 组件。
 
 logging {
 	level  = "info"
@@ -31,16 +28,6 @@ loki.process "tcp_access" {
 		values = {
 			job     = "envoy-tcp-access",
 			gateway = env("GATEWAY_NAME"),
-		}
-	}
-
-	// 正常长会话才采样；异常 flags / 短会话不进此 match → 全量保留
-	stage.match {
-		selector = `{job="envoy-tcp-access"} | json | flags == "-" | duration_ms >= 2000`
-
-		stage.sampling {
-			rate                = tonumber(coalesce(env("LOG_SAMPLE_RATE"), "1.0"))
-			drop_counter_reason = "tcp_access_sample"
 		}
 	}
 }

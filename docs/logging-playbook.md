@@ -53,9 +53,8 @@ curl -sS 'http://127.0.0.1:3100/loki/api/v1/label/job/values'
 
 | 行为 | Alloy（当前） |
 |------|----------------|
-| `LOG_SAMPLE_RATE`（默认 1.0） | 对「正常长会话」概率保留 |
-| `flags ≠ "-"` | 始终保留 |
-| 短会话 | 配置内固定 `duration_ms < 2000` 始终保留（改阈值需编辑 `packaging/alloy/config.alloy`） |
+| 默认 | **全量**保留（与常见 `LOG_SAMPLE_RATE=1.0` 一致） |
+| 异常 flags / 短会话优先抽样 | Alloy `stage.match` 不支持 `| json` 管道，**未**在采集侧复刻 Lua；降采样请在 Loki/Explore 用 `flags` / `duration_ms` 过滤，或改 `packaging/alloy/config.alloy` |
 
 原 Fluent Bit 配置留在 `packaging/fluent-bit/` 仅作对照，不再挂入 Compose。
 
