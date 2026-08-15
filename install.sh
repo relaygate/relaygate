@@ -119,6 +119,18 @@ agent 是节点上的拉取/心跳进程（relaygate agent / relaygate-agent.ser
   → 解压到 /opt/relaygate（保留 .env / data/）
   → relaygate setup → apply → panel 或 agent install → smoke
 
+默认会拉哪些容器（compose）:
+  始终: Envoy（安全能力走本机 CLI/配置，不依赖观测容器）
+  主控默认另开: Prometheus + node-exporter + Grafana + Loki + Fluent Bit
+    （COMPOSE_PROFILES=with-metrics,with-grafana,with-loki,with-logs）
+  节点默认精简: 仅 Envoy + systemd agent（心跳/配置拉取上报主控）；无 Panel / 本机观测栈（无需 MINIMAL=1）
+  节点可选: COMPOSE_PROFILES=with-metrics（边缘指标 remote_write）和/或 with-logs（Fluent Bit → 中心 Loki）
+  首次安装慢点通常在: 装 Docker CE、从 Docker Hub 拉镜像（主控更重；节点默认只拉 Envoy）
+
+主控精简（可选，小规格）:
+  MINIMAL=1 … install.sh control …
+  等同 GRAFANA_ENABLED=0 且 COMPOSE_PROFILES=with-metrics（Envoy + 本机 Prometheus/node-exporter）
+
 环境变量（高级，按组）:
   # 安装 / 路径 / 版本
   RELAYGATE_VERSION=<tag|sha|latest>  # 默认 latest
@@ -132,9 +144,11 @@ agent 是节点上的拉取/心跳进程（relaygate agent / relaygate-agent.ser
   GATEWAY_NAME / GATEWAY_PUBLIC_IP / GATEWAY_SSH_PORT
   # Panel / 观测
   PANEL_ENABLED / PANEL_BIND / PANEL_ROLE / GRAFANA_ENABLED
+  MINIMAL=1                           # 主控可选：跳过 Grafana/Loki/Fluent Bit（保留 with-metrics）
+  COMPOSE_PROFILES                    # 覆盖 setup 默认（节点可设 with-metrics / with-logs）
   # 机群连接（节点；通常由 node 子命令写入）
   CONTROL_URL / AGENT_TOKEN / AGENT_TOKEN_FILE
-  PROMETHEUS_REMOTE_WRITE_URL   # 节点指标上报主控；node 安装时由 CONTROL_URL 推导
+  PROMETHEUS_REMOTE_WRITE_URL   # 可选；仅 with-metrics 时由节点 Prometheus remote_write 到主控
   # 安全落地（分层，勿混用）
   APPLY_FIREWALL          # 安装/CLI 一次性应用防火墙
   SECURITY_AUTO_APPLY     # 节点 agent 拉取后是否自动应用主机侧
@@ -291,12 +305,21 @@ Prepare_System() {
     GRAFANA_ENABLED="${GRAFANA_ENABLED:-${ENABLE_GRAFANA:-}}"
   fi
   # 角色由子命令决定：control / node；upgrade 沿用已有 .env
+  if is_true "${MINIMAL:-0}"; then
+    GRAFANA_ENABLED=0
+    export MINIMAL=1 GRAFANA_ENABLED
+    log "MINIMAL=1：跳过 Grafana/Loki/Fluent Bit（仍拉 Envoy + with-metrics）"
+  fi
   if [[ "$ROLE" == "control" ]]; then
     PANEL_ENABLED="${PANEL_ENABLED:-1}"
     GRAFANA_ENABLED="${GRAFANA_ENABLED:-1}"
   elif [[ "$ROLE" == "node" ]]; then
     PANEL_ENABLED="${PANEL_ENABLED:-0}"
     GRAFANA_ENABLED="${GRAFANA_ENABLED:-0}"
+    # 节点默认精简（Envoy + agent 上报主控）；勿强迫用户设 MINIMAL=1
+    if [[ -z "${COMPOSE_PROFILES+x}" ]] && ! is_true "${MINIMAL:-0}"; then
+      log "节点默认精简：仅 Envoy + agent（状态上报主控；无本机 Prometheus/Grafana/Loki）"
+    fi
     [[ -n "${CONTROL_URL:-}" ]] || die "节点接入需要 --control（主控地址）"
     [[ -n "${GATEWAY_NAME:-}" ]] || die "节点接入需要 --name（网关名）"
     [[ -n "${AGENT_TOKEN:-}" || -n "${AGENT_TOKEN_FILE:-}" ]] || die "节点接入需要 --token（接入令牌）"
@@ -311,7 +334,10 @@ Prepare_System() {
   else
     die "请指定子命令：control / node / upgrade / uninstall（见 --help）"
   fi
-  ok "OS=${PRETTY_NAME:-$OS_ID} arch=${ARCH} role=${ROLE:-from-env} panel=${PANEL_ENABLED}"
+  if is_true "${MINIMAL:-0}"; then
+    GRAFANA_ENABLED=0
+  fi
+  ok "OS=${PRETTY_NAME:-$OS_ID} arch=${ARCH} role=${ROLE:-from-env} panel=${PANEL_ENABLED} grafana=${GRAFANA_ENABLED}"
 }
 
 Install_Packages() {
@@ -671,7 +697,7 @@ write_agent_join_creds() {
     upsert_env_file "${INSTALL_DIR}/.env" PANEL_ROLE "standby"
     upsert_env_file "${INSTALL_DIR}/.env" GRAFANA_ENABLED "${GRAFANA_ENABLED:-0}"
     [[ -n "${GATEWAY_NAME:-}" ]] && upsert_env_file "${INSTALL_DIR}/.env" GATEWAY_NAME "$GATEWAY_NAME"
-    # 节点指标经主控 Panel 转发到中心 Prometheus（供主控 Grafana 按 gateway 选择）
+    # 预写 remote_write URL（仅节点启用 with-metrics 时由本机 Prometheus 使用）
     if [[ -n "${CONTROL_URL:-}" ]]; then
       local rw_base="${CONTROL_URL%/}"
       upsert_env_file "${INSTALL_DIR}/.env" PROMETHEUS_REMOTE_WRITE_URL "${rw_base}/api/agent/metrics/write"
@@ -692,6 +718,11 @@ Invoke_Product() {
   export RELAYGATE_INSTALL_DIR="$INSTALL_DIR" RELAYGATE_SECRETS_DIR="$SECRETS_DIR"
   export RELAYGATE_DATA_DIR="${RELAYGATE_DATA_DIR:-$INSTALL_DIR/data}"
   export NONINTERACTIVE PANEL_ENABLED GRAFANA_ENABLED
+  export MINIMAL="${MINIMAL:-0}"
+  # 仅当调用方显式设置时透传；勿把未设置导出成空串（否则 setup 会当成「显式清空 profiles」）
+  if [[ -n "${COMPOSE_PROFILES+x}" ]]; then
+    export COMPOSE_PROFILES
+  fi
   export GATEWAY_NAME="${GATEWAY_NAME:-}" GATEWAY_PUBLIC_IP="${GATEWAY_PUBLIC_IP:-}" GATEWAY_SSH_PORT="${GATEWAY_SSH_PORT:-}"
   export APPLY_FIREWALL FIREWALL_CONFIRM="${FIREWALL_CONFIRM:-}"
   export CONTROL_URL="${CONTROL_URL:-}" AGENT_TOKEN="${AGENT_TOKEN:-}" AGENT_TOKEN_FILE="${AGENT_TOKEN_FILE:-}"

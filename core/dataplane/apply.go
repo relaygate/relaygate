@@ -2,7 +2,6 @@ package dataplane
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,8 +51,12 @@ func Apply(root string) error {
 		warnf("%v", err)
 	}
 
-	fmt.Printf("==> compose up (%s)\n", env.GatewayName)
-	_ = Compose(root, io.Discard, os.Stderr, "pull")
+	fmt.Printf("==> compose pull / up (%s)\n", env.GatewayName)
+	fmt.Println("==> 拉取镜像（首次安装受 Docker Hub 带宽影响，通常占大部分时间）")
+	// 显示 pull 进度，避免长时间无输出被误认为卡死；失败仍继续 up（本地已有镜像时可自愈）
+	if err := Compose(root, os.Stdout, os.Stderr, "pull"); err != nil {
+		warnf("compose pull: %v（将继续 compose up）", err)
+	}
 	if err := Compose(root, os.Stdout, os.Stderr, "up", "-d"); err != nil {
 		return err
 	}

@@ -14,7 +14,7 @@
 
 ## 明确不做
 
-多上游成员 LB · 默认 L7 业务网关 · TLS/SDS · ext_authz · WASM · Tracing · 完整服务网格 · 每节点完整 Panel · **外部全局限速（Redis / Rate Limit Service）**（行业可选，产品不接）
+多上游成员 LB · 默认 L7 业务网关 · TLS/SDS · ext_authz · WASM · Tracing · 完整服务网格 · 每节点完整 Panel · **外部全局限速（Redis / Rate Limit Service）**（行业可选，产品不接）· **TCP 魔数 / 首包 payload 匹配 / 等下游首包再 dial 上游**（自研协议粗筛放高防或前置 HAProxy 等；本产品用 nft ACL、新建连接限速、cluster `max_connections`、可选 tc 整形做本机减负）
 
 ## 已知边界
 

@@ -5,13 +5,13 @@
 # 在仓库根执行:
 #   docker compose -f packaging/compose.yaml --env-file .env up -d
 #
-# Grafana 可选：COMPOSE_PROFILES 含 with-grafana（主管理节点推荐）。
-# 日志：with-loki（中心 Loki）+ with-logs（每机 Fluent Bit 采集 TCP access）。
-#   主节点示例：COMPOSE_PROFILES=with-grafana,with-loki,with-logs
-#   从节点示例：COMPOSE_PROFILES=with-logs 且 LOKI_HOST=中心私网 IP
+# 指标栈可选：COMPOSE_PROFILES 含 with-metrics（Prometheus + node-exporter）。
+# Grafana 可选：with-grafana（主控推荐；隐含需要 with-metrics）。
+# 日志：with-loki（中心 Loki）+ with-logs（Fluent Bit 采集 TCP access）。
+#   主控示例：COMPOSE_PROFILES=with-metrics,with-grafana,with-loki,with-logs
+#   节点默认：COMPOSE_PROFILES 为空（仅 Envoy；状态由 agent 上报主控）；可选 with-logs / with-metrics
 # provisioning / dashboard JSON 来自本目录 ./grafana/provisioning（版本化）；
 # RELAYGATE_DATA_DIR（.env 中由 setup 写入绝对路径）承载渲染产物与 backups；不挂 Grafana 配置。
-# 从节点可留空 Grafana/Loki profiles，仅跑 Envoy + 本地 Prometheus（remote_write 到中心）+ 可选日志采集。
 
 name: ${COMPOSE_PROJECT_NAME:-relaygate}
 
@@ -67,6 +67,7 @@ services:
     container_name: ${GATEWAY_NAME}-prometheus
     network_mode: host
     restart: unless-stopped
+    profiles: ["with-metrics"]
     volumes:
       - ${RELAYGATE_DATA_DIR}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro
@@ -155,6 +156,7 @@ services:
     network_mode: host
     pid: host
     restart: unless-stopped
+    profiles: ["with-metrics"]
     command:
       - --path.rootfs=/host
       - --web.listen-address=127.0.0.1:9100

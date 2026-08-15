@@ -11,7 +11,9 @@
 | 角色 | 环境模板 | 要点 |
 |------|----------|------|
 | **主控** | [`packaging/control/env.example`](../packaging/control/env.example) | `PANEL_ENABLED=1`；可选本机转发与中心观测 |
-| **节点** | [`packaging/node/env.example`](../packaging/node/env.example) | `PANEL_ENABLED=0`；`CONTROL_URL` + `AGENT_TOKEN_FILE`；本机 `agent run` |
+| **节点** | [`packaging/node/env.example`](../packaging/node/env.example) | `PANEL_ENABLED=0`；`CONTROL_URL` + `AGENT_TOKEN_FILE`；本机 `agent run`；Compose 默认仅 Envoy |
+
+**状态怎么到主控：** 节点 **不**在本机跑 Grafana/Loki；机群在线、已应用版本等由 `relaygate-agent` 经 `POST /api/agent/heartbeat`（及配置拉取）上报，主控 Panel / `fleet status` 汇总展示。时序指标（Envoy/主机）为可选：节点设 `COMPOSE_PROFILES=with-metrics` 后，本机 Prometheus 经 `POST /api/agent/metrics/write` remote_write 到主控。
 
 ## 发布到机群
 

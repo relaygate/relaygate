@@ -37,6 +37,26 @@ curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.
 
 固定版本：`RELAYGATE_VERSION=vX.Y.Z`；本地包：`RELAYGATE_TAR=/path/to.tar.gz`。环境模板：[`packaging/control/env.example`](packaging/control/env.example)、[`packaging/node/env.example`](packaging/node/env.example)。
 
+默认会拉哪些容器：**始终** Envoy。节点侧安全（限连/防火墙/ACL）走本机 CLI/配置，不依赖观测容器。机群在线/版本状态由节点上的 **agent 心跳上报主控**（Panel 汇总），不是节点本机自监控。
+
+| 角色 | 默认 | 说明 |
+|------|------|------|
+| **节点** | **精简**（无需 `MINIMAL=1`） | Compose 仅 Envoy；+ systemd agent 上报主控；**不**装 Prometheus / Grafana / Loki / Fluent Bit |
+| **主控** | 含中心观测 | `with-metrics` + Grafana / Loki / Fluent Bit；小规格可 `MINIMAL=1`（仅保留本机 Prometheus） |
+
+首次安装慢点通常在装 Docker 与拉镜像（主控更重；节点默认只拉 Envoy）。节点若要边缘 TCP 日志：`COMPOSE_PROFILES=with-logs`；若要把本机 Envoy/主机指标 remote_write 到主控：`COMPOSE_PROFILES=with-metrics`（可选）。
+
+```bash
+# 节点（默认精简，无需 MINIMAL=1）
+curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
+  | sudo bash -s -- node --control http://203.0.113.10:9000 \
+      --name gateway-02 --token '<token>'
+
+# 主控精简（可选；无中心观测栈）
+curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
+  | sudo MINIMAL=1 bash -s -- control
+```
+
 首启：`relaygate diag` · `relaygate smoke`。Panel：`http://<GATEWAY_PUBLIC_IP>:9000`（可改 `PANEL_BIND`）。
 
 ### 常用环境变量（按组）
@@ -45,7 +65,7 @@ curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.
 |------|------|
 | 安装 / 路径 / 版本 | `RELAYGATE_VERSION` · `RELAYGATE_TAR` · `RELAYGATE_INSTALL_DIR` · `RELAYGATE_DATA_DIR` · `RELAYGATE_SECRETS_DIR` |
 | 本机节点身份 | `GATEWAY_NAME` · `GATEWAY_PUBLIC_IP` · `GATEWAY_SSH_PORT` |
-| Panel / 观测 | `PANEL_ENABLED` · `PANEL_BIND` · `PANEL_ROLE` · `GRAFANA_ENABLED` |
+| Panel / 观测 | `PANEL_ENABLED` · `PANEL_BIND` · `PANEL_ROLE` · `GRAFANA_ENABLED` · `MINIMAL` · `COMPOSE_PROFILES` |
 | 机群连接（节点） | `CONTROL_URL` · `AGENT_TOKEN` / `AGENT_TOKEN_FILE` |
 | 安全落地（分层） | `APPLY_FIREWALL`（安装/CLI 一次性）· `SECURITY_AUTO_APPLY`（节点拉取后自动应用主机侧） |
 
@@ -87,9 +107,10 @@ relaygate smoke [HOST]
 - 固定单目标转发（**不做**多上游成员 LB）
 - UDP **无**可靠主动健康检查
 - 上游看到的是网关源 IP
-- **非**抗 DDoS；大流量需云高防等外部能力
+- **非**抗 DDoS；大流量需云高防等外部能力。正确分层：外部抗量/粗筛 → 本机限连与 ACL / 可选 tc 整形 → 上游鉴权；**不要**指望只升回源带宽
+- **不做** TCP 魔数 / 首包指纹 /「等下游数据再 dial」；自研协议粗筛放高防或前置专用组件（如 HAProxy inspect），本产品保持 Envoy L4 转发
 - 默认 `PROXY_PROTOCOL=off`（有云 LB 发 PROXY 时再开）
-- 网卡域防护为预留，见 [security-domains](docs/security-domains.md)
+- 网卡 `nic_*` 为**主机减负**（示例档位常对齐约 3mbit），**不**替代高防，也**不**单独充当「攻击下回源 &lt; N Mbps」验收工具；回源侧应配合 `security.access` 只放行高防/内网 CIDR
 
 深度运维 / 设计：[机群运维](docs/fleet-ops.md) · [能力边界](docs/envoy-capability-roadmap.md) · [中心观测](packaging/observability/README.md)
 

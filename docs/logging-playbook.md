@@ -14,8 +14,10 @@ Envoy → ${RELAYGATE_DATA_DIR}/envoy/logs/tcp-access.json
 
 | 角色 | COMPOSE_PROFILES | 说明 |
 |------|------------------|------|
-| 主控 | `with-grafana,with-loki,with-logs` | 本机 Loki + 采集 + Grafana |
-| 节点 / 边缘 | `with-logs` | 仅 Fluent Bit；`LOKI_HOST=<中心私网>` |
+| 主控 | `with-metrics,with-grafana,with-loki,with-logs` | 本机指标库 + Loki + 采集 + Grafana |
+| 节点 / 边缘（默认） | （空） | 仅 Envoy；机群状态由 agent 上报主控；**不**默认装 Fluent Bit / Prometheus |
+| 节点开边缘日志 | `with-logs` | 可选 Fluent Bit；`LOKI_HOST=<中心私网>` |
+| 节点开边缘指标 | `with-metrics` | 可选本机 Prometheus remote_write 到主控 |
 | 专用可观测主机 | 见 `packaging/observability` + profile `with-loki` | 边缘推中心 |
 
 ## 启用
@@ -23,7 +25,7 @@ Envoy → ${RELAYGATE_DATA_DIR}/envoy/logs/tcp-access.json
 1. `.env`（示例见 `packaging/shared/env.example` / `control.env.example`）：
 
 ```bash
-COMPOSE_PROFILES=with-grafana,with-loki,with-logs
+COMPOSE_PROFILES=with-metrics,with-grafana,with-loki,with-logs
 # 同机可省略；节点必填中心地址
 # LOKI_HOST=127.0.0.1
 # LOKI_PORT=3100
@@ -173,7 +175,7 @@ Explore 深链（经 Panel 反代）：`/grafana/explore?...`（运维在 Grafan
 
 ## 多机
 
-节点 `.env`：
+节点默认**不开** Fluent Bit。若要边缘 TCP 日志，节点 `.env`：
 
 ```bash
 COMPOSE_PROFILES=with-logs
