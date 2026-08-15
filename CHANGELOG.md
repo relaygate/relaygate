@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-08-15
+
+### Added
+
+- 机群页「发布版本」：把当前已保存配置发布为机群新版本（输入「确认」或 Confirm）；按台「同步」仍只拉已发布版本。应用页改为指向机群页，不再把 CLI 当作唯一发布入口
+- 节点 Prometheus 经主控 Panel `POST /api/agent/metrics/write` 上报（校验节点令牌后转发到本机 Prometheus remote_write）。`install.sh node` / setup 在已有 `CONTROL_URL` 时写入 `PROMETHEUS_REMOTE_WRITE_URL`
+
+### Changed
+
+- 主控 Prometheus 开启 `--web.enable-remote-write-receiver`（仍只绑 loopback，勿对公网暴露 9090）
+- `relaygate render --observability` 把 `AGENT_TOKEN_FILE` 同步为 `DataDir/prometheus/agent.token`（0644），供 Prometheus 容器（nobody）作 remote_write Bearer，避免直接挂 0600 的 secrets
+
 ## [0.1.16] - 2026-08-14
 
 ### Fixed
