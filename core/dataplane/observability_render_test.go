@@ -66,6 +66,9 @@ scrape_configs: []
 			t.Fatalf("prometheus.yml missing %q\n%s", want, s)
 		}
 	}
+	if strings.Contains(s, "alerting:") {
+		t.Fatalf("node metrics-only should not wire alertmanager:\n%s", s)
+	}
 	cred := filepath.Join(data, "prometheus", "agent.token")
 	got, err := os.ReadFile(cred)
 	if err != nil {
@@ -80,5 +83,61 @@ scrape_configs: []
 	}
 	if st.Mode().Perm()&0o004 == 0 {
 		t.Fatalf("agent.token should be world-readable for prometheus nobody, mode=%v", st.Mode())
+	}
+}
+
+func TestRenderObservabilityAlertmanagerOnControl(t *testing.T) {
+	root := t.TempDir()
+	packaging := filepath.Join(root, "packaging", "prometheus")
+	if err := os.MkdirAll(packaging, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tpl := `# gateway: ${GATEWAY_NAME}
+scrape_configs: []
+`
+	if err := os.WriteFile(filepath.Join(packaging, "prometheus.yml.tpl"), []byte(tpl), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	data := filepath.Join(root, "data")
+	envBody := strings.Join([]string{
+		"GATEWAY_NAME=gateway-01",
+		"ENVOY_ADMIN_PORT=9901",
+		"RELAYGATE_DATA_DIR=" + data,
+		"COMPOSE_PROFILES=with-metrics,with-grafana,with-loki,with-logs",
+		"",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte(envBody), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RELAYGATE_DATA_DIR", data)
+	t.Setenv("PROMETHEUS_REMOTE_WRITE_URL", "")
+	t.Setenv("ALERTMANAGER_URL", "")
+	t.Setenv("COMPOSE_PROFILES", "with-metrics,with-grafana,with-loki,with-logs")
+
+	if err := RenderObservability(root); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(config.ResolvePaths(root).PromYAML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(body)
+	for _, want := range []string{
+		"alerting:",
+		"alertmanagers:",
+		"127.0.0.1:9093",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("control prometheus.yml missing %q\n%s", want, s)
+		}
+	}
+}
+
+func TestAlertmanagerStaticTarget(t *testing.T) {
+	if got := alertmanagerStaticTarget("http://127.0.0.1:9093"); got != "127.0.0.1:9093" {
+		t.Fatalf("got %q", got)
+	}
+	if got := alertmanagerStaticTarget(""); got != "127.0.0.1:9093" {
+		t.Fatalf("empty got %q", got)
 	}
 }

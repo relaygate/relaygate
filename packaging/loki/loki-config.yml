@@ -1,6 +1,6 @@
 # RelayGate Loki（单机/中心起步）。监听 loopback，与 Prometheus/Grafana 一致。
 # 保留期见 limits_config.retention_period；对照文档 LOKI_RETENTION_PERIOD（默认 168h）。
-# 高流量可缩短保留或开启 Fluent Bit 采样（LOG_SAMPLE_RATE）。
+# 高流量可缩短保留或开启 Alloy 采样（LOG_SAMPLE_RATE）。
 
 auth_enabled: false
 
@@ -78,8 +78,8 @@ ruler:
   ring:
     kvstore:
       store: inmemory
-  # 未接 Alertmanager 时仅评估；需要外发时取消注释：
-  # alertmanager_url: http://127.0.0.1:9093
+  # 与主控 Compose Alertmanager（with-grafana）对齐；外发仍看 alertmanager.yml receivers
+  alertmanager_url: http://127.0.0.1:9093
 
 analytics:
   reporting_enabled: false

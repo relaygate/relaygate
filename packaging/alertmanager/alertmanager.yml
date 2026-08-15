@@ -1,0 +1,46 @@
+# RelayGate Alertmanager（主控 with-grafana 时随 Compose 启动）
+# Prometheus 将 gateway-alerts.yml 等规则投递到此处；默认 receiver 仅入库展示，不外发。
+# 配通知：取消下方 webhook / email 注释，或改 route.receiver。
+# UI（loopback）：http://127.0.0.1:9093
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: default
+  group_by: [alertname, gateway, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity = critical
+      receiver: default
+      continue: false
+
+inhibit_rules:
+  - source_matchers:
+      - severity = critical
+    target_matchers:
+      - severity = warning
+    equal: [alertname, gateway]
+
+receivers:
+  # 占位：告警会进入 Alertmanager，可在 UI 查看；配置下方之一后才会外发。
+  - name: default
+    # webhook_configs:
+    #   - url: "http://127.0.0.1:9000/api/alerts/webhook"
+    #     send_resolved: true
+    #     http_config:
+    #       follow_redirects: true
+    # email_configs:
+    #   - to: "ops@example.com"
+    #     from: "alertmanager@example.com"
+    #     smarthost: "smtp.example.com:587"
+    #     auth_username: "alertmanager@example.com"
+    #     auth_password: "change-me"
+    #     require_tls: true
+    #     send_resolved: true
+
+# 可选：保留已解决告警一段时间便于核对
+# retention: 120h

@@ -129,7 +129,7 @@ func collectSettings(opt Options) (Options, error) {
 		}
 	}
 	if isTruthyEnv("MINIMAL") {
-		// 最小数据面：不启 Grafana/Loki/Fluent Bit（主控仍含 with-metrics）
+		// 最小数据面：不启 Grafana/Loki/Alloy（主控仍含 with-metrics）
 		opt.GrafanaEnabled = "0"
 	}
 	if opt.GrafanaEnabled == "" {
@@ -232,10 +232,10 @@ PROXY_PROTOCOL=off
 // resolveComposeProfiles picks COMPOSE_PROFILES for a new install.
 // Precedence: MINIMAL=1 → with-metrics; else COMPOSE_PROFILES env if set; else role defaults.
 // Node (PanelEnabled=0) defaults to with-metrics: Envoy + local Prometheus/node-exporter
-// for remote_write to control; no Grafana/Loki/Fluent Bit. Fleet online status still
-// comes from agent heartbeat. Opt into with-logs for edge TCP log shipping.
+// for remote_write to control; no Grafana/Loki/Alloy. Fleet online status still
+// comes from agent heartbeat. Opt into with-logs for edge TCP log shipping (Alloy).
 // Control defaults to the full observability stack; MINIMAL is compatibility-only
-// (not recommended for control — keep metrics+logs+Grafana).
+// (not recommended for control — keep metrics+logs+Grafana+Alertmanager).
 func resolveComposeProfiles(opt Options) string {
 	if isTruthyEnv("MINIMAL") {
 		// Compatible lean profile (metrics only). Prefer full stack on control.
@@ -245,11 +245,11 @@ func resolveComposeProfiles(opt Options) string {
 		return implyMetricsForGrafana(strings.TrimSpace(v))
 	}
 	if opt.PanelEnabled == "0" {
-		// 节点默认：Envoy + 本机 Prometheus（remote_write 到主控）；无 Grafana/Loki/Fluent Bit
+		// 节点默认：Envoy + 本机 Prometheus（remote_write 到主控）；无 Grafana/Loki/Alloy
 		return "with-metrics"
 	}
 	if opt.GrafanaEnabled == "1" {
-		// 主控默认：本机指标库 + 中心观测栈（无需精简）
+		// 主控默认：本机指标库 + 中心观测栈（全开）
 		return "with-metrics,with-grafana,with-loki,with-logs"
 	}
 	// 主控无 Grafana：仍保留本机 Prometheus（接收节点 remote_write / 本机 scrape）

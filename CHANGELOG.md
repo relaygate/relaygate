@@ -11,16 +11,21 @@
 - **本机 Prometheus / node-exporter 改为 Compose profile `with-metrics`**（不再随默认栈无条件启动）。
   - **主控 / 节点升级**：setup 会对空/缺省 profiles **自动补上** `with-metrics`（主控收指标；节点 remote_write 上报）。
   - 若曾显式去掉 `with-metrics` 且仍不需要边缘时序：升级后请再从 `.env` 的 `COMPOSE_PROFILES` 移除并重新 compose。
+- **`with-logs` 采集器由 Fluent Bit 改为 Grafana Alloy**（配置目录 `packaging/alloy/`）。升级后旧 `fluent-bit` 容器不再启动；请 `compose up -d` 拉起 `alloy`。
 
 ### Added
 
 - Compose profile `with-metrics`：启用本机 Prometheus + node-exporter（主控与节点默认开）
-- `MINIMAL=1`（兼容保留）：跳过 Grafana / Loki / Fluent Bit（`COMPOSE_PROFILES=with-metrics`）；**主控不推荐 / 不需要精简**，应保持监控+日志全开
+- 主控 **Alertmanager**（随 `with-grafana`）：Prometheus `gateway-alerts.yml` 可投递到 `127.0.0.1:9093`；默认 receiver 仅 UI 可见，webhook/email 见 `packaging/alertmanager/alertmanager.yml`
+- Grafana `gateway-overview` 补强：连接速率、上游健康 total/healthy、限流/溢出/连接失败、UDP 错误
+- `MINIMAL=1`（兼容保留）：跳过 Grafana / Loki / Alloy（`COMPOSE_PROFILES=with-metrics`）；**主控不要用**
 
 ### Changed
 
-- **节点默认精简但上报指标**：`install.sh node` / setup 默认 `COMPOSE_PROFILES=with-metrics` → Compose 起 **Envoy + Prometheus + node-exporter**；systemd **agent** 心跳/拉取；本机 Prometheus 经 `PROMETHEUS_REMOTE_WRITE_URL` → 主控 `POST /api/agent/metrics/write`。**不**部署 Grafana/Loki/Fluent Bit；安装按角色，无需手传 `with-*`。边缘 TCP 日志仍可选 `with-logs`
-- **主控默认全开**：`COMPOSE_PROFILES` 含 `with-metrics,with-grafana,with-loki,with-logs`；勿依赖 `MINIMAL` 给主控瘦身
+- **节点默认精简但上报指标**：`install.sh node` / setup 默认指标栈 → Envoy + Prometheus + node-exporter；systemd agent；remote_write 到主控。**不**部署 Grafana/Loki/Alloy
+- **主控默认全开**：指标 + Grafana + Loki + Alloy + Alertmanager
+- 用户文档弱化手传 `with-*` / `MINIMAL`；安装按 `control` / `node` 角色
+- 日志采集统一 Alloy；节点指标本阶段仍用本机 Prometheus（下一步见 `packaging/observability/README.md`）
 - `relaygate apply` 的 `docker compose pull` 改为显示进度（原先丢弃 stdout，首次拉镜像时易被误认为卡死）
 
 ## [0.1.17] - 2026-08-15

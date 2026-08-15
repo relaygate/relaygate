@@ -5,11 +5,12 @@
 # 在仓库根执行:
 #   docker compose -f packaging/compose.yaml --env-file .env up -d
 #
-# 指标栈：COMPOSE_PROFILES 含 with-metrics（Prometheus + node-exporter）。
-# Grafana 可选：with-grafana（主控默认；隐含需要 with-metrics）。
-# 日志：with-loki（中心 Loki）+ with-logs（Fluent Bit 采集 TCP access）。
-#   主控默认：COMPOSE_PROFILES=with-metrics,with-grafana,with-loki,with-logs（全开，无需精简）
-#   节点默认：COMPOSE_PROFILES=with-metrics（Envoy + 指标上报主控；可选再加 with-logs）
+# 指标栈：with-metrics（Prometheus + node-exporter）。告警：Alertmanager 随 with-grafana。
+# Grafana：with-grafana（主控默认；隐含 with-metrics）。
+# 日志：with-loki（中心 Loki）+ with-logs（Alloy 采集 TCP access → Loki）。
+#   主控默认：with-metrics,with-grafana,with-loki,with-logs（观测全开）
+#   节点默认：with-metrics（Envoy + 指标 remote_write 主控；边缘日志可选再加 with-logs）
+# 安装按 control/node 角色写 profiles；用户不必手传 with-*。
 # provisioning / dashboard JSON 来自本目录 ./grafana/provisioning（版本化）；
 # RELAYGATE_DATA_DIR（.env 中由 setup 写入绝对路径）承载渲染产物与 backups；不挂 Grafana 配置。
 
@@ -136,6 +137,7 @@ services:
       - ${RELAYGATE_SECRETS_DIR:-/etc/relaygate/secrets}:/run/relaygate-secrets:ro
     depends_on:
       - prometheus
+      - alertmanager
     logging:
       driver: json-file
       options:
@@ -205,30 +207,28 @@ services:
           cpus: "${LOKI_CPU_RESERVATION:-0.1}"
           memory: ${LOKI_MEMORY_RESERVATION:-128M}
 
-  fluent-bit:
-    image: ${FLUENT_BIT_IMAGE:-fluent/fluent-bit:3.2.10}
-    container_name: ${GATEWAY_NAME}-fluent-bit
+  # TCP access → Loki（替代 Fluent Bit）。指标仍由 with-metrics 的 Prometheus 负责。
+  alloy:
+    image: ${ALLOY_IMAGE:-grafana/alloy:v1.9.2}
+    container_name: ${GATEWAY_NAME}-alloy
     network_mode: host
     restart: unless-stopped
     profiles: ["with-logs"]
     environment:
       GATEWAY_NAME: ${GATEWAY_NAME}
-      # 中心 Loki；同机 with-loki 时默认 127.0.0.1
       LOKI_HOST: ${LOKI_HOST:-127.0.0.1}
       LOKI_PORT: ${LOKI_PORT:-3100}
-      # P2：正常会话采样率（1.0=全量）；flags≠- 与短会话始终保留
+      # 正常会话采样（1.0=全量）；flags≠- 与短会话（≥阈值见 config.alloy）始终保留
       LOG_SAMPLE_RATE: ${LOG_SAMPLE_RATE:-1.0}
-      LOG_SHORT_SESSION_MS: ${LOG_SHORT_SESSION_MS:-2000}
     volumes:
-      - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
-      - ./fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
-      - ./fluent-bit/sample.lua:/fluent-bit/etc/sample.lua:ro
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
       - ${RELAYGATE_DATA_DIR}/envoy/logs:/var/log/envoy:ro
-      - fluent-bit-data:/var/log/fluent-bit
+      - alloy-data:/var/lib/alloy/data
     command:
-      - /fluent-bit/bin/fluent-bit
-      - -c
-      - /fluent-bit/etc/fluent-bit.conf
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=127.0.0.1:12345
+      - --storage.path=/var/lib/alloy/data
     logging:
       driver: json-file
       options:
@@ -237,14 +237,44 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "${FLUENT_BIT_CPU_LIMIT:-0.5}"
-          memory: ${FLUENT_BIT_MEMORY_LIMIT:-128M}
+          cpus: "${ALLOY_CPU_LIMIT:-0.5}"
+          memory: ${ALLOY_MEMORY_LIMIT:-256M}
         reservations:
-          cpus: "${FLUENT_BIT_CPU_RESERVATION:-0.05}"
-          memory: ${FLUENT_BIT_MEMORY_RESERVATION:-32M}
+          cpus: "${ALLOY_CPU_RESERVATION:-0.05}"
+          memory: ${ALLOY_MEMORY_RESERVATION:-64M}
+
+  # 接收 Prometheus 规则告警（gateway-alerts.yml）。仅随 with-grafana（主控观测）启动。
+  alertmanager:
+    image: ${ALERTMANAGER_IMAGE:-prom/alertmanager:v0.28.1}
+    container_name: ${GATEWAY_NAME}-alertmanager
+    network_mode: host
+    restart: unless-stopped
+    profiles: ["with-grafana"]
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=127.0.0.1:9093
+      - --cluster.listen-address=
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "${ALERTMANAGER_CPU_LIMIT:-0.25}"
+          memory: ${ALERTMANAGER_MEMORY_LIMIT:-128M}
+        reservations:
+          cpus: "${ALERTMANAGER_CPU_RESERVATION:-0.05}"
+          memory: ${ALERTMANAGER_MEMORY_RESERVATION:-32M}
 
 volumes:
   prometheus-data:
   grafana-data:
   loki-data:
-  fluent-bit-data:
+  alloy-data:
+  alertmanager-data:

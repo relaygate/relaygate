@@ -43,9 +43,22 @@
     },
     {
       "type": "stat",
+      "title": "活跃上游连接",
+      "id": 6,
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(envoy_cluster_upstream_cx_active{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "stat",
       "title": "CPU %",
       "id": 3,
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 0 },
       "targets": [
         {
           "expr": "100 - (avg by (gateway) (rate(node_cpu_seconds_total{gateway=~\"$gateway\", mode=\"idle\"}[5m])) * 100)",
@@ -63,7 +76,7 @@
       "type": "stat",
       "title": "Memory %",
       "id": 4,
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "gridPos": { "h": 4, "w": 3, "x": 15, "y": 0 },
       "targets": [
         {
           "expr": "(1 - (node_memory_MemAvailable_bytes{gateway=~\"$gateway\"} / node_memory_MemTotal_bytes{gateway=~\"$gateway\"})) * 100",
@@ -81,7 +94,7 @@
       "type": "stat",
       "title": "Disk / %",
       "id": 5,
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "gridPos": { "h": 4, "w": 3, "x": 18, "y": 0 },
       "targets": [
         {
           "expr": "(1 - (node_filesystem_avail_bytes{gateway=~\"$gateway\", mountpoint=\"/\"} / node_filesystem_size_bytes{gateway=~\"$gateway\", mountpoint=\"/\"})) * 100",
@@ -127,9 +140,44 @@
     },
     {
       "type": "timeseries",
+      "title": "连接建立速率（上游 cx 新建/秒）",
+      "id": 16,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "expr": "sum by (gateway, envoy_cluster_name) (rate(envoy_cluster_upstream_cx_total{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}[1m]))",
+          "legendFormat": "{{gateway}} {{envoy_cluster_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "上游健康成员数",
+      "id": 14,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        {
+          "expr": "envoy_cluster_membership_healthy{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}",
+          "legendFormat": "healthy {{gateway}} {{envoy_cluster_name}}",
+          "refId": "A"
+        },
+        {
+          "expr": "envoy_cluster_membership_total{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}",
+          "legendFormat": "total {{gateway}} {{envoy_cluster_name}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] } }
+    },
+    {
+      "type": "timeseries",
       "title": "上游吞吐（字节/秒）",
       "id": 12,
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
       "targets": [
         {
           "expr": "sum by (gateway, envoy_cluster_name) (rate(envoy_cluster_upstream_cx_rx_bytes_total{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}[1m]))",
@@ -147,19 +195,29 @@
     },
     {
       "type": "timeseries",
-      "title": "网关溢出 / 限流",
+      "title": "限流 / 溢出 / 连接失败",
       "id": 13,
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
       "targets": [
-        {
-          "expr": "sum by (gateway, envoy_cluster_name) (rate(envoy_cluster_upstream_cx_overflow{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}[1m]))",
-          "legendFormat": "cx_overflow {{gateway}} {{envoy_cluster_name}}",
-          "refId": "A"
-        },
         {
           "expr": "sum by (gateway, envoy_local_rate_limit) (rate(envoy_local_rate_limit_rate_limited{gateway=~\"$gateway\"}[1m]))",
           "legendFormat": "tcp_rl {{gateway}} {{envoy_local_rate_limit}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (gateway, envoy_cluster_name) (rate(envoy_cluster_upstream_cx_overflow{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}[1m]))",
+          "legendFormat": "cx_overflow {{gateway}} {{envoy_cluster_name}}",
+          "refId": "B"
+        },
+        {
+          "expr": "sum by (gateway, envoy_cluster_name) (rate(envoy_cluster_upstream_cx_connect_fail{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}[1m]))",
+          "legendFormat": "connect_fail {{gateway}} {{envoy_cluster_name}}",
           "refId": "C"
+        },
+        {
+          "expr": "sum by (gateway, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_pending_overflow{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}[1m]))",
+          "legendFormat": "pending_overflow {{gateway}} {{envoy_cluster_name}}",
+          "refId": "D"
         }
       ],
       "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
@@ -167,24 +225,29 @@
     },
     {
       "type": "timeseries",
-      "title": "上游成员健康",
-      "id": 14,
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "title": "UDP 会话错误",
+      "id": 17,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
       "targets": [
         {
-          "expr": "envoy_cluster_membership_healthy{gateway=~\"$gateway\", envoy_cluster_name=~\"upstream-server-.*\"}",
-          "legendFormat": "{{gateway}} {{envoy_cluster_name}}",
+          "expr": "sum by (gateway, envoy_udp_prefix) (rate(envoy_udp_downstream_sess_tx_errors{gateway=~\"$gateway\"}[1m]))",
+          "legendFormat": "tx_err {{gateway}} {{envoy_udp_prefix}}",
           "refId": "A"
+        },
+        {
+          "expr": "sum by (gateway, envoy_udp_prefix) (rate(envoy_udp_downstream_sess_rx_errors{gateway=~\"$gateway\"}[1m]))",
+          "legendFormat": "rx_err {{gateway}} {{envoy_udp_prefix}}",
+          "refId": "B"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
-      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull"] } }
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
     },
     {
       "type": "timeseries",
       "title": "主机网卡流量",
       "id": 15,
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
       "targets": [
         {
           "expr": "sum by (gateway, device) (rate(node_network_receive_bytes_total{gateway=~\"$gateway\", device!~\"lo|veth.*|docker.*|br-.*\"}[1m]))",
@@ -202,7 +265,7 @@
     }
   ],
   "schemaVersion": 39,
-  "tags": ["relaygate", "gateway", "multi-gateway"],
+  "tags": ["relaygate", "gateway", "multi-gateway", "envoy"],
   "templating": {
     "list": [
       {
@@ -224,5 +287,6 @@
   "timezone": "browser",
   "title": "RelayGate 多网关概览",
   "uid": "relaygate-gateway-overview",
-  "version": 1
+  "version": 2,
+  "description": "Envoy L4 + 主机指标。亦可导入社区 Envoy 看板（Grafana.com 搜索 Envoy）作补充；本看板已覆盖连接/上游健康/限流/吞吐。"
 }

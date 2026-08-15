@@ -121,16 +121,15 @@ agent 是节点上的拉取/心跳进程（relaygate agent / relaygate-agent.ser
 
 默认会拉哪些容器（compose）:
   始终: Envoy（安全能力走本机 CLI/配置，不依赖观测容器）
-  主控默认另开: Prometheus + node-exporter + Grafana + Loki + Fluent Bit
-    （COMPOSE_PROFILES=with-metrics,with-grafana,with-loki,with-logs；无需精简）
+  主控默认另开: Prometheus + node-exporter + Grafana + Loki + Alloy + Alertmanager
+    （观测全开；安装子命令 control，无需手传 profile）
   节点默认: Envoy + Prometheus + node-exporter + systemd agent
-    （COMPOSE_PROFILES=with-metrics；指标 remote_write 到主控；无 Panel / Grafana / Loki）
-  节点可选: COMPOSE_PROFILES 加 with-logs（Fluent Bit → 中心 Loki）；安装按角色，无需手传 with-*
+    （指标 remote_write 到主控；无 Panel / Grafana / Loki）
+  节点可选: 边缘 TCP 日志（Alloy → 中心 Loki，设 LOKI_HOST）
   首次安装慢点通常在: 装 Docker CE、从 Docker Hub 拉镜像（主控更重；节点默认拉 Envoy+Prometheus）
 
-MINIMAL=1（兼容保留，主控不推荐）:
-  等同 GRAFANA_ENABLED=0 且 COMPOSE_PROFILES=with-metrics（跳过 Grafana/Loki/Fluent Bit）
-  主控应保持监控+日志全开；节点精简也不依赖此开关
+MINIMAL=1（兼容保留，主控不要用）:
+  跳过 Grafana/Loki/Alloy，仅保留指标栈；主控应保持监控+日志全开
 
 环境变量（高级，按组）:
   # 安装 / 路径 / 版本
@@ -145,11 +144,11 @@ MINIMAL=1（兼容保留，主控不推荐）:
   GATEWAY_NAME / GATEWAY_PUBLIC_IP / GATEWAY_SSH_PORT
   # Panel / 观测
   PANEL_ENABLED / PANEL_BIND / PANEL_ROLE / GRAFANA_ENABLED
-  MINIMAL=1                           # 兼容：跳过 Grafana/Loki/Fluent Bit（主控不推荐）
-  COMPOSE_PROFILES                    # 覆盖 setup 默认（节点默认可再加 with-logs）
+  MINIMAL=1                           # 兼容：跳过 Grafana/Loki/Alloy（主控不要用）
+  COMPOSE_PROFILES                    # 高级覆盖（一般不必设；由 control/node 角色生成）
   # 机群连接（节点；通常由 node 子命令写入）
   CONTROL_URL / AGENT_TOKEN / AGENT_TOKEN_FILE
-  PROMETHEUS_REMOTE_WRITE_URL   # 节点 with-metrics 时由本机 Prometheus remote_write 到主控
+  PROMETHEUS_REMOTE_WRITE_URL   # 节点指标 remote_write 到主控
   # 安全落地（分层，勿混用）
   APPLY_FIREWALL          # 安装/CLI 一次性应用防火墙
   SECURITY_AUTO_APPLY     # 节点 agent 拉取后是否自动应用主机侧

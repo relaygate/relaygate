@@ -1,6 +1,7 @@
 # Loki ruler 告警草案（务实：异常 flags / 短会话尖峰）。
 # 挂载到 /etc/loki/rules/<tenant>/；单机 auth_enabled=false 时 tenant=fake。
-# 未配置 alertmanager_url 时仅评估，不外发通知。
+# Loki ruler → Alertmanager（packaging/loki/loki-config.yml alertmanager_url）。
+# 外发通知取决于 Alertmanager receivers（默认仅 UI 可见，见 packaging/alertmanager/）。
 groups:
   - name: relaygate-tcp-access
     interval: 1m

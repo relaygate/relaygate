@@ -56,6 +56,22 @@ remote_write:
 `, env.PrometheusRemoteWriteURL)
 		content += rw
 	}
+	// 主控（with-grafana）接 Alertmanager，使 gateway-alerts.yml 可真正投递。
+	// 节点仅 with-metrics 时不写 alerting，避免连不上本机 :9093。
+	if shouldWireAlertmanager(env) {
+		amURL := firstNonEmpty(
+			os.Getenv("ALERTMANAGER_URL"),
+			env.Raw["ALERTMANAGER_URL"],
+			"http://127.0.0.1:9093",
+		)
+		content += fmt.Sprintf(`
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["%s"]
+`, alertmanagerStaticTarget(amURL))
+	}
 	tmp := out + ".tmp"
 	if err := os.WriteFile(tmp, []byte(content), 0o644); err != nil {
 		return err
@@ -65,6 +81,46 @@ remote_write:
 	}
 	fmt.Printf("rendered %s (gateway=%s)\n", out, env.GatewayName)
 	return nil
+}
+
+// shouldWireAlertmanager is true on control observability stacks (with-grafana /
+// with-alerts) or when ALERTMANAGER_URL is set. Nodes with metrics-only skip it.
+func shouldWireAlertmanager(env Env) bool {
+	if strings.TrimSpace(firstNonEmpty(os.Getenv("ALERTMANAGER_URL"), env.Raw["ALERTMANAGER_URL"])) != "" {
+		return true
+	}
+	profiles := env.Raw["COMPOSE_PROFILES"]
+	if profiles == "" {
+		profiles = os.Getenv("COMPOSE_PROFILES")
+	}
+	for _, p := range strings.Split(profiles, ",") {
+		switch strings.TrimSpace(p) {
+		case "with-grafana", "with-alerts":
+			return true
+		}
+	}
+	return false
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+// alertmanagerStaticTarget turns http://host:port into host:port for Prometheus.
+func alertmanagerStaticTarget(amURL string) string {
+	u := strings.TrimSpace(amURL)
+	u = strings.TrimPrefix(u, "https://")
+	u = strings.TrimPrefix(u, "http://")
+	u = strings.TrimSuffix(u, "/")
+	if u == "" {
+		return "127.0.0.1:9093"
+	}
+	return u
 }
 
 // syncPrometheusAgentToken copies AGENT_TOKEN_FILE into DataDir/prometheus/agent.token

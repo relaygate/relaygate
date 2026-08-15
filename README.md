@@ -41,18 +41,18 @@ curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.
 
 | 角色 | 默认 | 说明 |
 |------|------|------|
-| **节点** | 精简但上报指标 | Compose：`with-metrics`（Envoy + Prometheus + node-exporter）+ systemd agent；**无** Grafana / Loki / Fluent Bit；安装按角色，无需手传 `with-*` |
-| **主控** | 监控+日志全开 | `with-metrics` + Grafana / Loki / Fluent Bit；**无需 / 不推荐** `MINIMAL=1` |
+| **节点** | 精简但上报指标 | Envoy + Prometheus + node-exporter + systemd agent；**无** Grafana / Loki / Alloy；安装按角色即可 |
+| **主控** | 监控+日志全开 | 上列指标栈 + Grafana / Loki / Alloy / Alertmanager；**不要**用 `MINIMAL` 给主控瘦身 |
 
-首次安装慢点通常在装 Docker 与拉镜像（主控更重；节点默认拉 Envoy + Prometheus）。节点若要边缘 TCP 日志：安装后可在 `.env` 把 `COMPOSE_PROFILES` 设为 `with-metrics,with-logs`（可选）。
+首次安装慢点通常在装 Docker 与拉镜像（主控更重；节点默认拉 Envoy + Prometheus）。节点若要边缘 TCP 日志：安装后为日志采集打开对应开关并设 `LOKI_HOST`（见 [logging-playbook](docs/logging-playbook.md)）。
 
 ```bash
-# 节点（默认 with-metrics → 指标上报主控；无需 MINIMAL / 手传 with-*）
+# 节点（默认上报指标到主控）
 curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
   | sudo bash -s -- node --control http://203.0.113.10:9000 \
       --name gateway-02 --token '<token>'
 
-# 主控（默认全开观测；勿依赖 MINIMAL 精简）
+# 主控（默认全开观测）
 curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
   | sudo bash -s -- control
 ```
@@ -65,7 +65,7 @@ curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.
 |------|------|
 | 安装 / 路径 / 版本 | `RELAYGATE_VERSION` · `RELAYGATE_TAR` · `RELAYGATE_INSTALL_DIR` · `RELAYGATE_DATA_DIR` · `RELAYGATE_SECRETS_DIR` |
 | 本机节点身份 | `GATEWAY_NAME` · `GATEWAY_PUBLIC_IP` · `GATEWAY_SSH_PORT` |
-| Panel / 观测 | `PANEL_ENABLED` · `PANEL_BIND` · `PANEL_ROLE` · `GRAFANA_ENABLED` · `COMPOSE_PROFILES`（`MINIMAL` 仅兼容，主控不推荐） |
+| Panel / 观测 | `PANEL_ENABLED` · `PANEL_BIND` · `PANEL_ROLE` · `GRAFANA_ENABLED`（主控默认开；`MINIMAL` 仅兼容） |
 | 机群连接（节点） | `CONTROL_URL` · `AGENT_TOKEN` / `AGENT_TOKEN_FILE` · `PROMETHEUS_REMOTE_WRITE_URL` |
 | 安全落地（分层） | `APPLY_FIREWALL`（安装/CLI 一次性）· `SECURITY_AUTO_APPLY`（节点拉取后自动应用主机侧） |
 

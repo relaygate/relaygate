@@ -51,14 +51,33 @@ services:
       - grafana-data:/var/lib/grafana
     depends_on:
       - prometheus
+      - alertmanager
     logging:
       driver: json-file
       options:
         max-size: "20m"
         max-file: "3"
 
+  alertmanager:
+    image: ${ALERTMANAGER_IMAGE:-prom/alertmanager:v0.28.1}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - ../alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=0.0.0.0:9093
+      - --cluster.listen-address=
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
-  # 可选中心 Loki（与网关 with-loki 二选一；边缘 Fluent Bit 推到此 Host:3100）
+  # 可选中心 Loki（与网关 with-loki 二选一；边缘 Alloy 推到此 Host:3100）
   loki:
     image: ${LOKI_IMAGE:-grafana/loki:3.5.0}
     restart: unless-stopped
@@ -82,3 +101,4 @@ volumes:
   prometheus-data:
   grafana-data:
   loki-data:
+  alertmanager-data:

@@ -7,7 +7,7 @@
 | [`control/`](control/) | 主控组件 | `env.example`（Panel + 发布/名册）；中心观测相关见 `grafana/` `loki/` `observability/` |
 | [`node/`](node/) | 节点组件 | `env.example`（`PANEL_ENABLED=0`、`CONTROL_URL`、`AGENT_TOKEN_FILE`） |
 | [`shared/`](shared/) | 共用 | 默认 `.env`、resources、历史 inventory 模板 |
-| 根下 Compose/采集 | 共用运行时 | `compose.yaml`、`prometheus/`、`fluent-bit/`、`firewall/`、`sysctl/`、`profiles/` |
+| 根下 Compose/采集 | 共用运行时 | `compose.yaml`、`prometheus/`、`alloy/`、`alertmanager/`、`firewall/`、`sysctl/`、`profiles/` |
 | [`security/`](security/) | 可选宿主机加固 | [威胁分析](security/threat-analysis.md)（术语/纵深防御）、能力矩阵、SYN sysctl、long-lived TCP 脚本（协同 `firewall/` / `sysctl/`，非替代） |
 | [`systemd/`](systemd/) | 宿主服务 | Panel（主控）；节点用 `relaygate agent run`（可自建 unit） |
 | [`terraform/`](terraform/) | 可选云 LB | NLB 人工挂载清单 |
