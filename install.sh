@@ -122,14 +122,15 @@ agent 是节点上的拉取/心跳进程（relaygate agent / relaygate-agent.ser
 默认会拉哪些容器（compose）:
   始终: Envoy（安全能力走本机 CLI/配置，不依赖观测容器）
   主控默认另开: Prometheus + node-exporter + Grafana + Loki + Fluent Bit
-    （COMPOSE_PROFILES=with-metrics,with-grafana,with-loki,with-logs）
-  节点默认精简: 仅 Envoy + systemd agent（心跳/配置拉取上报主控）；无 Panel / 本机观测栈（无需 MINIMAL=1）
-  节点可选: COMPOSE_PROFILES=with-metrics（边缘指标 remote_write）和/或 with-logs（Fluent Bit → 中心 Loki）
-  首次安装慢点通常在: 装 Docker CE、从 Docker Hub 拉镜像（主控更重；节点默认只拉 Envoy）
+    （COMPOSE_PROFILES=with-metrics,with-grafana,with-loki,with-logs；无需精简）
+  节点默认: Envoy + Prometheus + node-exporter + systemd agent
+    （COMPOSE_PROFILES=with-metrics；指标 remote_write 到主控；无 Panel / Grafana / Loki）
+  节点可选: COMPOSE_PROFILES 加 with-logs（Fluent Bit → 中心 Loki）；安装按角色，无需手传 with-*
+  首次安装慢点通常在: 装 Docker CE、从 Docker Hub 拉镜像（主控更重；节点默认拉 Envoy+Prometheus）
 
-主控精简（可选，小规格）:
-  MINIMAL=1 … install.sh control …
-  等同 GRAFANA_ENABLED=0 且 COMPOSE_PROFILES=with-metrics（Envoy + 本机 Prometheus/node-exporter）
+MINIMAL=1（兼容保留，主控不推荐）:
+  等同 GRAFANA_ENABLED=0 且 COMPOSE_PROFILES=with-metrics（跳过 Grafana/Loki/Fluent Bit）
+  主控应保持监控+日志全开；节点精简也不依赖此开关
 
 环境变量（高级，按组）:
   # 安装 / 路径 / 版本
@@ -144,11 +145,11 @@ agent 是节点上的拉取/心跳进程（relaygate agent / relaygate-agent.ser
   GATEWAY_NAME / GATEWAY_PUBLIC_IP / GATEWAY_SSH_PORT
   # Panel / 观测
   PANEL_ENABLED / PANEL_BIND / PANEL_ROLE / GRAFANA_ENABLED
-  MINIMAL=1                           # 主控可选：跳过 Grafana/Loki/Fluent Bit（保留 with-metrics）
-  COMPOSE_PROFILES                    # 覆盖 setup 默认（节点可设 with-metrics / with-logs）
+  MINIMAL=1                           # 兼容：跳过 Grafana/Loki/Fluent Bit（主控不推荐）
+  COMPOSE_PROFILES                    # 覆盖 setup 默认（节点默认可再加 with-logs）
   # 机群连接（节点；通常由 node 子命令写入）
   CONTROL_URL / AGENT_TOKEN / AGENT_TOKEN_FILE
-  PROMETHEUS_REMOTE_WRITE_URL   # 可选；仅 with-metrics 时由节点 Prometheus remote_write 到主控
+  PROMETHEUS_REMOTE_WRITE_URL   # 节点 with-metrics 时由本机 Prometheus remote_write 到主控
   # 安全落地（分层，勿混用）
   APPLY_FIREWALL          # 安装/CLI 一次性应用防火墙
   SECURITY_AUTO_APPLY     # 节点 agent 拉取后是否自动应用主机侧
@@ -308,7 +309,7 @@ Prepare_System() {
   if is_true "${MINIMAL:-0}"; then
     GRAFANA_ENABLED=0
     export MINIMAL=1 GRAFANA_ENABLED
-    log "MINIMAL=1：跳过 Grafana/Loki/Fluent Bit（仍拉 Envoy + with-metrics）"
+    log "MINIMAL=1：跳过 Grafana/Loki/Fluent Bit（仍拉 Envoy + with-metrics；主控不推荐精简）"
   fi
   if [[ "$ROLE" == "control" ]]; then
     PANEL_ENABLED="${PANEL_ENABLED:-1}"
@@ -316,9 +317,9 @@ Prepare_System() {
   elif [[ "$ROLE" == "node" ]]; then
     PANEL_ENABLED="${PANEL_ENABLED:-0}"
     GRAFANA_ENABLED="${GRAFANA_ENABLED:-0}"
-    # 节点默认精简（Envoy + agent 上报主控）；勿强迫用户设 MINIMAL=1
+    # 节点默认 with-metrics（上报主控）；勿强迫用户手传 with-* / MINIMAL
     if [[ -z "${COMPOSE_PROFILES+x}" ]] && ! is_true "${MINIMAL:-0}"; then
-      log "节点默认精简：仅 Envoy + agent（状态上报主控；无本机 Prometheus/Grafana/Loki）"
+      log "节点默认：Envoy + agent + with-metrics（指标 remote_write 到主控；无 Grafana/Loki）"
     fi
     [[ -n "${CONTROL_URL:-}" ]] || die "节点接入需要 --control（主控地址）"
     [[ -n "${GATEWAY_NAME:-}" ]] || die "节点接入需要 --name（网关名）"
@@ -697,7 +698,7 @@ write_agent_join_creds() {
     upsert_env_file "${INSTALL_DIR}/.env" PANEL_ROLE "standby"
     upsert_env_file "${INSTALL_DIR}/.env" GRAFANA_ENABLED "${GRAFANA_ENABLED:-0}"
     [[ -n "${GATEWAY_NAME:-}" ]] && upsert_env_file "${INSTALL_DIR}/.env" GATEWAY_NAME "$GATEWAY_NAME"
-    # 预写 remote_write URL（仅节点启用 with-metrics 时由本机 Prometheus 使用）
+    # 预写 remote_write URL（节点默认 with-metrics：本机 Prometheus → 主控）
     if [[ -n "${CONTROL_URL:-}" ]]; then
       local rw_base="${CONTROL_URL%/}"
       upsert_env_file "${INSTALL_DIR}/.env" PROMETHEUS_REMOTE_WRITE_URL "${rw_base}/api/agent/metrics/write"

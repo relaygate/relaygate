@@ -5,11 +5,11 @@
 # 在仓库根执行:
 #   docker compose -f packaging/compose.yaml --env-file .env up -d
 #
-# 指标栈可选：COMPOSE_PROFILES 含 with-metrics（Prometheus + node-exporter）。
-# Grafana 可选：with-grafana（主控推荐；隐含需要 with-metrics）。
+# 指标栈：COMPOSE_PROFILES 含 with-metrics（Prometheus + node-exporter）。
+# Grafana 可选：with-grafana（主控默认；隐含需要 with-metrics）。
 # 日志：with-loki（中心 Loki）+ with-logs（Fluent Bit 采集 TCP access）。
-#   主控示例：COMPOSE_PROFILES=with-metrics,with-grafana,with-loki,with-logs
-#   节点默认：COMPOSE_PROFILES 为空（仅 Envoy；状态由 agent 上报主控）；可选 with-logs / with-metrics
+#   主控默认：COMPOSE_PROFILES=with-metrics,with-grafana,with-loki,with-logs（全开，无需精简）
+#   节点默认：COMPOSE_PROFILES=with-metrics（Envoy + 指标上报主控；可选再加 with-logs）
 # provisioning / dashboard JSON 来自本目录 ./grafana/provisioning（版本化）；
 # RELAYGATE_DATA_DIR（.env 中由 setup 写入绝对路径）承载渲染产物与 backups；不挂 Grafana 配置。
 

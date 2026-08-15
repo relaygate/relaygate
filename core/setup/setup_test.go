@@ -18,8 +18,8 @@ func TestResolveComposeProfiles(t *testing.T) {
 		t.Fatalf("control default = %q", got)
 	}
 	got = resolveComposeProfiles(Options{GrafanaEnabled: "0", PanelEnabled: "0"})
-	if got != "" {
-		t.Fatalf("node default = %q, want empty (Envoy + agent only)", got)
+	if got != "with-metrics" {
+		t.Fatalf("node default = %q, want with-metrics (Envoy + metrics remote_write)", got)
 	}
 	got = resolveComposeProfiles(Options{GrafanaEnabled: "0", PanelEnabled: "1"})
 	if got != "with-metrics" {

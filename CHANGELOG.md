@@ -8,19 +8,19 @@
 
 ### Breaking
 
-- **本机 Prometheus / node-exporter 改为 Compose profile `with-metrics`**（不再随默认栈无条件启动）。**旧节点**若 `.env` 无该 profile，升级后本机 Prometheus / node-exporter **可能停掉**（机群在线状态仍由 agent 心跳上报主控，不受影响）。
-  - **迁移（仍需边缘时序指标）**：在节点 `.env` 设 `COMPOSE_PROFILES=with-metrics`（可与 `with-logs` 并用），再 `relaygate render --observability` 并 `docker compose … --profile with-metrics up -d`。
-  - **主控升级**：setup 会对主控空/缺省 profiles **自动补上** `with-metrics`；节点**不会**自动补，以免破坏「默认精简」。
+- **本机 Prometheus / node-exporter 改为 Compose profile `with-metrics`**（不再随默认栈无条件启动）。
+  - **主控 / 节点升级**：setup 会对空/缺省 profiles **自动补上** `with-metrics`（主控收指标；节点 remote_write 上报）。
+  - 若曾显式去掉 `with-metrics` 且仍不需要边缘时序：升级后请再从 `.env` 的 `COMPOSE_PROFILES` 移除并重新 compose。
 
 ### Added
 
-- Compose profile `with-metrics`：可选启用本机 Prometheus + node-exporter（主控默认开；节点默认关）
-- 主控可选精简开关 `MINIMAL=1`：跳过 Grafana / Loki / Fluent Bit（`COMPOSE_PROFILES=with-metrics`）；仍启动 Envoy + 本机 Prometheus / node-exporter
+- Compose profile `with-metrics`：启用本机 Prometheus + node-exporter（主控与节点默认开）
+- `MINIMAL=1`（兼容保留）：跳过 Grafana / Loki / Fluent Bit（`COMPOSE_PROFILES=with-metrics`）；**主控不推荐 / 不需要精简**，应保持监控+日志全开
 
 ### Changed
 
-- **节点默认精简**：`install.sh node` / setup 默认 `COMPOSE_PROFILES` 为空 → Compose **仅 Envoy**；机群状态由 **agent 心跳/拉取**上报主控；不在节点部署 Grafana/Loki，也**不**默认起 Prometheus/node-exporter（无需 `MINIMAL=1`）。边缘指标用 `with-metrics`；边缘 TCP 日志用 `with-logs`
-- 主控默认 `COMPOSE_PROFILES` 含 `with-metrics`（与 Grafana/Loki/logs 一并启用）
+- **节点默认精简但上报指标**：`install.sh node` / setup 默认 `COMPOSE_PROFILES=with-metrics` → Compose 起 **Envoy + Prometheus + node-exporter**；systemd **agent** 心跳/拉取；本机 Prometheus 经 `PROMETHEUS_REMOTE_WRITE_URL` → 主控 `POST /api/agent/metrics/write`。**不**部署 Grafana/Loki/Fluent Bit；安装按角色，无需手传 `with-*`。边缘 TCP 日志仍可选 `with-logs`
+- **主控默认全开**：`COMPOSE_PROFILES` 含 `with-metrics,with-grafana,with-loki,with-logs`；勿依赖 `MINIMAL` 给主控瘦身
 - `relaygate apply` 的 `docker compose pull` 改为显示进度（原先丢弃 stdout，首次拉镜像时易被误认为卡死）
 
 ## [0.1.17] - 2026-08-15

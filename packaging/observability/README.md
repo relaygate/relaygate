@@ -17,10 +17,10 @@
    cd packaging/observability && docker compose up -d
    ```
 
-3. 每台网关若需把边缘指标写入主控，在节点 `.env` 启用 `with-metrics` 并设置 `PROMETHEUS_REMOTE_WRITE_URL`：
+3. 节点默认启用 `with-metrics` 并把边缘指标写入主控；确认 `.env` 含：
 
    ```bash
-   # 节点 .env（默认节点不启 Prometheus；需要时再开）
+   # 节点 .env（install.sh node / setup 默认写入）
    COMPOSE_PROFILES=with-metrics
    PROMETHEUS_REMOTE_WRITE_URL=http://203.0.113.10:9000/api/agent/metrics/write
    ```
@@ -47,8 +47,8 @@ Panel `GET /api/status/xds` 返回本机热更新计数器。边缘以 Envoy `en
 
 加一台网关节点后：
 
-1. 用主控 `fleet join` 接入节点并启动 agent（机群在线状态靠心跳；`install.sh node` 会预写 `PROMETHEUS_REMOTE_WRITE_URL`）  
-2. 若需要边缘时序指标：节点 `.env` 设 `COMPOSE_PROFILES=with-metrics`，`relaygate render --observability`，再 `docker compose … --profile with-metrics up -d`  
+1. 用主控 `fleet join` 接入节点并启动 agent（机群在线靠心跳；默认 `with-metrics` + 预写 `PROMETHEUS_REMOTE_WRITE_URL`）  
+2. 确认节点已 `relaygate render --observability` 且 compose `--profile with-metrics` 在跑  
 3. 主控 `relaygate fleet publish`；节点自行拉取对齐  
 4. Grafana 看板按 `gateway` 变量过滤（已有 `gateway-overview`）
 

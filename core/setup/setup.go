@@ -231,22 +231,25 @@ PROXY_PROTOCOL=off
 
 // resolveComposeProfiles picks COMPOSE_PROFILES for a new install.
 // Precedence: MINIMAL=1 → with-metrics; else COMPOSE_PROFILES env if set; else role defaults.
-// Node (PanelEnabled=0) defaults to empty: Envoy only in compose; fleet status is
-// reported by agent heartbeat to the control plane (not a local observability stack).
-// Opt into with-metrics (Prometheus remote_write) and/or with-logs (Fluent Bit).
+// Node (PanelEnabled=0) defaults to with-metrics: Envoy + local Prometheus/node-exporter
+// for remote_write to control; no Grafana/Loki/Fluent Bit. Fleet online status still
+// comes from agent heartbeat. Opt into with-logs for edge TCP log shipping.
+// Control defaults to the full observability stack; MINIMAL is compatibility-only
+// (not recommended for control — keep metrics+logs+Grafana).
 func resolveComposeProfiles(opt Options) string {
 	if isTruthyEnv("MINIMAL") {
+		// Compatible lean profile (metrics only). Prefer full stack on control.
 		return "with-metrics"
 	}
 	if v, ok := os.LookupEnv("COMPOSE_PROFILES"); ok {
 		return implyMetricsForGrafana(strings.TrimSpace(v))
 	}
 	if opt.PanelEnabled == "0" {
-		// 节点默认：转发 + agent 上报；不启本机 Prometheus/Grafana/Loki/Fluent Bit
-		return ""
+		// 节点默认：Envoy + 本机 Prometheus（remote_write 到主控）；无 Grafana/Loki/Fluent Bit
+		return "with-metrics"
 	}
 	if opt.GrafanaEnabled == "1" {
-		// 主控默认：本机指标库 + 中心观测栈
+		// 主控默认：本机指标库 + 中心观测栈（无需精简）
 		return "with-metrics,with-grafana,with-loki,with-logs"
 	}
 	// 主控无 Grafana：仍保留本机 Prometheus（接收节点 remote_write / 本机 scrape）
@@ -370,18 +373,16 @@ func patchExistingEnv(path string, opt Options, profiles, grafanaURL, dataDir st
 						}
 					}
 				}
-				// 主控升级：旧版空 profiles 曾依赖「始终起 Prometheus」；现改为 with-metrics
-				if opt.PanelEnabled == "1" {
-					hasMetrics := false
-					for _, c := range cleaned {
-						if c == "with-metrics" {
-							hasMetrics = true
-							break
-						}
+				// 升级：确保 with-metrics（主控收/存指标；节点 remote_write 上报）
+				hasMetrics := false
+				for _, c := range cleaned {
+					if c == "with-metrics" {
+						hasMetrics = true
+						break
 					}
-					if !hasMetrics {
-						cleaned = append([]string{"with-metrics"}, cleaned...)
-					}
+				}
+				if !hasMetrics {
+					cleaned = append([]string{"with-metrics"}, cleaned...)
 				}
 				out = append(out, "COMPOSE_PROFILES="+strings.Join(cleaned, ","))
 				seen["COMPOSE_PROFILES"] = true

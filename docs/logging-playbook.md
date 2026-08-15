@@ -14,10 +14,9 @@ Envoy → ${RELAYGATE_DATA_DIR}/envoy/logs/tcp-access.json
 
 | 角色 | COMPOSE_PROFILES | 说明 |
 |------|------------------|------|
-| 主控 | `with-metrics,with-grafana,with-loki,with-logs` | 本机指标库 + Loki + 采集 + Grafana |
-| 节点 / 边缘（默认） | （空） | 仅 Envoy；机群状态由 agent 上报主控；**不**默认装 Fluent Bit / Prometheus |
-| 节点开边缘日志 | `with-logs` | 可选 Fluent Bit；`LOKI_HOST=<中心私网>` |
-| 节点开边缘指标 | `with-metrics` | 可选本机 Prometheus remote_write 到主控 |
+| 主控 | `with-metrics,with-grafana,with-loki,with-logs` | 本机指标库 + Loki + 采集 + Grafana（全开，无需精简） |
+| 节点 / 边缘（默认） | `with-metrics` | Envoy + 本机 Prometheus remote_write 到主控；**不**默认装 Fluent Bit / Grafana / Loki |
+| 节点开边缘日志 | `with-metrics,with-logs` | 另加 Fluent Bit；`LOKI_HOST=<中心私网>` |
 | 专用可观测主机 | 见 `packaging/observability` + profile `with-loki` | 边缘推中心 |
 
 ## 启用
@@ -175,10 +174,10 @@ Explore 深链（经 Panel 反代）：`/grafana/explore?...`（运维在 Grafan
 
 ## 多机
 
-节点默认**不开** Fluent Bit。若要边缘 TCP 日志，节点 `.env`：
+节点默认**不开** Fluent Bit（仍有 `with-metrics` 上报指标）。若要边缘 TCP 日志，节点 `.env`：
 
 ```bash
-COMPOSE_PROFILES=with-logs
+COMPOSE_PROFILES=with-metrics,with-logs
 LOKI_HOST=10.0.0.1   # 中心私网；勿对公网暴露 3100
 LOKI_PORT=3100
 # 勿开 with-grafana / with-loki（由中心承担）
