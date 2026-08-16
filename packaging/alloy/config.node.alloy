@@ -1,0 +1,95 @@
+// RelayGate 节点：Alloy 采集 Envoy + 主机指标，remote_write 到主控。
+// Bearer：DataDir/prometheus/agent.token（render 从 AGENT_TOKEN_FILE 同步）。
+
+logging {
+	level  = "info"
+	format = "logfmt"
+}
+
+prometheus.exporter.unix "host" {
+	procfs_path = "/host/proc"
+	sysfs_path  = "/host/sys"
+	rootfs_path = "/rootfs"
+}
+
+prometheus.scrape "unix" {
+	targets         = prometheus.exporter.unix.host.targets
+	forward_to      = [prometheus.relabel.host.receiver]
+	scrape_interval = "15s"
+}
+
+prometheus.relabel "host" {
+	forward_to = [prometheus.remote_write.control.receiver]
+
+	rule {
+		target_label = "job"
+		replacement  = "node"
+	}
+	rule {
+		target_label = "role"
+		replacement  = "host"
+	}
+	rule {
+		target_label = "gateway"
+		replacement  = env("GATEWAY_NAME")
+	}
+	rule {
+		target_label = "host"
+		replacement  = env("GATEWAY_NAME")
+	}
+}
+
+prometheus.scrape "envoy" {
+	targets = [{
+		__address__ = format(
+			"127.0.0.1:%s",
+			coalesce(env("ENVOY_ADMIN_PORT"), "9901"),
+		),
+	}]
+	metrics_path    = "/stats/prometheus"
+	forward_to      = [prometheus.relabel.envoy.receiver]
+	scrape_interval = "15s"
+}
+
+prometheus.relabel "envoy" {
+	forward_to = [prometheus.remote_write.control.receiver]
+
+	rule {
+		target_label = "job"
+		replacement  = "envoy"
+	}
+	rule {
+		target_label = "role"
+		replacement  = "gateway"
+	}
+	rule {
+		target_label = "gateway"
+		replacement  = env("GATEWAY_NAME")
+	}
+	rule {
+		target_label = "host"
+		replacement  = env("GATEWAY_NAME")
+	}
+}
+
+prometheus.remote_write "control" {
+	external_labels = {
+		gateway = env("GATEWAY_NAME"),
+		role    = "gateway",
+	}
+
+	endpoint {
+		url = env("PROMETHEUS_REMOTE_WRITE_URL")
+
+		authorization {
+			type             = "Bearer"
+			credentials_file = "/etc/alloy/agent.token"
+		}
+
+		queue_config {
+			max_samples_per_send = 1000
+			capacity             = 10000
+			max_shards           = 4
+		}
+	}
+}
