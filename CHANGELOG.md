@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-08-16
+
 ### Breaking
 
 - 节点默认指标改为 **Alloy**（scrape Envoy + 主机指标，`remote_write` 到主控）；不再默认本机 Prometheus / node-exporter
