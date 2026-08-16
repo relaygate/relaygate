@@ -78,7 +78,7 @@ ruler:
   ring:
     kvstore:
       store: inmemory
-  # 与主控 Compose Alertmanager（with-grafana）对齐；外发仍看 alertmanager.yml receivers
+  # 与主控 Compose Alertmanager（control）对齐；外发仍看 alertmanager.yml receivers
   alertmanager_url: http://127.0.0.1:9093
 
 analytics:

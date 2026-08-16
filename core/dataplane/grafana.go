@@ -9,7 +9,7 @@ import (
 	"github.com/relaygate/relaygate/core/config"
 )
 
-// GrafanaEnabled reports whether the with-grafana compose profile is active.
+// GrafanaEnabled reports whether the control observability stack (Grafana) is active.
 func GrafanaEnabled(env Env) bool {
 	if env.GrafanaEnabled == "1" {
 		return true
@@ -22,7 +22,8 @@ func GrafanaEnabled(env Env) bool {
 		profiles = getenv("COMPOSE_PROFILES", "")
 	}
 	for _, p := range strings.Split(profiles, ",") {
-		if strings.TrimSpace(p) == "with-grafana" {
+		switch strings.TrimSpace(p) {
+		case "control", "with-grafana": // with-grafana: pre-migration .env
 			return true
 		}
 	}

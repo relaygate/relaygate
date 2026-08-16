@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+### Breaking
+
+- **Compose profiles 去掉 `with-*` 别名**，改为安装角色：`control` / `node`（可选组件 `alloy` 供节点边缘日志）。
+  - 主控默认 `COMPOSE_PROFILES=control` → Prometheus + node-exporter + Grafana + Loki + Alloy + Alertmanager
+  - 节点默认 `COMPOSE_PROFILES=node` → Prometheus + node-exporter（remote_write）；无本机 Grafana/Loki
+  - 升级时 setup 将旧 `with-metrics` / `with-grafana` / `with-loki` / `with-logs` 迁移为角色名；节点若曾开 `with-logs` 则变为 `node,alloy`
+- **移除** 安装主路径上的 `MINIMAL=1` 与手传 `COMPOSE_PROFILES=with-…`；`GRAFANA_ENABLED` 随 control/node 由 setup 写入，不再与 profiles 双轨选型
+
+### Changed
+
+- 用户文档与 `env.example` 按真实组件（Prometheus / Grafana / Loki / Alloy / Alertmanager）描述默认栈；安装只选 `control` \| `node`
+
 ## [0.1.18] - 2026-08-16
 
 ### Breaking

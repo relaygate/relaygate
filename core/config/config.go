@@ -193,7 +193,7 @@ type Env struct {
 	ComposeProjectName       string
 	PanelRole                string
 	PanelEnabled             string // PANEL_ENABLED (1=主控 Panel；0=纯节点)
-	GrafanaEnabled           string // GRAFANA_ENABLED (1=启 with-grafana；空则看 COMPOSE_PROFILES)
+	GrafanaEnabled           string // GRAFANA_ENABLED（1=主控观测含 Grafana；随 control/node 角色由 setup 写入）
 	ImageTag                 string
 	SecretsDir               string
 	GrafanaURL               string

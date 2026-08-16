@@ -1,6 +1,6 @@
 # Alloy（日志采集）
 
-Compose profile **`with-logs`** 使用 [Grafana Alloy](https://grafana.com/docs/alloy/) 采集本机 Envoy `tcp-access.json`，推送到中心 Loki。
+主控 / 节点的 Compose 中，**Alloy** 采集本机 Envoy `tcp-access.json` 并推送到中心 Loki（主控随 `control`；节点可选 `alloy`）。
 
 | 负责 | 不负责（本阶段） |
 |------|------------------|

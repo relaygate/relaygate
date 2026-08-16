@@ -5,12 +5,11 @@
 # 在仓库根执行:
 #   docker compose -f packaging/compose.yaml --env-file .env up -d
 #
-# 指标栈：with-metrics（Prometheus + node-exporter）。告警：Alertmanager 随 with-grafana。
-# Grafana：with-grafana（主控默认；隐含 with-metrics）。
-# 日志：with-loki（中心 Loki）+ with-logs（Alloy 采集 TCP access → Loki）。
-#   主控默认：with-metrics,with-grafana,with-loki,with-logs（观测全开）
-#   节点默认：with-metrics（Envoy + 指标 remote_write 主控；边缘日志可选再加 with-logs）
-# 安装按 control/node 角色写 profiles；用户不必手传 with-*。
+# Compose profiles 按安装角色（非 with-* 别名）：
+#   control → Prometheus + node-exporter + Grafana + Loki + Alloy + Alertmanager
+#   node    → Prometheus + node-exporter（指标 remote_write 主控；无本机 Grafana/Loki）
+#   alloy   → 可选：节点边缘 TCP 日志采集（与 node 合用：COMPOSE_PROFILES=node,alloy）
+# Envoy 始终启动（无 profile）。安装只选 control|node，不必手传 profiles。
 # provisioning / dashboard JSON 来自本目录 ./grafana/provisioning（版本化）；
 # RELAYGATE_DATA_DIR（.env 中由 setup 写入绝对路径）承载渲染产物与 backups；不挂 Grafana 配置。
 
@@ -68,7 +67,7 @@ services:
     container_name: ${GATEWAY_NAME}-prometheus
     network_mode: host
     restart: unless-stopped
-    profiles: ["with-metrics"]
+    profiles: ["control", "node"]
     volumes:
       - ${RELAYGATE_DATA_DIR}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro
@@ -103,7 +102,7 @@ services:
     container_name: ${GATEWAY_NAME}-grafana
     network_mode: host
     restart: unless-stopped
-    profiles: ["with-grafana"]
+    profiles: ["control"]
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD__FILE: /run/relaygate-secrets/grafana_admin_password
@@ -158,7 +157,7 @@ services:
     network_mode: host
     pid: host
     restart: unless-stopped
-    profiles: ["with-metrics"]
+    profiles: ["control", "node"]
     command:
       - --path.rootfs=/host
       - --web.listen-address=127.0.0.1:9100
@@ -185,7 +184,7 @@ services:
     container_name: ${GATEWAY_NAME}-loki
     network_mode: host
     restart: unless-stopped
-    profiles: ["with-loki"]
+    profiles: ["control"]
     user: "0:0"
     volumes:
       - ./loki/loki-config.yml:/etc/loki/local-config.yaml:ro
@@ -207,13 +206,13 @@ services:
           cpus: "${LOKI_CPU_RESERVATION:-0.1}"
           memory: ${LOKI_MEMORY_RESERVATION:-128M}
 
-  # TCP access → Loki（替代 Fluent Bit）。指标仍由 with-metrics 的 Prometheus 负责。
+  # TCP access → Loki。主控随 control；节点边缘日志可选再加 profile alloy。
   alloy:
     image: ${ALLOY_IMAGE:-grafana/alloy:v1.9.2}
     container_name: ${GATEWAY_NAME}-alloy
     network_mode: host
     restart: unless-stopped
-    profiles: ["with-logs"]
+    profiles: ["control", "alloy"]
     environment:
       GATEWAY_NAME: ${GATEWAY_NAME}
       LOKI_HOST: ${LOKI_HOST:-127.0.0.1}
@@ -243,13 +242,13 @@ services:
           cpus: "${ALLOY_CPU_RESERVATION:-0.05}"
           memory: ${ALLOY_MEMORY_RESERVATION:-64M}
 
-  # 接收 Prometheus 规则告警（gateway-alerts.yml）。仅随 with-grafana（主控观测）启动。
+  # 接收 Prometheus 规则告警（gateway-alerts.yml）。仅主控 control 栈启动。
   alertmanager:
     image: ${ALERTMANAGER_IMAGE:-prom/alertmanager:v0.28.1}
     container_name: ${GATEWAY_NAME}-alertmanager
     network_mode: host
     restart: unless-stopped
-    profiles: ["with-grafana"]
+    profiles: ["control"]
     volumes:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager-data:/alertmanager

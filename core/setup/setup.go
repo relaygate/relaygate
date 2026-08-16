@@ -63,9 +63,7 @@ func Run(opt Options) error {
 	if v := os.Getenv("PANEL_ENABLED"); v != "" && opt.PanelEnabled == "" {
 		opt.PanelEnabled = v
 	}
-	if v := os.Getenv("GRAFANA_ENABLED"); v != "" && opt.GrafanaEnabled == "" {
-		opt.GrafanaEnabled = v
-	}
+	// GRAFANA_ENABLED 由 PANEL_ENABLED（control/node）推导，不再单独读入。
 
 	var err error
 	opt, err = collectSettings(opt)
@@ -128,29 +126,14 @@ func collectSettings(opt Options) (Options, error) {
 			opt.PanelEnabled = "0"
 		}
 	}
-	if isTruthyEnv("MINIMAL") {
-		// 最小数据面：不启 Grafana/Loki/Alloy（主控仍含 with-metrics）
+	// Grafana 随角色：主控开、节点关（不再用 MINIMAL / 手传 COMPOSE_PROFILES 双轨）。
+	if opt.PanelEnabled == "0" {
 		opt.GrafanaEnabled = "0"
-	}
-	if opt.GrafanaEnabled == "" {
-		if opt.NonInteractive {
-			// 节点组件默认不启中心 Grafana
-			if opt.PanelEnabled == "0" {
-				opt.GrafanaEnabled = "0"
-			} else {
-				opt.GrafanaEnabled = "1"
-			}
-		} else if confirm("启用仅本机监听的 Grafana？") {
-			opt.GrafanaEnabled = "1"
-		} else {
-			opt.GrafanaEnabled = "0"
-		}
+	} else {
+		opt.GrafanaEnabled = "1"
 	}
 	if opt.PanelEnabled != "0" && opt.PanelEnabled != "1" {
 		return opt, fmt.Errorf("PANEL_ENABLED 只能是 0 或 1")
-	}
-	if opt.GrafanaEnabled != "0" && opt.GrafanaEnabled != "1" {
-		return opt, fmt.Errorf("GRAFANA_ENABLED 只能是 0 或 1")
 	}
 	n, err := strconv.Atoi(opt.SSHPort)
 	if err != nil || n < 1 || n > 65535 {
@@ -229,68 +212,32 @@ PROXY_PROTOCOL=off
 	return secureEnvFile(envPath)
 }
 
-// resolveComposeProfiles picks COMPOSE_PROFILES for a new install.
-// Precedence: MINIMAL=1 → with-metrics; else COMPOSE_PROFILES env if set; else role defaults.
-// Node (PanelEnabled=0) defaults to with-metrics: Envoy + local Prometheus/node-exporter
-// for remote_write to control; no Grafana/Loki/Alloy. Fleet online status still
-// comes from agent heartbeat. Opt into with-logs for edge TCP log shipping (Alloy).
-// Control defaults to the full observability stack; MINIMAL is compatibility-only
-// (not recommended for control — keep metrics+logs+Grafana+Alertmanager).
+// resolveComposeProfiles picks COMPOSE_PROFILES from install role only.
+// control → full observability (Prometheus/Grafana/Loki/Alloy/Alertmanager).
+// node → Envoy + Prometheus/node-exporter (remote_write); no local Grafana/Loki.
+// Optional edge logs on a node: append component profile "alloy" after install.
 func resolveComposeProfiles(opt Options) string {
-	if isTruthyEnv("MINIMAL") {
-		// Compatible lean profile (metrics only). Prefer full stack on control.
-		return "with-metrics"
-	}
-	if v, ok := os.LookupEnv("COMPOSE_PROFILES"); ok {
-		return implyMetricsForGrafana(strings.TrimSpace(v))
-	}
 	if opt.PanelEnabled == "0" {
-		// 节点默认：Envoy + 本机 Prometheus（remote_write 到主控）；无 Grafana/Loki/Alloy
-		return "with-metrics"
+		return "node"
 	}
-	if opt.GrafanaEnabled == "1" {
-		// 主控默认：本机指标库 + 中心观测栈（全开）
-		return "with-metrics,with-grafana,with-loki,with-logs"
-	}
-	// 主控无 Grafana：仍保留本机 Prometheus（接收节点 remote_write / 本机 scrape）
-	return "with-metrics"
+	return "control"
 }
 
-// implyMetricsForGrafana ensures with-metrics when with-grafana is selected
-// (Grafana depends_on prometheus).
-func implyMetricsForGrafana(profiles string) string {
-	if profiles == "" {
-		return ""
-	}
-	parts := strings.Split(profiles, ",")
-	hasGrafana, hasMetrics := false, false
-	cleaned := make([]string, 0, len(parts)+1)
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		cleaned = append(cleaned, p)
-		switch p {
-		case "with-grafana":
-			hasGrafana = true
-		case "with-metrics":
-			hasMetrics = true
+// migrateComposeProfiles maps legacy with-* aliases to role profiles.
+// Preserves optional component "alloy" on nodes (edge TCP logs).
+func migrateComposeProfiles(existing string, opt Options) string {
+	role := resolveComposeProfiles(opt)
+	wantAlloy := false
+	for _, p := range strings.Split(existing, ",") {
+		switch strings.TrimSpace(p) {
+		case "alloy", "with-logs":
+			wantAlloy = true
 		}
 	}
-	if hasGrafana && !hasMetrics {
-		cleaned = append([]string{"with-metrics"}, cleaned...)
+	if role == "node" && wantAlloy {
+		return "node,alloy"
 	}
-	return strings.Join(cleaned, ",")
-}
-
-func isTruthyEnv(key string) bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
-	case "1", "y", "yes", "true":
-		return true
-	default:
-		return false
-	}
+	return role
 }
 
 func patchExistingEnv(path string, opt Options, profiles, grafanaURL, dataDir string) error {
@@ -337,54 +284,8 @@ func patchExistingEnv(path string, opt Options, profiles, grafanaURL, dataDir st
 				continue
 			}
 			if key == "COMPOSE_PROFILES" {
-				if isTruthyEnv("MINIMAL") {
-					out = append(out, "COMPOSE_PROFILES="+profiles)
-					seen["COMPOSE_PROFILES"] = true
-					continue
-				}
 				val := strings.TrimSpace(strings.TrimPrefix(trim, "COMPOSE_PROFILES="))
-				parts := strings.Split(val, ",")
-				var cleaned []string
-				for _, p := range parts {
-					p = strings.TrimSpace(p)
-					if p == "" || p == "with-panel" {
-						continue
-					}
-					if opt.GrafanaEnabled == "0" && (p == "with-grafana" || p == "with-loki") {
-						continue
-					}
-					cleaned = append(cleaned, p)
-				}
-				if opt.GrafanaEnabled == "1" && profiles != "" {
-					for _, want := range strings.Split(profiles, ",") {
-						want = strings.TrimSpace(want)
-						if want == "" {
-							continue
-						}
-						has := false
-						for _, c := range cleaned {
-							if c == want {
-								has = true
-								break
-							}
-						}
-						if !has {
-							cleaned = append(cleaned, want)
-						}
-					}
-				}
-				// 升级：确保 with-metrics（主控收/存指标；节点 remote_write 上报）
-				hasMetrics := false
-				for _, c := range cleaned {
-					if c == "with-metrics" {
-						hasMetrics = true
-						break
-					}
-				}
-				if !hasMetrics {
-					cleaned = append([]string{"with-metrics"}, cleaned...)
-				}
-				out = append(out, "COMPOSE_PROFILES="+strings.Join(cleaned, ","))
+				out = append(out, "COMPOSE_PROFILES="+migrateComposeProfiles(val, opt))
 				seen["COMPOSE_PROFILES"] = true
 				continue
 			}
@@ -396,7 +297,7 @@ func patchExistingEnv(path string, opt Options, profiles, grafanaURL, dataDir st
 			out = append(out, k+"="+v)
 		}
 	}
-	if !seen["COMPOSE_PROFILES"] && (profiles != "" || isTruthyEnv("MINIMAL")) {
+	if !seen["COMPOSE_PROFILES"] && profiles != "" {
 		out = append(out, "COMPOSE_PROFILES="+profiles)
 	}
 	if err := os.WriteFile(path, []byte(strings.Join(out, "\n")), 0o640); err != nil {

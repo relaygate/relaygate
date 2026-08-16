@@ -17,7 +17,7 @@
 
 | 可选 | 作用 |
 |------|------|
-| 边缘 TCP 日志 | Alloy → 中心 Loki（设 `LOKI_HOST`；内部 profile `with-logs`） |
+| 边缘 TCP 日志 | Alloy → 中心 Loki（设 `LOKI_HOST`；`COMPOSE_PROFILES=node,alloy`） |
 
 ## 资产与接入
 

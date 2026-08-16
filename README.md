@@ -41,10 +41,10 @@ curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.
 
 | 角色 | 默认 | 说明 |
 |------|------|------|
-| **节点** | 精简但上报指标 | Envoy + Prometheus + node-exporter + systemd agent；**无** Grafana / Loki / Alloy；安装按角色即可 |
-| **主控** | 监控+日志全开 | 上列指标栈 + Grafana / Loki / Alloy / Alertmanager；**不要**用 `MINIMAL` 给主控瘦身 |
+| **节点** | 精简但上报指标 | Envoy + Prometheus + node-exporter + systemd agent；**无**本机 Grafana / Loki / Alloy；安装 `node` 即可 |
+| **主控** | 监控+日志全开 | 上列指标栈 + Grafana / Loki / Alloy / Alertmanager；安装 `control` 即可 |
 
-首次安装慢点通常在装 Docker 与拉镜像（主控更重；节点默认拉 Envoy + Prometheus）。节点若要边缘 TCP 日志：安装后为日志采集打开对应开关并设 `LOKI_HOST`（见 [logging-playbook](docs/logging-playbook.md)）。
+首次安装慢点通常在装 Docker 与拉镜像（主控更重；节点默认拉 Envoy + Prometheus）。节点若要边缘 TCP 日志：安装后设 `COMPOSE_PROFILES=node,alloy` 并配置 `LOKI_HOST`（见 [logging-playbook](docs/logging-playbook.md)）。
 
 ```bash
 # 节点（默认上报指标到主控）
@@ -65,7 +65,7 @@ curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.
 |------|------|
 | 安装 / 路径 / 版本 | `RELAYGATE_VERSION` · `RELAYGATE_TAR` · `RELAYGATE_INSTALL_DIR` · `RELAYGATE_DATA_DIR` · `RELAYGATE_SECRETS_DIR` |
 | 本机节点身份 | `GATEWAY_NAME` · `GATEWAY_PUBLIC_IP` · `GATEWAY_SSH_PORT` |
-| Panel / 观测 | `PANEL_ENABLED` · `PANEL_BIND` · `PANEL_ROLE` · `GRAFANA_ENABLED`（主控默认开；`MINIMAL` 仅兼容） |
+| Panel | `PANEL_ENABLED` · `PANEL_BIND` · `PANEL_ROLE`（观测随 control/node 角色，不必手传 `MINIMAL` / `COMPOSE_PROFILES`） |
 | 机群连接（节点） | `CONTROL_URL` · `AGENT_TOKEN` / `AGENT_TOKEN_FILE` · `PROMETHEUS_REMOTE_WRITE_URL` |
 | 安全落地（分层） | `APPLY_FIREWALL`（安装/CLI 一次性）· `SECURITY_AUTO_APPLY`（节点拉取后自动应用主机侧） |
 

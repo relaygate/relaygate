@@ -109,7 +109,7 @@ RelayGate 安装器（bootstrap · 预编译 release tar）
   --token / -t <token>     接入令牌（来自 fleet join）
 
 子命令默认非交互。
-control → PANEL_ENABLED=1；node → PANEL_ENABLED=0 GRAFANA_ENABLED=0。
+control → PANEL_ENABLED=1 GRAFANA_ENABLED=1；node → PANEL_ENABLED=0 GRAFANA_ENABLED=0。
 安装角色只用 control / node（不是 primary；也不是 agent）。
 agent 是节点上的拉取/心跳进程（relaygate agent / relaygate-agent.service），不是安装子命令。
 
@@ -121,15 +121,11 @@ agent 是节点上的拉取/心跳进程（relaygate agent / relaygate-agent.ser
 
 默认会拉哪些容器（compose）:
   始终: Envoy（安全能力走本机 CLI/配置，不依赖观测容器）
-  主控默认另开: Prometheus + node-exporter + Grafana + Loki + Alloy + Alertmanager
-    （观测全开；安装子命令 control，无需手传 profile）
-  节点默认: Envoy + Prometheus + node-exporter + systemd agent
-    （指标 remote_write 到主控；无 Panel / Grafana / Loki）
-  节点可选: 边缘 TCP 日志（Alloy → 中心 Loki，设 LOKI_HOST）
+  主控 control: Prometheus + node-exporter + Grafana + Loki + Alloy + Alertmanager
+  节点 node: Envoy + Prometheus + node-exporter + systemd agent
+    （指标 remote_write 到主控；无本机 Grafana / Loki）
+  节点可选边缘 TCP 日志: 安装后设 COMPOSE_PROFILES=node,alloy 并配置 LOKI_HOST
   首次安装慢点通常在: 装 Docker CE、从 Docker Hub 拉镜像（主控更重；节点默认拉 Envoy+Prometheus）
-
-MINIMAL=1（兼容保留，主控不要用）:
-  跳过 Grafana/Loki/Alloy，仅保留指标栈；主控应保持监控+日志全开
 
 环境变量（高级，按组）:
   # 安装 / 路径 / 版本
@@ -142,10 +138,8 @@ MINIMAL=1（兼容保留，主控不要用）:
   RELAYGATE_REPO_URL
   # 本机节点身份
   GATEWAY_NAME / GATEWAY_PUBLIC_IP / GATEWAY_SSH_PORT
-  # Panel / 观测
-  PANEL_ENABLED / PANEL_BIND / PANEL_ROLE / GRAFANA_ENABLED
-  MINIMAL=1                           # 兼容：跳过 Grafana/Loki/Alloy（主控不要用）
-  COMPOSE_PROFILES                    # 高级覆盖（一般不必设；由 control/node 角色生成）
+  # Panel（随 control/node 角色；不必手传观测开关）
+  PANEL_ENABLED / PANEL_BIND / PANEL_ROLE
   # 机群连接（节点；通常由 node 子命令写入）
   CONTROL_URL / AGENT_TOKEN / AGENT_TOKEN_FILE
   PROMETHEUS_REMOTE_WRITE_URL   # 节点指标 remote_write 到主控
@@ -305,21 +299,14 @@ Prepare_System() {
     GRAFANA_ENABLED="${GRAFANA_ENABLED:-${ENABLE_GRAFANA:-}}"
   fi
   # 角色由子命令决定：control / node；upgrade 沿用已有 .env
-  if is_true "${MINIMAL:-0}"; then
-    GRAFANA_ENABLED=0
-    export MINIMAL=1 GRAFANA_ENABLED
-    log "MINIMAL=1：跳过 Grafana/Loki/Fluent Bit（仍拉 Envoy + with-metrics；主控不推荐精简）"
-  fi
   if [[ "$ROLE" == "control" ]]; then
     PANEL_ENABLED="${PANEL_ENABLED:-1}"
-    GRAFANA_ENABLED="${GRAFANA_ENABLED:-1}"
+    GRAFANA_ENABLED=1
+    log "主控默认：Envoy + Prometheus/Grafana/Loki/Alloy/Alertmanager"
   elif [[ "$ROLE" == "node" ]]; then
     PANEL_ENABLED="${PANEL_ENABLED:-0}"
-    GRAFANA_ENABLED="${GRAFANA_ENABLED:-0}"
-    # 节点默认 with-metrics（上报主控）；勿强迫用户手传 with-* / MINIMAL
-    if [[ -z "${COMPOSE_PROFILES+x}" ]] && ! is_true "${MINIMAL:-0}"; then
-      log "节点默认：Envoy + agent + with-metrics（指标 remote_write 到主控；无 Grafana/Loki）"
-    fi
+    GRAFANA_ENABLED=0
+    log "节点默认：Envoy + agent + Prometheus（指标 remote_write 到主控；无本机 Grafana/Loki）"
     [[ -n "${CONTROL_URL:-}" ]] || die "节点接入需要 --control（主控地址）"
     [[ -n "${GATEWAY_NAME:-}" ]] || die "节点接入需要 --name（网关名）"
     [[ -n "${AGENT_TOKEN:-}" || -n "${AGENT_TOKEN_FILE:-}" ]] || die "节点接入需要 --token（接入令牌）"
@@ -327,15 +314,12 @@ Prepare_System() {
     # 升级：角色来自已 source 的 .env
     PANEL_ENABLED="${PANEL_ENABLED:-1}"
     if [[ "${PANEL_ENABLED}" == "0" ]]; then
-      GRAFANA_ENABLED="${GRAFANA_ENABLED:-0}"
+      GRAFANA_ENABLED=0
     else
-      GRAFANA_ENABLED="${GRAFANA_ENABLED:-1}"
+      GRAFANA_ENABLED=1
     fi
   else
     die "请指定子命令：control / node / upgrade / uninstall（见 --help）"
-  fi
-  if is_true "${MINIMAL:-0}"; then
-    GRAFANA_ENABLED=0
   fi
   ok "OS=${PRETTY_NAME:-$OS_ID} arch=${ARCH} role=${ROLE:-from-env} panel=${PANEL_ENABLED} grafana=${GRAFANA_ENABLED}"
 }
@@ -697,7 +681,7 @@ write_agent_join_creds() {
     upsert_env_file "${INSTALL_DIR}/.env" PANEL_ROLE "standby"
     upsert_env_file "${INSTALL_DIR}/.env" GRAFANA_ENABLED "${GRAFANA_ENABLED:-0}"
     [[ -n "${GATEWAY_NAME:-}" ]] && upsert_env_file "${INSTALL_DIR}/.env" GATEWAY_NAME "$GATEWAY_NAME"
-    # 预写 remote_write URL（节点默认 with-metrics：本机 Prometheus → 主控）
+    # 预写 remote_write URL（节点默认 Prometheus → 主控）
     if [[ -n "${CONTROL_URL:-}" ]]; then
       local rw_base="${CONTROL_URL%/}"
       upsert_env_file "${INSTALL_DIR}/.env" PROMETHEUS_REMOTE_WRITE_URL "${rw_base}/api/agent/metrics/write"
@@ -718,11 +702,6 @@ Invoke_Product() {
   export RELAYGATE_INSTALL_DIR="$INSTALL_DIR" RELAYGATE_SECRETS_DIR="$SECRETS_DIR"
   export RELAYGATE_DATA_DIR="${RELAYGATE_DATA_DIR:-$INSTALL_DIR/data}"
   export NONINTERACTIVE PANEL_ENABLED GRAFANA_ENABLED
-  export MINIMAL="${MINIMAL:-0}"
-  # 仅当调用方显式设置时透传；勿把未设置导出成空串（否则 setup 会当成「显式清空 profiles」）
-  if [[ -n "${COMPOSE_PROFILES+x}" ]]; then
-    export COMPOSE_PROFILES
-  fi
   export GATEWAY_NAME="${GATEWAY_NAME:-}" GATEWAY_PUBLIC_IP="${GATEWAY_PUBLIC_IP:-}" GATEWAY_SSH_PORT="${GATEWAY_SSH_PORT:-}"
   export APPLY_FIREWALL FIREWALL_CONFIRM="${FIREWALL_CONFIRM:-}"
   export CONTROL_URL="${CONTROL_URL:-}" AGENT_TOKEN="${AGENT_TOKEN:-}" AGENT_TOKEN_FILE="${AGENT_TOKEN_FILE:-}"
@@ -747,7 +726,7 @@ Invoke_Product() {
   PANEL_ENABLED="${PANEL_ENABLED:-1}"
   if [[ "$PANEL_ENABLED" == "1" ]]; then
     local grafana_url=""
-    if [[ "${GRAFANA_ENABLED:-1}" == "1" || ",${COMPOSE_PROFILES:-}," == *",with-grafana,"* ]]; then
+    if [[ "${GRAFANA_ENABLED:-1}" == "1" || ",${COMPOSE_PROFILES:-}," == *",control,"* ]]; then
       grafana_url="http://127.0.0.1:3000"
     fi
     log "→ relaygate panel install"

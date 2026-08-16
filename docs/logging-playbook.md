@@ -6,8 +6,8 @@
 
 ```text
 Envoy → ${RELAYGATE_DATA_DIR}/envoy/logs/tcp-access.json
-                 ↓ (Alloy, 每机 with-logs)
-            Loki :3100（with-loki，可与 Grafana 同机）
+                 ↓ (Alloy：主控随 control；节点可选 alloy)
+            Loki :3100（主控 control 栈，可与 Grafana 同机）
                  ↓
          Grafana datasource uid=loki → Explore / 看板 TCP Session Logs
 
@@ -19,9 +19,9 @@ Envoy → ${RELAYGATE_DATA_DIR}/envoy/logs/tcp-access.json
 |------|----------|------|
 | 主控 | 观测全开 | 本机指标库 + Loki + Alloy + Grafana + Alertmanager |
 | 节点 | 上报指标 | Envoy + 本机 Prometheus remote_write；**不**默认装 Alloy / Grafana / Loki |
-| 节点开边缘日志 | 另加 Alloy | 设 `LOKI_HOST=<中心私网>`（内部 profile 含 `with-logs`） |
+| 节点开边缘日志 | 另加 Alloy | `COMPOSE_PROFILES=node,alloy` 并设 `LOKI_HOST=<中心私网>` |
 
-安装按 `control` / `node` 角色即可，不必手传 Compose profile 名。
+安装按 `control` / `node` 角色即可，不必手传观测别名。
 
 ## 启用
 
@@ -112,14 +112,15 @@ LogQL 示例：
 
 ## 多机
 
-节点默认**不开** Alloy。若要边缘 TCP 日志，在节点 `.env` 为日志采集打开对应 profile，并设置：
+节点默认**不开** Alloy。若要边缘 TCP 日志，在节点 `.env` 设：
 
 ```bash
+COMPOSE_PROFILES=node,alloy
 LOKI_HOST=10.0.0.1   # 中心私网；勿对公网暴露 3100
 LOKI_PORT=3100
 ```
 
-（内部实现为 `COMPOSE_PROFILES` 含 `with-logs`；安装角色仍是 `node`。）
+然后 `docker compose up -d`（安装角色仍是 `node`）。
 
 ## UDP access
 

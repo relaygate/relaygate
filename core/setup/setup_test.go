@@ -8,63 +8,39 @@ import (
 )
 
 func TestResolveComposeProfiles(t *testing.T) {
-	t.Setenv("MINIMAL", "")
-	t.Setenv("COMPOSE_PROFILES", "")
-	_ = os.Unsetenv("MINIMAL")
-	_ = os.Unsetenv("COMPOSE_PROFILES")
-
-	got := resolveComposeProfiles(Options{GrafanaEnabled: "1", PanelEnabled: "1"})
-	if got != "with-metrics,with-grafana,with-loki,with-logs" {
-		t.Fatalf("control default = %q", got)
+	got := resolveComposeProfiles(Options{PanelEnabled: "1"})
+	if got != "control" {
+		t.Fatalf("control default = %q, want control", got)
 	}
-	got = resolveComposeProfiles(Options{GrafanaEnabled: "0", PanelEnabled: "0"})
-	if got != "with-metrics" {
-		t.Fatalf("node default = %q, want with-metrics (Envoy + metrics remote_write)", got)
+	got = resolveComposeProfiles(Options{PanelEnabled: "0"})
+	if got != "node" {
+		t.Fatalf("node default = %q, want node", got)
 	}
+	// Grafana flag must not change role profiles.
 	got = resolveComposeProfiles(Options{GrafanaEnabled: "0", PanelEnabled: "1"})
-	if got != "with-metrics" {
-		t.Fatalf("control without grafana = %q, want with-metrics", got)
-	}
-
-	t.Setenv("MINIMAL", "1")
-	got = resolveComposeProfiles(Options{GrafanaEnabled: "1", PanelEnabled: "1"})
-	if got != "with-metrics" {
-		t.Fatalf("MINIMAL=1 = %q, want with-metrics", got)
-	}
-	_ = os.Unsetenv("MINIMAL")
-
-	t.Setenv("COMPOSE_PROFILES", "with-logs")
-	got = resolveComposeProfiles(Options{GrafanaEnabled: "0", PanelEnabled: "0"})
-	if got != "with-logs" {
-		t.Fatalf("node explicit with-logs = %q", got)
-	}
-	_ = os.Unsetenv("COMPOSE_PROFILES")
-	t.Setenv("COMPOSE_PROFILES", "with-logs")
-	got = resolveComposeProfiles(Options{GrafanaEnabled: "1", PanelEnabled: "1"})
-	if got != "with-logs" {
-		t.Fatalf("explicit COMPOSE_PROFILES = %q", got)
-	}
-	_ = os.Unsetenv("COMPOSE_PROFILES")
-
-	t.Setenv("COMPOSE_PROFILES", "with-grafana,with-loki")
-	got = resolveComposeProfiles(Options{GrafanaEnabled: "1", PanelEnabled: "1"})
-	if got != "with-metrics,with-grafana,with-loki" {
-		t.Fatalf("imply with-metrics for grafana = %q", got)
+	if got != "control" {
+		t.Fatalf("control ignores GRAFANA_ENABLED = %q", got)
 	}
 }
 
-func TestImplyMetricsForGrafana(t *testing.T) {
-	if got := implyMetricsForGrafana(""); got != "" {
-		t.Fatalf("empty = %q", got)
+func TestMigrateComposeProfiles(t *testing.T) {
+	optControl := Options{PanelEnabled: "1"}
+	optNode := Options{PanelEnabled: "0"}
+
+	if got := migrateComposeProfiles("with-metrics,with-grafana,with-loki,with-logs", optControl); got != "control" {
+		t.Fatalf("legacy control stack = %q", got)
 	}
-	if got := implyMetricsForGrafana("with-logs"); got != "with-logs" {
-		t.Fatalf("logs only = %q", got)
+	if got := migrateComposeProfiles("with-metrics", optNode); got != "node" {
+		t.Fatalf("legacy node metrics = %q", got)
 	}
-	if got := implyMetricsForGrafana("with-metrics,with-grafana"); got != "with-metrics,with-grafana" {
-		t.Fatalf("already has metrics = %q", got)
+	if got := migrateComposeProfiles("with-metrics,with-logs", optNode); got != "node,alloy" {
+		t.Fatalf("legacy node+logs = %q", got)
 	}
-	if got := implyMetricsForGrafana("with-grafana"); got != "with-metrics,with-grafana" {
-		t.Fatalf("imply = %q", got)
+	if got := migrateComposeProfiles("node,alloy", optNode); got != "node,alloy" {
+		t.Fatalf("keep alloy = %q", got)
+	}
+	if got := migrateComposeProfiles("control", optControl); got != "control" {
+		t.Fatalf("already control = %q", got)
 	}
 }
 

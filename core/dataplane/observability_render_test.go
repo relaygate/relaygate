@@ -103,7 +103,7 @@ scrape_configs: []
 		"GATEWAY_NAME=gateway-01",
 		"ENVOY_ADMIN_PORT=9901",
 		"RELAYGATE_DATA_DIR=" + data,
-		"COMPOSE_PROFILES=with-metrics,with-grafana,with-loki,with-logs",
+		"COMPOSE_PROFILES=control",
 		"",
 	}, "\n")
 	if err := os.WriteFile(filepath.Join(root, ".env"), []byte(envBody), 0o640); err != nil {
@@ -112,7 +112,7 @@ scrape_configs: []
 	t.Setenv("RELAYGATE_DATA_DIR", data)
 	t.Setenv("PROMETHEUS_REMOTE_WRITE_URL", "")
 	t.Setenv("ALERTMANAGER_URL", "")
-	t.Setenv("COMPOSE_PROFILES", "with-metrics,with-grafana,with-loki,with-logs")
+	t.Setenv("COMPOSE_PROFILES", "control")
 
 	if err := RenderObservability(root); err != nil {
 		t.Fatal(err)

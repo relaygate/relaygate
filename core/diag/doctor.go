@@ -52,7 +52,8 @@ func Run(opt Options) error {
 	if opt.EnablePanel || env.PanelEnabled == "1" {
 		opt.EnablePanel = true
 	}
-	if opt.EnableGraf || strings.Contains(env.Raw["COMPOSE_PROFILES"], "with-grafana") {
+	if opt.EnableGraf || strings.Contains(env.Raw["COMPOSE_PROFILES"], "control") ||
+		strings.Contains(env.Raw["COMPOSE_PROFILES"], "with-grafana") {
 		opt.EnableGraf = true
 	}
 

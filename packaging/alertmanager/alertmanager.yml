@@ -1,4 +1,4 @@
-# RelayGate Alertmanager（主控 with-grafana 时随 Compose 启动）
+# RelayGate Alertmanager（主控 control 栈随 Compose 启动）
 # Prometheus 将 gateway-alerts.yml 等规则投递到此处；默认 receiver 仅入库展示，不外发。
 # 配通知：取消下方 webhook / email 注释，或改 route.receiver。
 # UI（loopback）：http://127.0.0.1:9093

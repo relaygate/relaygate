@@ -2,21 +2,21 @@
 
 主控做**监控+日志中心**；节点**上报指标**、可选推送 TCP access 日志。指标继续吃 Envoy `/stats/prometheus`；采集侧日志统一 **Grafana Alloy**。
 
-## 角色默认（安装按 control / node，不必手传 with-*）
+## 角色默认（安装按 control / node）
 
 | 角色 | 本机跑什么 | 说明 |
 |------|------------|------|
 | **主控** | Envoy + Prometheus + node-exporter + Grafana + Loki + Alloy + Alertmanager | 观测全开；接收节点 remote_write |
-| **节点** | Envoy + Prometheus + node-exporter（+ systemd agent） | 精简 = 无本地 Grafana/Loki；指标 remote_write 到主控 |
-| **节点 + 边缘日志** | 上列再加 Alloy | `.env` 增加日志 profile（内部名 `with-logs`）并设 `LOKI_HOST` |
+| **节点** | Envoy + Prometheus + node-exporter（+ systemd agent） | 无本地 Grafana/Loki；指标 remote_write 到主控 |
+| **节点 + 边缘日志** | 上列再加 Alloy | `.env` 设 `COMPOSE_PROFILES=node,alloy` 并设 `LOKI_HOST` |
 
-内部 Compose profile（`COMPOSE_PROFILES`）仅实现细节；`GRAFANA_ENABLED` / `MINIMAL` 为兼容开关，**主控不要用 MINIMAL 精简**。
+Compose 用角色 profile（`control` / `node`）；安装不必手传 `MINIMAL` 或 `with-*`。
 
 ## 节点指标上报
 
 ```bash
 # 节点 .env（install.sh node / setup 默认写入）
-# COMPOSE_PROFILES 由角色生成（含 with-metrics）
+# COMPOSE_PROFILES=node
 PROMETHEUS_REMOTE_WRITE_URL=http://203.0.113.10:9000/api/agent/metrics/write
 ```
 
@@ -40,7 +40,7 @@ curl -sS http://127.0.0.1:9093/-/healthy
 
 ## 日志（Alloy → Loki）
 
-见 [docs/logging-playbook.md](../../docs/logging-playbook.md)。`with-logs` 现为 Alloy，不再启动 Fluent Bit。
+见 [docs/logging-playbook.md](../../docs/logging-playbook.md)。日志采集为 Alloy，不再启动 Fluent Bit。
 
 ## 看板
 
@@ -79,7 +79,7 @@ cd packaging/observability && docker compose up -d
 ## 扩容 checklist
 
 1. 主控 `fleet join` 接入节点（默认指标上报）
-2. 节点 `relaygate render --observability` 且 metrics profile 在跑
+2. 节点 `relaygate render --observability` 且 Prometheus 在跑
 3. 主控 `relaygate fleet publish`；节点自行拉取
 4. Grafana 按 `gateway` 过滤
 

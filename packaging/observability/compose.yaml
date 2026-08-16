@@ -77,11 +77,11 @@ services:
         max-size: "20m"
         max-file: "3"
 
-  # 可选中心 Loki（与网关 with-loki 二选一；边缘 Alloy 推到此 Host:3100）
+  # 可选中心 Loki（与主控 compose 内 Loki 二选一；边缘 Alloy 推到此 Host:3100）
   loki:
     image: ${LOKI_IMAGE:-grafana/loki:3.5.0}
     restart: unless-stopped
-    profiles: ["with-loki"]
+    profiles: ["loki"]
     user: "0:0"
     ports:
       - "127.0.0.1:3100:3100"

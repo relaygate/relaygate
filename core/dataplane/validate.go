@@ -56,8 +56,8 @@ remote_write:
 `, env.PrometheusRemoteWriteURL)
 		content += rw
 	}
-	// 主控（with-grafana）接 Alertmanager，使 gateway-alerts.yml 可真正投递。
-	// 节点仅 with-metrics 时不写 alerting，避免连不上本机 :9093。
+	// 主控（control）接 Alertmanager，使 gateway-alerts.yml 可真正投递。
+	// 节点仅指标栈时不写 alerting，避免连不上本机 :9093。
 	if shouldWireAlertmanager(env) {
 		amURL := firstNonEmpty(
 			os.Getenv("ALERTMANAGER_URL"),
@@ -83,8 +83,8 @@ alerting:
 	return nil
 }
 
-// shouldWireAlertmanager is true on control observability stacks (with-grafana /
-// with-alerts) or when ALERTMANAGER_URL is set. Nodes with metrics-only skip it.
+// shouldWireAlertmanager is true on control observability stacks or when
+// ALERTMANAGER_URL is set. Nodes with metrics-only skip it.
 func shouldWireAlertmanager(env Env) bool {
 	if strings.TrimSpace(firstNonEmpty(os.Getenv("ALERTMANAGER_URL"), env.Raw["ALERTMANAGER_URL"])) != "" {
 		return true
@@ -95,7 +95,7 @@ func shouldWireAlertmanager(env Env) bool {
 	}
 	for _, p := range strings.Split(profiles, ",") {
 		switch strings.TrimSpace(p) {
-		case "with-grafana", "with-alerts":
+		case "control", "with-grafana", "with-alerts": // with-*: pre-migration
 			return true
 		}
 	}
