@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-08-16
+
 ### Breaking
 
 - **本机 Prometheus / node-exporter 改为 Compose profile `with-metrics`**（不再随默认栈无条件启动）。
