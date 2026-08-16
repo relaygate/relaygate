@@ -126,7 +126,7 @@ func collectSettings(opt Options) (Options, error) {
 			opt.PanelEnabled = "0"
 		}
 	}
-	// Grafana 随角色：主控开、节点关（不再用 MINIMAL / 手传 COMPOSE_PROFILES 双轨）。
+	// Grafana：主控开、节点关。
 	if opt.PanelEnabled == "0" {
 		opt.GrafanaEnabled = "0"
 	} else {
@@ -179,6 +179,10 @@ func writeEnv(opt Options) error {
 	if agentTokFile != "" {
 		nodeExtras += fmt.Sprintf("AGENT_TOKEN_FILE=%s\n", agentTokFile)
 	}
+	alloyCfg := resolveAlloyConfigFile(opt)
+	if alloyCfg != "" && alloyCfg != "config.alloy" {
+		nodeExtras += fmt.Sprintf("ALLOY_CONFIG_FILE=%s\n", alloyCfg)
+	}
 
 	fmt.Printf("==> 生成 %s\n", envPath)
 	body := fmt.Sprintf(`GATEWAY_NAME=%s
@@ -213,9 +217,8 @@ PROXY_PROTOCOL=off
 }
 
 // resolveComposeProfiles picks COMPOSE_PROFILES from install role only.
-// control → full observability (Prometheus/Grafana/Loki/Alloy/Alertmanager).
-// node → Envoy + Prometheus/node-exporter (remote_write); no local Grafana/Loki.
-// Optional edge logs on a node: append component profile "alloy" after install.
+// control → Prometheus/Grafana/Loki/Alloy(logs)/Alertmanager.
+// node → Alloy (metrics remote_write); no local Prometheus/Grafana/Loki.
 func resolveComposeProfiles(opt Options) string {
 	if opt.PanelEnabled == "0" {
 		return "node"
@@ -223,21 +226,17 @@ func resolveComposeProfiles(opt Options) string {
 	return "control"
 }
 
-// migrateComposeProfiles maps legacy with-* aliases to role profiles.
-// Preserves optional component "alloy" on nodes (edge TCP logs).
-func migrateComposeProfiles(existing string, opt Options) string {
-	role := resolveComposeProfiles(opt)
-	wantAlloy := false
-	for _, p := range strings.Split(existing, ",") {
-		switch strings.TrimSpace(p) {
-		case "alloy", "with-logs":
-			wantAlloy = true
-		}
+// resolveAlloyConfigFile selects packaging/alloy/*.alloy for the role.
+func resolveAlloyConfigFile(opt Options) string {
+	if opt.PanelEnabled == "0" {
+		return "config.node.alloy"
 	}
-	if role == "node" && wantAlloy {
-		return "node,alloy"
-	}
-	return role
+	return "config.alloy"
+}
+
+// migrateComposeProfiles maps older with-* / alloy profile names to control|node.
+func migrateComposeProfiles(_ string, opt Options) string {
+	return resolveComposeProfiles(opt)
 }
 
 func patchExistingEnv(path string, opt Options, profiles, grafanaURL, dataDir string) error {
@@ -255,6 +254,7 @@ func patchExistingEnv(path string, opt Options, profiles, grafanaURL, dataDir st
 		"GATEWAY_SSH_PORT":      opt.SSHPort,
 		"RELAYGATE_DATA_DIR":    dataDir,
 		"RELAYGATE_SECRETS_DIR": opt.SecretsDir,
+		"ALLOY_CONFIG_FILE":     resolveAlloyConfigFile(opt),
 	}
 	if opt.PanelEnabled == "1" && opt.GrafanaEnabled == "1" {
 		set["GRAFANA_URL"] = grafanaURL
@@ -274,7 +274,6 @@ func patchExistingEnv(path string, opt Options, profiles, grafanaURL, dataDir st
 		key, _, ok := strings.Cut(trim, "=")
 		if ok {
 			key = strings.TrimSpace(key)
-			// Drop legacy env names (hard cut; no dual-read).
 			if key == "ENABLE_PANEL" || key == "ENABLE_GRAFANA" {
 				continue
 			}

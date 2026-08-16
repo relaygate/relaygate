@@ -1,9 +1,5 @@
-// RelayGate：Alloy 采集 Envoy TCP access → 中心 Loki（Compose profile with-logs）
-// 替代原 Fluent Bit 路径；指标仍由本机 Prometheus（with-metrics）负责。
-//
-// 采样：默认全量保留（与 LOG_SAMPLE_RATE=1.0 一致）。
-// Alloy stage.match 不支持 | json 管道，故未在 River 内复刻「异常/短会话优先」Lua 逻辑；
-// 降采样请在 Loki 查询侧过滤 flags/duration，或后续再加独立 process 组件。
+// RelayGate 主控：Alloy 采集 Envoy TCP access → 本机 Loki。
+// 节点指标见 config.node.alloy（scrape + remote_write）。
 
 logging {
 	level  = "info"

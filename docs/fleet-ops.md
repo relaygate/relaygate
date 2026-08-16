@@ -2,18 +2,16 @@
 
 主控 Panel **机群管理**（`/fleet`）。只读角色不可发布/同步/接入/退役。运维工具（`/ops`）仅本机诊断、摘流、探测、防火墙、档位。
 
-正式路径：**主控发布 → 节点上的 agent 拉取 → 本机热更新**。需要立刻对齐某台时，用**单节点同步**（不广播全机群）。
-
-**节点 vs agent：** 节点 = 安装角色（`install.sh node`）；agent = 该机上的拉取/心跳守护进程（`relaygate agent` / `relaygate-agent`）。二者并存，不是两套产品角色。
+正式路径：**主控发布 → 节点 agent 拉取 → 本机热更新**。立刻对齐某台用**单节点同步**（不广播）。
 
 ## 安装角色
 
 | 角色 | 环境模板 | 要点 |
 |------|----------|------|
 | **主控** | [`packaging/control/env.example`](../packaging/control/env.example) | `PANEL_ENABLED=1`；可选本机转发与中心观测 |
-| **节点** | [`packaging/node/env.example`](../packaging/node/env.example) | `PANEL_ENABLED=0`；`CONTROL_URL` + `AGENT_TOKEN_FILE`；本机 `agent run`；Compose 默认 `node`（Envoy + 指标上报） |
+| **节点** | [`packaging/node/env.example`](../packaging/node/env.example) | `PANEL_ENABLED=0`；`CONTROL_URL` + `AGENT_TOKEN_FILE`；Compose `node`（Envoy + Alloy 指标） |
 
-**状态怎么到主控：** 节点 **不**在本机跑 Grafana/Loki。机群在线、已应用版本等由 `relaygate-agent` 经 `POST /api/agent/heartbeat`（及配置拉取）上报；时序指标由本机 Prometheus（默认 `node` 角色）经 `POST /api/agent/metrics/write` remote_write 到主控。主控 Panel / `fleet status` / Grafana 汇总展示。
+机群在线/版本由 agent 心跳与配置拉取上报；指标经 `POST /api/agent/metrics/write` remote_write。
 
 ## 发布到机群
 

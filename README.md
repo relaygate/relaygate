@@ -10,14 +10,12 @@
 
 支持 Ubuntu / Debian / RHEL / Rocky / Alma / CentOS Stream / Fedora / Amazon Linux（`amd64` / `arm64`，systemd）。
 
-`install.sh`：下载 Release tar → 解压到 `/opt/relaygate` → 调用 CLI。角色只有 **主控** / **节点**（不是 agent）。
+`install.sh`：下载 Release tar → 解压到 `/opt/relaygate` → 调用 CLI。角色只有 **主控** / **节点**（节点上的守护进程叫 agent，不是第二种安装角色）。
 
 | 角色 | 安装 | 做什么 |
 |------|------|--------|
 | **主控** | `install.sh control` | Panel、意图/发布、节点名册；可选本机转发与中心观测 |
-| **节点** | `install.sh node …` | Envoy + **agent**（拉取/心跳）；需 `CONTROL_URL` 与接入令牌 |
-
-**节点 vs agent：** 「节点」是安装角色；**agent** 是节点上的守护进程（`relaygate agent` / `relaygate-agent`）。
+| **节点** | `install.sh node …` | Envoy + agent（拉取/心跳）；需 `CONTROL_URL` 与接入令牌 |
 
 ```bash
 # 主控（首启默认密码 relaygate，生产务必改密）
@@ -37,25 +35,14 @@ curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.
 
 固定版本：`RELAYGATE_VERSION=vX.Y.Z`；本地包：`RELAYGATE_TAR=/path/to.tar.gz`。环境模板：[`packaging/control/env.example`](packaging/control/env.example)、[`packaging/node/env.example`](packaging/node/env.example)。
 
-默认会拉哪些容器：**始终** Envoy。节点侧安全（限连/防火墙/ACL）走本机 CLI/配置，不依赖观测容器。机群在线/版本状态由节点上的 **agent 心跳上报主控**（Panel 汇总）；时序指标由节点本机 Prometheus **remote_write** 到主控。
+默认会拉哪些容器：**始终** Envoy。节点侧安全走本机 CLI/配置。机群状态由 agent 心跳上报；时序指标由节点 Alloy `remote_write` 到主控。
 
 | 角色 | 默认 | 说明 |
 |------|------|------|
-| **节点** | 精简但上报指标 | Envoy + Prometheus + node-exporter + systemd agent；**无**本机 Grafana / Loki / Alloy；安装 `node` 即可 |
-| **主控** | 监控+日志全开 | 上列指标栈 + Grafana / Loki / Alloy / Alertmanager；安装 `control` 即可 |
+| **节点** | 上报指标 | Envoy + Alloy + agent；无本机 Prometheus / Grafana / Loki |
+| **主控** | 观测全开 | Prometheus + node-exporter + Grafana / Loki / Alloy / Alertmanager |
 
-首次安装慢点通常在装 Docker 与拉镜像（主控更重；节点默认拉 Envoy + Prometheus）。节点若要边缘 TCP 日志：安装后设 `COMPOSE_PROFILES=node,alloy` 并配置 `LOKI_HOST`（见 [logging-playbook](docs/logging-playbook.md)）。
-
-```bash
-# 节点（默认上报指标到主控）
-curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
-  | sudo bash -s -- node --control http://203.0.113.10:9000 \
-      --name gateway-02 --token '<token>'
-
-# 主控（默认全开观测）
-curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.sh \
-  | sudo bash -s -- control
-```
+首次安装慢点通常在装 Docker 与拉镜像。
 
 首启：`relaygate diag` · `relaygate smoke`。Panel：`http://<GATEWAY_PUBLIC_IP>:9000`（可改 `PANEL_BIND`）。
 
@@ -65,7 +52,7 @@ curl -fsSL https://raw.githubusercontent.com/relaygate/relaygate/master/install.
 |------|------|
 | 安装 / 路径 / 版本 | `RELAYGATE_VERSION` · `RELAYGATE_TAR` · `RELAYGATE_INSTALL_DIR` · `RELAYGATE_DATA_DIR` · `RELAYGATE_SECRETS_DIR` |
 | 本机节点身份 | `GATEWAY_NAME` · `GATEWAY_PUBLIC_IP` · `GATEWAY_SSH_PORT` |
-| Panel | `PANEL_ENABLED` · `PANEL_BIND` · `PANEL_ROLE`（观测随 control/node 角色，不必手传 `MINIMAL` / `COMPOSE_PROFILES`） |
+| Panel | `PANEL_ENABLED` · `PANEL_BIND` · `PANEL_ROLE` |
 | 机群连接（节点） | `CONTROL_URL` · `AGENT_TOKEN` / `AGENT_TOKEN_FILE` · `PROMETHEUS_REMOTE_WRITE_URL` |
 | 安全落地（分层） | `APPLY_FIREWALL`（安装/CLI 一次性）· `SECURITY_AUTO_APPLY`（节点拉取后自动应用主机侧） |
 

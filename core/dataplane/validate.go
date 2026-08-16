@@ -95,7 +95,7 @@ func shouldWireAlertmanager(env Env) bool {
 	}
 	for _, p := range strings.Split(profiles, ",") {
 		switch strings.TrimSpace(p) {
-		case "control", "with-grafana", "with-alerts": // with-*: pre-migration
+		case "control", "with-grafana", "with-alerts":
 			return true
 		}
 	}
@@ -124,8 +124,8 @@ func alertmanagerStaticTarget(amURL string) string {
 }
 
 // syncPrometheusAgentToken copies AGENT_TOKEN_FILE into DataDir/prometheus/agent.token
-// with mode 0644 so the Prometheus container (nobody) can read Bearer credentials.
-// Always ensures the path exists so compose volume mounts succeed on control hosts.
+// with mode 0644 so Prometheus (control) and Alloy (node) containers can read Bearer credentials.
+// Always ensures the path exists so compose volume mounts succeed.
 func syncPrometheusAgentToken(env Env, dest string) error {
 	src := strings.TrimSpace(os.Getenv("AGENT_TOKEN_FILE"))
 	if src == "" {

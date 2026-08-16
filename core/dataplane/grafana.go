@@ -23,7 +23,7 @@ func GrafanaEnabled(env Env) bool {
 	}
 	for _, p := range strings.Split(profiles, ",") {
 		switch strings.TrimSpace(p) {
-		case "control", "with-grafana": // with-grafana: pre-migration .env
+		case "control", "with-grafana":
 			return true
 		}
 	}

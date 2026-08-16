@@ -122,10 +122,9 @@ agent 是节点上的拉取/心跳进程（relaygate agent / relaygate-agent.ser
 默认会拉哪些容器（compose）:
   始终: Envoy（安全能力走本机 CLI/配置，不依赖观测容器）
   主控 control: Prometheus + node-exporter + Grafana + Loki + Alloy + Alertmanager
-  节点 node: Envoy + Prometheus + node-exporter + systemd agent
-    （指标 remote_write 到主控；无本机 Grafana / Loki）
-  节点可选边缘 TCP 日志: 安装后设 COMPOSE_PROFILES=node,alloy 并配置 LOKI_HOST
-  首次安装慢点通常在: 装 Docker CE、从 Docker Hub 拉镜像（主控更重；节点默认拉 Envoy+Prometheus）
+  节点 node: Envoy + Alloy（指标 remote_write）+ systemd agent
+    （无本机 Prometheus / Grafana / Loki）
+  首次安装慢点通常在: 装 Docker CE、从 Docker Hub 拉镜像（主控更重；节点默认拉 Envoy+Alloy）
 
 环境变量（高级，按组）:
   # 安装 / 路径 / 版本
@@ -138,7 +137,7 @@ agent 是节点上的拉取/心跳进程（relaygate agent / relaygate-agent.ser
   RELAYGATE_REPO_URL
   # 本机节点身份
   GATEWAY_NAME / GATEWAY_PUBLIC_IP / GATEWAY_SSH_PORT
-  # Panel（随 control/node 角色；不必手传观测开关）
+  # Panel
   PANEL_ENABLED / PANEL_BIND / PANEL_ROLE
   # 机群连接（节点；通常由 node 子命令写入）
   CONTROL_URL / AGENT_TOKEN / AGENT_TOKEN_FILE
@@ -294,7 +293,7 @@ Prepare_System() {
     # .env 也可能含 VERSION=；恢复安装器版本意图
     VERSION="${RELAYGATE_VERSION:-$_rg_version}"
     SECRETS_DIR="${RELAYGATE_SECRETS_DIR:-$SECRETS_DIR}"
-    # 兼容：若进程环境仍只有旧键名（极少），映射到新名
+    # 若进程环境仍只有旧键名，映射到新名
     PANEL_ENABLED="${PANEL_ENABLED:-${ENABLE_PANEL:-}}"
     GRAFANA_ENABLED="${GRAFANA_ENABLED:-${ENABLE_GRAFANA:-}}"
   fi
@@ -306,7 +305,7 @@ Prepare_System() {
   elif [[ "$ROLE" == "node" ]]; then
     PANEL_ENABLED="${PANEL_ENABLED:-0}"
     GRAFANA_ENABLED=0
-    log "节点默认：Envoy + agent + Prometheus（指标 remote_write 到主控；无本机 Grafana/Loki）"
+    log "节点默认：Envoy + agent + Alloy（指标 remote_write 到主控；无本机 Prometheus/Grafana/Loki）"
     [[ -n "${CONTROL_URL:-}" ]] || die "节点接入需要 --control（主控地址）"
     [[ -n "${GATEWAY_NAME:-}" ]] || die "节点接入需要 --name（网关名）"
     [[ -n "${AGENT_TOKEN:-}" || -n "${AGENT_TOKEN_FILE:-}" ]] || die "节点接入需要 --token（接入令牌）"
@@ -608,7 +607,7 @@ upsert_env_file() {
 }
 
 
-# 升级时将旧键硬切迁移到长期名（产品侧无双读；仅安装器改写 .env）。
+# 升级时改写 .env 中的旧键名。
 migrate_legacy_env_keys() {
   local file="${1:-}"
   [[ -n "$file" && -f "$file" ]] || return 0
@@ -616,13 +615,13 @@ migrate_legacy_env_keys() {
     local v
     v="$(grep -E '^ENABLE_PANEL=' "$file" | head -n1 | cut -d= -f2-)"
     upsert_env_file "$file" PANEL_ENABLED "${v}"
-    warn "已迁移 ENABLE_PANEL → PANEL_ENABLED=${v}（请改用新键；旧键将删除）"
+    warn "已改写 ENABLE_PANEL → PANEL_ENABLED=${v}"
   fi
   if grep -qE '^ENABLE_GRAFANA=' "$file" 2>/dev/null && ! grep -qE '^GRAFANA_ENABLED=' "$file" 2>/dev/null; then
     local v
     v="$(grep -E '^ENABLE_GRAFANA=' "$file" | head -n1 | cut -d= -f2-)"
     upsert_env_file "$file" GRAFANA_ENABLED "${v}"
-    warn "已迁移 ENABLE_GRAFANA → GRAFANA_ENABLED=${v}"
+    warn "已改写 ENABLE_GRAFANA → GRAFANA_ENABLED=${v}"
   fi
   if grep -qE '^ENABLE_PANEL=' "$file" 2>/dev/null; then
     sed -i '/^ENABLE_PANEL=/d' "$file"
@@ -681,7 +680,7 @@ write_agent_join_creds() {
     upsert_env_file "${INSTALL_DIR}/.env" PANEL_ROLE "standby"
     upsert_env_file "${INSTALL_DIR}/.env" GRAFANA_ENABLED "${GRAFANA_ENABLED:-0}"
     [[ -n "${GATEWAY_NAME:-}" ]] && upsert_env_file "${INSTALL_DIR}/.env" GATEWAY_NAME "$GATEWAY_NAME"
-    # 预写 remote_write URL（节点默认 Prometheus → 主控）
+    # 预写 remote_write URL（节点 Alloy → 主控）
     if [[ -n "${CONTROL_URL:-}" ]]; then
       local rw_base="${CONTROL_URL%/}"
       upsert_env_file "${INSTALL_DIR}/.env" PROMETHEUS_REMOTE_WRITE_URL "${rw_base}/api/agent/metrics/write"

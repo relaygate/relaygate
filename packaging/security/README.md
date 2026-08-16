@@ -2,7 +2,7 @@
 
 通用 **四层（L4）** 南北向网关。防护按 **攻击类型** 组织为可开关的 **安全策略（security.access / security.protections[]）**；配置真相源为 `resources.yaml` 的 `security` 段。
 
-领域命名与落地顺序（**本版无兼容、以当前代码为准**）见 [docs/security-domains.md](../../docs/security-domains.md)。
+领域命名与落地顺序见 [docs/security-domains.md](../../docs/security-domains.md)。
 
 **Long-lived TCP 铁律：** 新建连接限速只打 **SYN / ct state new**；`gateway.nft` 对 `established,related` 先 accept。禁止对已建立会话做 **PPS** 限速。
 

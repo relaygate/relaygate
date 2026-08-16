@@ -29,7 +29,7 @@ AWS credentials: environment variables, shared config, or CI OIDC. Do **not** pu
 | **直连暴露**（无本 NLB / 客户端直连网关） | 网关 `PROXY_PROTOCOL=off`；勿开 TG PROXY |
 | NLB + **preserve client IP**、不发 PROXY | 两边 PROXY 保持 **off** |
 | NLB + **PROXY v2**（关 preserve / PrivateLink 等） | TF `enable_proxy_protocol_v2=true` **且** 网关 `PROXY_PROTOCOL=v2`；转发口 **仅对 LB** |
-| 迁移混跑 | 网关 `PROXY_PROTOCOL=v2-compat`（或 `v2`+`ALLOW_WITHOUT=1`）；**入口仍必须只信 LB，公网禁止 compat** |
+| 混跑（无头用 peer） | 网关 `PROXY_PROTOCOL=v2-compat`；**入口仍须只信 LB，公网禁止** |
 
 ```hcl
 # terraform.tfvars — 仅当 NLB 对目标发 PROXY v2 时

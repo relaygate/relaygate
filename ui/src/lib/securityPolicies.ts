@@ -550,7 +550,7 @@ export function securityFromMerge(raw: {
   }
 }
 
-/** @deprecated use securityFromMerge */
+/** Prefer securityFromMerge. */
 export function policiesFromMerge(raw: unknown[]): SecurityPolicy[] {
   return securityFromMerge({ protections: raw }).protections
 }
@@ -634,7 +634,7 @@ export function validateAccess(access: SecurityAccess): string | null {
   return null
 }
 
-/** @deprecated Params are open key/value bags; UI does not field-validate. Always null. */
+/** Params are open bags; UI does not field-validate. Always null. */
 export function validatePolicyParams(_p: SecurityPolicy): string | null {
   return null
 }

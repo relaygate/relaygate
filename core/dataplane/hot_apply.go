@@ -30,7 +30,7 @@ func ApplyMode(env Env, summary resources.ChangeSummary) string {
 	return ApplyModeForRoot("", env, summary)
 }
 
-// ApplyModeForRoot is ApplyMode with on-disk bootstrap migration check when root is set.
+// ApplyModeForRoot is ApplyMode; when root is set, also checks on-disk bootstrap.
 func ApplyModeForRoot(root string, env Env, summary resources.ChangeSummary) string {
 	plan := summary.Classify()
 	if !plan.NeedsReload {

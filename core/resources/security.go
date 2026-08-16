@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Protection IDs — keys in security.protections[] (resources.yaml). No legacy aliases.
+// Protection IDs — keys in security.protections[] (resources.yaml).
 const (
 	PolicyKernelSyn            = "kernel_syn"
 	PolicyNICEgressShape       = "nic_egress_shape"

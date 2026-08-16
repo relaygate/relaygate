@@ -28,19 +28,28 @@ func TestMigrateComposeProfiles(t *testing.T) {
 	optNode := Options{PanelEnabled: "0"}
 
 	if got := migrateComposeProfiles("with-metrics,with-grafana,with-loki,with-logs", optControl); got != "control" {
-		t.Fatalf("legacy control stack = %q", got)
+		t.Fatalf("control stack = %q", got)
 	}
 	if got := migrateComposeProfiles("with-metrics", optNode); got != "node" {
-		t.Fatalf("legacy node metrics = %q", got)
+		t.Fatalf("node metrics = %q", got)
 	}
-	if got := migrateComposeProfiles("with-metrics,with-logs", optNode); got != "node,alloy" {
-		t.Fatalf("legacy node+logs = %q", got)
+	if got := migrateComposeProfiles("with-metrics,with-logs", optNode); got != "node" {
+		t.Fatalf("node+logs → node = %q", got)
 	}
-	if got := migrateComposeProfiles("node,alloy", optNode); got != "node,alloy" {
-		t.Fatalf("keep alloy = %q", got)
+	if got := migrateComposeProfiles("node,alloy", optNode); got != "node" {
+		t.Fatalf("drop alloy profile = %q", got)
 	}
 	if got := migrateComposeProfiles("control", optControl); got != "control" {
 		t.Fatalf("already control = %q", got)
+	}
+}
+
+func TestResolveAlloyConfigFile(t *testing.T) {
+	if got := resolveAlloyConfigFile(Options{PanelEnabled: "1"}); got != "config.alloy" {
+		t.Fatalf("control alloy config = %q", got)
+	}
+	if got := resolveAlloyConfigFile(Options{PanelEnabled: "0"}); got != "config.node.alloy" {
+		t.Fatalf("node alloy config = %q", got)
 	}
 }
 

@@ -6,22 +6,19 @@
 
 ```text
 Envoy → ${RELAYGATE_DATA_DIR}/envoy/logs/tcp-access.json
-                 ↓ (Alloy：主控随 control；节点可选 alloy)
-            Loki :3100（主控 control 栈，可与 Grafana 同机）
+                 ↓ (Alloy：主控 control)
+            Loki :3100（主控）
                  ↓
          Grafana datasource uid=loki → Explore / 看板 TCP Session Logs
 
-指标（并行）：Envoy /stats/prometheus → 本机 Prometheus →（节点）remote_write → 主控
+指标：Envoy /stats/prometheus →（主控）Prometheus；（节点）Alloy remote_write → 主控
 告警（主控）：Prometheus rules → Alertmanager :9093
 ```
 
 | 角色 | 默认行为 | 说明 |
 |------|----------|------|
-| 主控 | 观测全开 | 本机指标库 + Loki + Alloy + Grafana + Alertmanager |
-| 节点 | 上报指标 | Envoy + 本机 Prometheus remote_write；**不**默认装 Alloy / Grafana / Loki |
-| 节点开边缘日志 | 另加 Alloy | `COMPOSE_PROFILES=node,alloy` 并设 `LOKI_HOST=<中心私网>` |
-
-安装按 `control` / `node` 角色即可，不必手传观测别名。
+| 主控 | 观测全开 | Prometheus + Loki + Alloy（日志）+ Grafana + Alertmanager |
+| 节点 | 上报指标 | Envoy + Alloy（指标 remote_write）；无本机 Prometheus/Grafana/Loki |
 
 ## 启用
 
@@ -49,14 +46,12 @@ curl -sS 'http://127.0.0.1:3100/loki/api/v1/label/job/values'
 # 期望含 envoy-tcp-access
 ```
 
-## 采样（Alloy vs 原 Fluent Bit）
+## 采样
 
-| 行为 | Alloy（当前） |
-|------|----------------|
-| 默认 | **全量**保留（与常见 `LOG_SAMPLE_RATE=1.0` 一致） |
-| 异常 flags / 短会话优先抽样 | Alloy `stage.match` 不支持 `| json` 管道，**未**在采集侧复刻 Lua；降采样请在 Loki/Explore 用 `flags` / `duration_ms` 过滤，或改 `packaging/alloy/config.alloy` |
-
-原 Fluent Bit 配置留在 `packaging/fluent-bit/` 仅作对照，不再挂入 Compose。
+| 行为 | 说明 |
+|------|------|
+| 默认 | **全量**保留（`LOG_SAMPLE_RATE=1.0`） |
+| 降采样 | Alloy `stage.match` 不支持 `| json`；请在 Loki/Explore 用 `flags` / `duration_ms` 过滤，或改 `packaging/alloy/config.alloy` |
 
 ## 标签约定
 
@@ -112,19 +107,11 @@ LogQL 示例：
 
 ## 多机
 
-节点默认**不开** Alloy。若要边缘 TCP 日志，在节点 `.env` 设：
-
-```bash
-COMPOSE_PROFILES=node,alloy
-LOKI_HOST=10.0.0.1   # 中心私网；勿对公网暴露 3100
-LOKI_PORT=3100
-```
-
-然后 `docker compose up -d`（安装角色仍是 `node`）。
+TCP access 日志默认在**主控** Alloy → 本机 Loki。节点 Alloy 只做指标 remote_write（`config.node.alloy`）。
 
 ## UDP access
 
-当前 Envoy UDP proxy **未**配置与 TCP 同级的 FileAccessLog NDJSON。UDP 会话指标已由 Prometheus（`envoy_udp_*`）覆盖。
+当前 Envoy UDP proxy **未**配置与 TCP 同级的 FileAccessLog NDJSON。UDP 会话指标已由 Prometheus / Alloy（`envoy_udp_*`）覆盖。
 
 ## 告警
 

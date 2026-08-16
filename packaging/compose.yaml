@@ -5,11 +5,10 @@
 # 在仓库根执行:
 #   docker compose -f packaging/compose.yaml --env-file .env up -d
 #
-# Compose profiles 按安装角色（非 with-* 别名）：
-#   control → Prometheus + node-exporter + Grafana + Loki + Alloy + Alertmanager
-#   node    → Prometheus + node-exporter（指标 remote_write 主控；无本机 Grafana/Loki）
-#   alloy   → 可选：节点边缘 TCP 日志采集（与 node 合用：COMPOSE_PROFILES=node,alloy）
-# Envoy 始终启动（无 profile）。安装只选 control|node，不必手传 profiles。
+# Compose profiles（安装角色）：
+#   control → Prometheus + node-exporter + Grafana + Loki + Alloy（日志）+ Alertmanager
+#   node    → Alloy（指标 scrape + remote_write；无本机 Prometheus/Grafana/Loki）
+# Envoy 始终启动（无 profile）。
 # provisioning / dashboard JSON 来自本目录 ./grafana/provisioning（版本化）；
 # RELAYGATE_DATA_DIR（.env 中由 setup 写入绝对路径）承载渲染产物与 backups；不挂 Grafana 配置。
 
@@ -67,13 +66,13 @@ services:
     container_name: ${GATEWAY_NAME}-prometheus
     network_mode: host
     restart: unless-stopped
-    profiles: ["control", "node"]
+    profiles: ["control"]
     volumes:
       - ${RELAYGATE_DATA_DIR}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
-      # remote_write Bearer：由 `relaygate render --observability` 从 AGENT_TOKEN_FILE 同步为可读副本
-      # （Prometheus 以 nobody 运行，勿直接挂 0600 的 secrets/agent.token）
+      # 节点 Alloy remote_write Bearer 同源：render 同步 AGENT_TOKEN_FILE → agent.token
+      # （Prometheus 以 nobody 运行；主控侧此挂载可空文件）
       - ${RELAYGATE_DATA_DIR}/prometheus/agent.token:/etc/prometheus/agent.token:ro
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -81,7 +80,7 @@ services:
       - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
       - --web.listen-address=127.0.0.1:9090
       - --web.enable-lifecycle
-      # 仅 loopback；节点经主控 Panel /api/agent/metrics/write 上报，勿对公网暴露 9090
+      # 仅 loopback；节点 Alloy → Panel /api/agent/metrics/write → 本机 receiver
       - --web.enable-remote-write-receiver
     logging:
       driver: json-file
@@ -157,7 +156,7 @@ services:
     network_mode: host
     pid: host
     restart: unless-stopped
-    profiles: ["control", "node"]
+    profiles: ["control"]
     command:
       - --path.rootfs=/host
       - --web.listen-address=127.0.0.1:9100
@@ -206,26 +205,32 @@ services:
           cpus: "${LOKI_CPU_RESERVATION:-0.1}"
           memory: ${LOKI_MEMORY_RESERVATION:-128M}
 
-  # TCP access → Loki。主控随 control；节点边缘日志可选再加 profile alloy。
+  # 主控：TCP access → Loki（config.alloy）。节点：指标 scrape + remote_write（config.node.alloy）。
   alloy:
     image: ${ALLOY_IMAGE:-grafana/alloy:v1.9.2}
     container_name: ${GATEWAY_NAME}-alloy
     network_mode: host
+    pid: host
     restart: unless-stopped
-    profiles: ["control", "alloy"]
+    profiles: ["control", "node"]
     environment:
       GATEWAY_NAME: ${GATEWAY_NAME}
+      ENVOY_ADMIN_PORT: ${ENVOY_ADMIN_PORT:-9901}
       LOKI_HOST: ${LOKI_HOST:-127.0.0.1}
       LOKI_PORT: ${LOKI_PORT:-3100}
-      # 正常会话采样（1.0=全量）；flags≠- 与短会话（≥阈值见 config.alloy）始终保留
+      PROMETHEUS_REMOTE_WRITE_URL: ${PROMETHEUS_REMOTE_WRITE_URL:-}
       LOG_SAMPLE_RATE: ${LOG_SAMPLE_RATE:-1.0}
     volumes:
-      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - ./alloy:/etc/alloy-config:ro
       - ${RELAYGATE_DATA_DIR}/envoy/logs:/var/log/envoy:ro
+      - ${RELAYGATE_DATA_DIR}/prometheus/agent.token:/etc/alloy/agent.token:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro,rslave
       - alloy-data:/var/lib/alloy/data
     command:
       - run
-      - /etc/alloy/config.alloy
+      - /etc/alloy-config/${ALLOY_CONFIG_FILE:-config.alloy}
       - --server.http.listen-addr=127.0.0.1:12345
       - --storage.path=/var/lib/alloy/data
     logging:

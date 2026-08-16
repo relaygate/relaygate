@@ -1,27 +1,25 @@
 # 集中观测与边缘采集
 
-主控做**监控+日志中心**；节点**上报指标**、可选推送 TCP access 日志。指标继续吃 Envoy `/stats/prometheus`；采集侧日志统一 **Grafana Alloy**。
+主控做监控+日志中心；节点用 Alloy 上报指标。指标来自 Envoy `/stats/prometheus`；主控日志用 **Grafana Alloy** → Loki。
 
-## 角色默认（安装按 control / node）
+## 角色默认
 
 | 角色 | 本机跑什么 | 说明 |
 |------|------------|------|
-| **主控** | Envoy + Prometheus + node-exporter + Grafana + Loki + Alloy + Alertmanager | 观测全开；接收节点 remote_write |
-| **节点** | Envoy + Prometheus + node-exporter（+ systemd agent） | 无本地 Grafana/Loki；指标 remote_write 到主控 |
-| **节点 + 边缘日志** | 上列再加 Alloy | `.env` 设 `COMPOSE_PROFILES=node,alloy` 并设 `LOKI_HOST` |
-
-Compose 用角色 profile（`control` / `node`）；安装不必手传 `MINIMAL` 或 `with-*`。
+| **主控** | Envoy + Prometheus + node-exporter + Grafana + Loki + Alloy + Alertmanager | 接收节点 remote_write |
+| **节点** | Envoy + Alloy（+ agent） | scrape + remote_write；无本机 Prometheus/Grafana/Loki |
 
 ## 节点指标上报
 
 ```bash
 # 节点 .env（install.sh node / setup 默认写入）
 # COMPOSE_PROFILES=node
+# ALLOY_CONFIG_FILE=config.node.alloy
 PROMETHEUS_REMOTE_WRITE_URL=http://203.0.113.10:9000/api/agent/metrics/write
 ```
 
 主控 Panel（`/api/agent/metrics/write`）校验节点令牌后转发到本机 Prometheus remote_write（loopback）。
-然后在节点上：`relaygate render --observability` 并重建 Prometheus（见下）。
+节点上：`relaygate render --observability`（同步 Bearer token）后重建 Alloy。
 
 ## 告警（主控）
 
@@ -35,30 +33,27 @@ PROMETHEUS_REMOTE_WRITE_URL=http://203.0.113.10:9000/api/agent/metrics/write
 ```bash
 curl -sS http://127.0.0.1:9090/api/v1/rules | head
 curl -sS http://127.0.0.1:9093/-/healthy
-# 人为制造 up==0 或看 Alertmanager UI 是否出现 firing（配好 receiver 后才有外发）
 ```
 
 ## 日志（Alloy → Loki）
 
-见 [docs/logging-playbook.md](../../docs/logging-playbook.md)。日志采集为 Alloy，不再启动 Fluent Bit。
+见仓库 `docs/logging-playbook.md`（开发/深度运维）。
 
 ## 看板
 
 Grafana 文件夹 RelayGate：`gateway-overview`（L4 连接/上游健康/限流/吞吐）与 `tcp-session-logs`。
-可另从 Grafana.com 导入社区 Envoy 看板作补充；产品默认看板已覆盖运维主路径。
 
-## 采集统一的下一步
+## 采集路径（当前）
 
-| 已统一 | 本阶段仍分离 |
-|--------|----------------|
-| 日志：Alloy 替 Fluent Bit | 节点指标：本机 Prometheus scrape + remote_write |
-| 主控 Alertmanager 可投递 | 节点不用 Alloy 兼任 scrape（避免与现有 Bearer/`/api/agent/metrics/write` 路径并行两套） |
-
-后续若 Alloy `prometheus.scrape` + `prometheus.remote_write`（Bearer）在节点验证稳定，可再去掉边缘 Prometheus/node-exporter，由 Alloy 一并承担。
+| 信号 | 路径 |
+|------|------|
+| 主控日志 | Alloy → Loki |
+| 节点指标 | Alloy scrape + remote_write（Bearer → `/api/agent/metrics/write`） |
+| 主控指标 | Prometheus scrape 本机 Envoy + node-exporter |
 
 ## 可选：独立 scrape 主机
 
-本目录 `compose.yaml` + `prometheus.yml` 供专用观测机多网关 scrape（非机群默认路径）。默认机群用节点 remote_write。
+本目录 `compose.yaml` + `prometheus.yml` 供专用观测机多网关 scrape（非机群默认）。默认机群用节点 remote_write。
 
 ```bash
 cp packaging/observability/prometheus.yml /path/to/observability/prometheus.yml
@@ -71,15 +66,15 @@ cd packaging/observability && docker compose up -d
 | label | 含义 |
 |-------|------|
 | `gateway` | 与 `GATEWAY_NAME` / `resources.yaml` meta 一致 |
-| `role` | `gateway`（Envoy admin）/ `host`（node_exporter）/ `observability` |
+| `role` | `gateway`（Envoy admin）/ `host`（unix exporter）/ `observability` |
 | `host` | 人类可读主机名（通常等于 gateway 名） |
 
-单机开发：`relaygate render --observability` 从 `packaging/prometheus/prometheus.yml.tpl` 渲染本机 scrape 配置。
+单机开发：`relaygate render --observability` 从 `packaging/prometheus/prometheus.yml.tpl` 渲染主控 scrape 配置；节点同步 Alloy Bearer token。
 
 ## 扩容 checklist
 
-1. 主控 `fleet join` 接入节点（默认指标上报）
-2. 节点 `relaygate render --observability` 且 Prometheus 在跑
+1. 主控 `fleet join` 接入节点
+2. 节点 `relaygate render --observability` 且 Alloy 在跑
 3. 主控 `relaygate fleet publish`；节点自行拉取
 4. Grafana 按 `gateway` 过滤
 

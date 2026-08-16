@@ -64,7 +64,7 @@ function looksLikeChangeSummary(lines: string[]): boolean {
   return false
 }
 
-/** Legacy / canonical "no diff" one-liners from change-summary.txt. */
+/** "no diff" one-liners from change-summary.txt. */
 function isNoDiffLine(trimmed: string): boolean {
   if (!trimmed) return false
   if (/^无差异$|^无变更$|^No changes$/i.test(trimmed)) return true
@@ -80,10 +80,8 @@ function isNoDiffLine(trimmed: string): boolean {
 }
 
 /**
- * Strip legacy redundant headers from change-summary text:
- * "相对备份 …" / "vs backup …" (incl. stamp lines) and bare
- * "变更摘要:" / "Change summary:" labels. Normalizes empty-diff lines
- * to a short label (default 无差异). Keeps historical files readable.
+ * Strip redundant headers from change-summary text
+ * ("相对备份 …" / "变更摘要:" etc.) and normalize empty-diff lines.
  */
 export function stripChangeSummaryNoise(
   text: string,
@@ -95,7 +93,6 @@ export function stripChangeSummaryNoise(
     .split("\n")
     .flatMap((line) => {
       const trimmed = line.trim()
-      // Legacy: "相对备份 20260720-091113" / "vs backup 20260720-091113"
       if (/^(相对备份|vs backup)\b/i.test(trimmed)) return []
       if (/^(变更摘要|Change summary)\s*:?\s*$/i.test(trimmed)) return []
       const labeled = trimmed.match(/^(?:变更摘要|Change summary)\s*:\s*(.*)$/i)

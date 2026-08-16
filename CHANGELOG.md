@@ -8,39 +8,33 @@
 
 ### Breaking
 
-- **Compose profiles 去掉 `with-*` 别名**，改为安装角色：`control` / `node`（可选组件 `alloy` 供节点边缘日志）。
-  - 主控默认 `COMPOSE_PROFILES=control` → Prometheus + node-exporter + Grafana + Loki + Alloy + Alertmanager
-  - 节点默认 `COMPOSE_PROFILES=node` → Prometheus + node-exporter（remote_write）；无本机 Grafana/Loki
-  - 升级时 setup 将旧 `with-metrics` / `with-grafana` / `with-loki` / `with-logs` 迁移为角色名；节点若曾开 `with-logs` 则变为 `node,alloy`
-- **移除** 安装主路径上的 `MINIMAL=1` 与手传 `COMPOSE_PROFILES=with-…`；`GRAFANA_ENABLED` 随 control/node 由 setup 写入，不再与 profiles 双轨选型
+- 节点默认指标改为 **Alloy**（scrape Envoy + 主机指标，`remote_write` 到主控）；不再默认本机 Prometheus / node-exporter
+- Compose：`control` = 观测全栈；`node` = Envoy + Alloy（指标）
 
 ### Changed
 
-- 用户文档与 `env.example` 按真实组件（Prometheus / Grafana / Loki / Alloy / Alertmanager）描述默认栈；安装只选 `control` \| `node`
+- `ALLOY_CONFIG_FILE`：主控 `config.alloy`（日志），节点 `config.node.alloy`（指标）
+- 文档与 `env.example` 按实际组件描述默认栈；安装只选 `control` \| `node`
 
 ## [0.1.18] - 2026-08-16
 
 ### Breaking
 
-- **本机 Prometheus / node-exporter 改为 Compose profile `with-metrics`**（不再随默认栈无条件启动）。
-  - **主控 / 节点升级**：setup 会对空/缺省 profiles **自动补上** `with-metrics`（主控收指标；节点 remote_write 上报）。
-  - 若曾显式去掉 `with-metrics` 且仍不需要边缘时序：升级后请再从 `.env` 的 `COMPOSE_PROFILES` 移除并重新 compose。
-- **`with-logs` 采集器由 Fluent Bit 改为 Grafana Alloy**（配置目录 `packaging/alloy/`）。升级后旧 `fluent-bit` 容器不再启动；请 `compose up -d` 拉起 `alloy`。
+- 本机 Prometheus / node-exporter 改为按 Compose profile 启停（非无条件默认栈）
+- 日志采集改为 Grafana Alloy（`packaging/alloy/`）；不再启动 Fluent Bit
 
 ### Added
 
-- Compose profile `with-metrics`：启用本机 Prometheus + node-exporter（主控与节点默认开）
-- 主控 **Alertmanager**（随 `with-grafana`）：Prometheus `gateway-alerts.yml` 可投递到 `127.0.0.1:9093`；默认 receiver 仅 UI 可见，webhook/email 见 `packaging/alertmanager/alertmanager.yml`
-- Grafana `gateway-overview` 补强：连接速率、上游健康 total/healthy、限流/溢出/连接失败、UDP 错误
-- `MINIMAL=1`（兼容保留）：跳过 Grafana / Loki / Alloy（`COMPOSE_PROFILES=with-metrics`）；**主控不要用**
+- 本机 Prometheus + node-exporter（主控与节点默认开）
+- 主控 Alertmanager：Prometheus 规则可投递 `127.0.0.1:9093`；默认 receiver 仅 UI 可见（webhook/email 见 `packaging/alertmanager/alertmanager.yml`）
+- Grafana `gateway-overview` 补强：连接速率、上游健康、限流/溢出/连接失败、UDP 错误
 
 ### Changed
 
-- **节点默认精简但上报指标**：`install.sh node` / setup 默认指标栈 → Envoy + Prometheus + node-exporter；systemd agent；remote_write 到主控。**不**部署 Grafana/Loki/Alloy
-- **主控默认全开**：指标 + Grafana + Loki + Alloy + Alertmanager
-- 用户文档弱化手传 `with-*` / `MINIMAL`；安装按 `control` / `node` 角色
-- 日志采集统一 Alloy；节点指标本阶段仍用本机 Prometheus（下一步见 `packaging/observability/README.md`）
-- `relaygate apply` 的 `docker compose pull` 改为显示进度（原先丢弃 stdout，首次拉镜像时易被误认为卡死）
+- 节点默认：Envoy + Prometheus + node-exporter + agent（remote_write 到主控）；无本机 Grafana/Loki/Alloy
+- 主控默认：指标 + Grafana + Loki + Alloy + Alertmanager
+- 日志采集统一 Alloy；节点指标仍用本机 Prometheus
+- `relaygate apply` 的 `docker compose pull` 显示进度（避免首次拉镜像被误认为卡死）
 
 ## [0.1.17] - 2026-08-15
 
@@ -76,7 +70,7 @@
 
 ### Changed
 
-- **破坏性：** 删除 `meta.gateway_name`（无双读）。节点身份只认 `GATEWAY_NAME` env 与（可选）`gateway.name`；机群发布继续剥离 `gateway.name` / `public_ip`。升级后请重新发布机群包；节点本机用安装 env 承接身份。旧 YAML 中的 `meta.gateway_name` 被忽略。
+- **破坏性：** 删除 `meta.gateway_name`。节点身份只认 `GATEWAY_NAME` env 与（可选）`gateway.name`；机群发布剥离 `gateway.name` / `public_ip`。升级后请重新发布机群包。
 - `tcp-longlived` 场景按低带宽主机（约 3 Mbps）收紧新建/UDP、宽 idle/并发，并默认启用口级出/入向 `3mbit`；其余场景显式保留 `nic_*` 关闭；文档与预览对齐四域落地顺序
 - 机群页强调逐台同步；发布仅提升 desired 版本；废除全局一键 sync 产品路径保持不变
 
@@ -88,15 +82,13 @@
 
 ### Changed
 
-- **破坏性：** 环境变量重命名（无双读）：`ENABLE_PANEL` → `PANEL_ENABLED`，`ENABLE_GRAFANA` → `GRAFANA_ENABLED`。升级请用 `install.sh upgrade`（会改写 `.env`），或手动改键后重启相关服务。`APPLY_FIREWALL`（安装/CLI 一次性）与 `SECURITY_AUTO_APPLY`（节点拉取后自动应用主机侧）分层保留，勿混用。
-- **破坏性：** `security.policies[]` 拆为 `security.access`（来源 ACL）与 `security.protections[]`（限速/加固）；防护 id 对齐领域前缀（`gateway_conn_limit` / `firewall_udp_limit`），type≡id；**无**旧键/旧 id 兼容。详见 [security-domains](docs/security-domains.md)。
-- **破坏性：** 策略 id/type、preview/status JSON、CLI 子命令按领域名对齐；**无**旧 id（如 `sysctl_syn` / `nft_new_conn_limit` / `envoy_new_conn_limit` / `allowlist` / `conn_limit` / `udp_limit`）与旧 status 键兼容。请改写 `resources.yaml` / profiles；特权 helper 动作为 `kernel-harden-apply`（调用 `security apply-kernel`）。
-- 中性档位配置替换游戏化 profile 名；场景合并默认不覆盖 `security.access`（仅显式写 access 的档位如 `strict-allowlist` / `host-harden-only`）
-- 节点 agent 拉取后落地：先判断 kernel_syn，关闭则跳过内核域（不再先调用 apply 再校验），避免误报/多余加载
-- 删除 Panel 未引用的限流/防火墙检查 i18n 与 `opsFirewallCheck` 客户端包装；产品变量名对齐防火墙域（`applyingFirewall`）
-- 修正 `gateways.env.example` 仍指向已删除 `push-fleet-key.sh` 的说明
-- Panel API 解析去掉 PascalCase / 旧字段双读；Grafana 看板标题领域化（网关/上游/下游/网卡）
-- 删除薄包装 `packaging/security/apply-sysctl-harden.sh`（统一 `security apply-kernel`）
+- **破坏性：** `ENABLE_PANEL` → `PANEL_ENABLED`，`ENABLE_GRAFANA` → `GRAFANA_ENABLED`（`install.sh upgrade` 会改写 `.env`）。`APPLY_FIREWALL` 与 `SECURITY_AUTO_APPLY` 分层，勿混用。
+- **破坏性：** `security.policies[]` 拆为 `security.access` 与 `security.protections[]`；防护 id 领域前缀、type≡id。见 [security-domains](docs/security-domains.md)。
+- **破坏性：** 策略 id/type、preview/status、CLI 按领域名对齐；请改写 `resources.yaml` / profiles；特权 helper：`kernel-harden-apply` → `security apply-kernel`。
+- 中性档位名；场景合并默认不覆盖 `security.access`（仅显式写 access 的档位除外）
+- 节点 agent 拉取后：`kernel_syn` 关闭则跳过内核域
+- 删除未引用的限流/防火墙检查 i18n；Grafana 看板标题领域化
+- 删除 `packaging/security/apply-sysctl-harden.sh`（统一 `security apply-kernel`）
 
 ## [0.1.12] - 2026-08-04
 
@@ -108,13 +100,13 @@
 
 ### Changed
 
-- 一键安装改为短子命令：`control` / `node` / `upgrade`（无旧 `env KEY=… bash -y` 兼容层）
-- 节点主控地址环境变量由 `PRIMARY_URL` 更名为 `CONTROL_URL`（无双读兼容）
-- 对外角色统一为「主控 / 节点」；安装与 join 命令不再使用 primary 作为角色名
+- 一键安装改为短子命令：`control` / `node` / `upgrade`
+- 节点主控地址：`PRIMARY_URL` → `CONTROL_URL`
+- 对外角色统一为「主控 / 节点」
 
 ### Fixed
 
-- Panel 在非 HTTPS（如 `http://IP:9000`）下复制接入命令等文本时使用兼容回退，避免剪贴板 API 静默失败
+- Panel 在非 HTTPS 下复制接入命令等文本时回退剪贴板写入，避免静默失败
 
 ### Added
 

@@ -11,7 +11,7 @@ import (
 // DefaultXDSPort is the loopback ADS port when XDS_PORT is unset.
 const DefaultXDSPort = 18000
 
-// BootstrapOptions controls xDS bootstrap rendering (Phase 1).
+// BootstrapOptions controls xDS bootstrap rendering.
 type BootstrapOptions struct {
 	// XDSPort is the host loopback port for the in-process ADS (default 18000).
 	XDSPort int
@@ -22,9 +22,6 @@ type BootstrapOptions struct {
 
 // RenderBootstrap builds the minimal Envoy bootstrap: admin + xds_cluster + dynamic_resources.
 // Business listeners/clusters must NOT appear in static_resources (they come via ADS CDS/LDS).
-//
-// Phase 1: used when migrating off full static_resources Write(). With XDS_ENABLED=0,
-// ops still call Render/Write (full static) — this helper is for migration + tests only.
 func RenderBootstrap(r *resources.Resources, opt BootstrapOptions) (map[string]any, error) {
 	if r == nil {
 		return nil, fmt.Errorf("resources is nil")

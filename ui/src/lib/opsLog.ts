@@ -11,7 +11,7 @@
  *   ## 入口状态: N 台上游
  *     · name server=on|off validation=… production=…
  *
- * Legacy doctor sections `-- name --` + OK/FAIL/WARN are still parsed.
+ * Also accepts doctor sections `-- name --` + OK/FAIL/WARN.
  */
 
 export type OpsTone = "error" | "warn" | "ok" | "meta" | "step" | "ctx"

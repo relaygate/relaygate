@@ -1,10 +1,10 @@
-# Alloy（日志采集）
+# Alloy
 
-主控 / 节点的 Compose 中，**Alloy** 采集本机 Envoy `tcp-access.json` 并推送到中心 Loki（主控随 `control`；节点可选 `alloy`）。
+| 角色 | 配置 | 作用 |
+|------|------|------|
+| **主控** | `config.alloy` | Envoy TCP access → 本机 Loki |
+| **节点** | `config.node.alloy` | scrape Envoy `/stats/prometheus` + 主机指标（`prometheus.exporter.unix`），Bearer `remote_write` 到主控 |
 
-| 负责 | 不负责（本阶段） |
-|------|------------------|
-| TCP access → Loki（替代 Fluent Bit） | scrape Envoy / node_exporter |
-| 异常 flags / 短会话优先保留 + `LOG_SAMPLE_RATE` | remote_write 到主控（仍由本机 Prometheus） |
+`setup` 按角色写入 `ALLOY_CONFIG_FILE`。节点令牌与原先 Prometheus 路径相同：`render --observability` 同步 `AGENT_TOKEN_FILE` → `DataDir/prometheus/agent.token`。
 
-指标路径见 [`../observability/README.md`](../observability/README.md)「采集统一的下一步」。
+指标与主控栈见 [`../observability/README.md`](../observability/README.md)。
