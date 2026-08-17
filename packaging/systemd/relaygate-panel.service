@@ -14,6 +14,10 @@ After=network-online.target docker.service
 Wants=network-online.target
 # Soft dependency: Compose data plane may start separately.
 Wants=docker.service
+# StartLimit* belong in [Unit] on systemd ≥250 (e.g. CentOS Stream 10);
+# placing them under [Service] yields "Unknown key" and disables rate limiting.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -36,8 +40,6 @@ EnvironmentFile=-/etc/relaygate/panel.env
 ExecStart=/opt/relaygate/bin/relaygate panel
 Restart=on-failure
 RestartSec=3s
-StartLimitIntervalSec=60
-StartLimitBurst=5
 
 # Hardening that MUST remain compatible with sudo → /usr/local/libexec/relaygate/apply.
 # Do NOT set NoNewPrivileges=true or RestrictSUIDSGID=true.
