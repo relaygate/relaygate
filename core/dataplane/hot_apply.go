@@ -214,3 +214,25 @@ func PublishInitialSnapshot(root string, env Env) error {
 	_, err = PublishSnapshotFromDisk(root, env, bootOpt.NodeID, srv.Publisher)
 	return err
 }
+
+// EnsureGatewayADS starts loopback ADS (if needed) and publishes the current
+// on-disk resources snapshot. Used after agent restart when applied-version is
+// already aligned (skip host AfterPull / full HotApply) so Envoy can still
+// fetch CDS+LDS from 127.0.0.1 ADS.
+func EnsureGatewayADS(root string, env Env) error {
+	if !env.XDSEnabled {
+		return nil
+	}
+	xds.SetDiskPublishHandler(func(nodeID string) (string, error) {
+		e, err := LoadEnv(root)
+		if err != nil {
+			return "", err
+		}
+		srv := xds.Global().Server()
+		if srv == nil {
+			return "", fmt.Errorf("本机热更新服务未运行")
+		}
+		return PublishSnapshotFromDisk(root, e, nodeID, srv.Publisher)
+	})
+	return PublishInitialSnapshot(root, env)
+}

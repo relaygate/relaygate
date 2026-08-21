@@ -11,7 +11,6 @@ import (
 
 	"github.com/relaygate/relaygate/core/config"
 	"github.com/relaygate/relaygate/core/resources"
-	"github.com/relaygate/relaygate/core/xds"
 )
 
 // LayerStatus is the product-facing result for one security domain.
@@ -179,22 +178,9 @@ func AfterPullApply(opts PullApplyOptions) error {
 	}
 
 	logf(stdout, "==> [网关] HotApply")
-	xds.SetDiskPublishHandler(func(nodeID string) (string, error) {
-		e, err := LoadEnv(root)
-		if err != nil {
-			return "", err
-		}
-		srv := xds.Global().Server()
-		if srv == nil {
-			return "", fmt.Errorf("本机热更新服务未运行")
-		}
-		return PublishSnapshotFromDisk(root, e, nodeID, srv.Publisher)
-	})
-	if xds.Global().Server() == nil {
-		if err := PublishInitialSnapshot(root, env); err != nil {
-			st.Gateway = LayerResult{Module: DomainGateway, Status: LayerStatusFailed, Error: err.Error()}
-			return fail(DomainGateway, fmt.Errorf("启动本机热更新服务失败（已落盘，applied 未更新）：%w", err))
-		}
+	if err := EnsureGatewayADS(root, env); err != nil {
+		st.Gateway = LayerResult{Module: DomainGateway, Status: LayerStatusFailed, Error: err.Error()}
+		return fail(DomainGateway, fmt.Errorf("启动本机热更新服务失败（已落盘，applied 未更新）：%w", err))
 	}
 	if err := HotApplyTo(root, env, stdout, stderr); err != nil {
 		st.Gateway = LayerResult{Module: DomainGateway, Status: LayerStatusFailed, Error: err.Error()}

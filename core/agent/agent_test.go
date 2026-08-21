@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -222,19 +223,61 @@ func TestSkipAfterPullWhenAlreadyAligned(t *testing.T) {
 	if err := MarkApplied(root, ver); err != nil {
 		t.Fatal(err)
 	}
-	calls := 0
-	after := func(r, v string) error {
-		calls++
-		return nil
+	afterCalls := 0
+	adsCalls := 0
+	handlePulledVersion(RunOptions{
+		Root: root,
+		AfterPull: func(r, v string) error {
+			afterCalls++
+			return nil
+		},
+		EnsureADS: func(r string) error {
+			adsCalls++
+			return nil
+		},
+	}, ver)
+	if afterCalls != 0 {
+		t.Fatalf("AfterPull should be skipped when already aligned, calls=%d", afterCalls)
 	}
-	// Simulate the gate used in Run.doPull.
-	if applied := LocalAppliedVersion(root); applied != "" && applied == ver {
-		// skip
-	} else if err := after(root, ver); err != nil {
+	if adsCalls != 1 {
+		t.Fatalf("EnsureADS should run when already aligned, calls=%d", adsCalls)
+	}
+}
+
+func TestAfterPullWhenVersionsDiffer(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("RELAYGATE_DATA_DIR", filepath.Join(root, "data"))
+	data := filepath.Join(root, "data")
+	if err := os.MkdirAll(data, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if calls != 0 {
-		t.Fatalf("AfterPull should be skipped when already aligned, calls=%d", calls)
+	if err := MarkApplied(root, "old-ver"); err != nil {
+		t.Fatal(err)
+	}
+	afterCalls := 0
+	adsCalls := 0
+	handlePulledVersion(RunOptions{
+		Root: root,
+		AfterPull: func(r, v string) error {
+			afterCalls++
+			if v != "new-ver" {
+				t.Fatalf("version=%q", v)
+			}
+			return nil
+		},
+		EnsureADS: func(r string) error {
+			adsCalls++
+			return nil
+		},
+	}, "new-ver")
+	if afterCalls != 1 {
+		t.Fatalf("AfterPull should run when versions differ, calls=%d", afterCalls)
+	}
+	if adsCalls != 0 {
+		t.Fatalf("EnsureADS should not run on full AfterPull path, calls=%d", adsCalls)
+	}
+	if got := LocalAppliedVersion(root); got != "new-ver" {
+		t.Fatalf("applied=%q want new-ver", got)
 	}
 }
 
@@ -411,6 +454,9 @@ func boolJSON(v bool) string {
 }
 
 func TestSaveRegistryModeGroupReadable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix file modes not enforced on windows")
+	}
 	root := t.TempDir()
 	t.Setenv("RELAYGATE_DATA_DIR", filepath.Join(root, "data"))
 	if err := os.MkdirAll(filepath.Join(root, "data"), 0o755); err != nil {

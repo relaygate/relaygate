@@ -17,6 +17,10 @@ type RunOptions struct {
 	// AfterPull is optional hook (e.g. HotApply); may be nil for stub.
 	// applied-version is updated only when AfterPull returns nil.
 	AfterPull func(root, version string) error
+	// EnsureADS starts loopback ADS + publishes the current on-disk snapshot.
+	// Called when applied-version already matches the pulled version (AfterPull
+	// skipped) so Envoy still has ADS after agent restart. May be nil.
+	EnsureADS func(root string) error
 }
 
 // Run loops: heartbeat + periodic pull until SIGINT/SIGTERM.
@@ -48,23 +52,7 @@ func Run(opts RunOptions) error {
 			return
 		}
 		fmt.Printf("已拉取配置版本 %s\n", ver)
-		if applied := LocalAppliedVersion(opts.Root); applied != "" && applied == ver {
-			fmt.Printf("本机已对齐版本 %s，跳过重复落地（避免反复应用内核/防火墙/网关）\n", ver)
-			return
-		}
-		if opts.AfterPull == nil {
-			fmt.Println("未配置本机应用钩子：已落盘，applied 未更新（需 HotApply 成功后才对齐）")
-			return
-		}
-		if err := opts.AfterPull(opts.Root, ver); err != nil {
-			fmt.Fprintf(os.Stderr, "本机应用：%v\n", err)
-			return
-		}
-		if err := MarkApplied(opts.Root, ver); err != nil {
-			fmt.Fprintf(os.Stderr, "记录已应用版本失败：%v\n", err)
-			return
-		}
-		fmt.Printf("本机已对齐版本 %s\n", ver)
+		handlePulledVersion(opts, ver)
 	}
 	doHeart := func() {
 		ver := LocalAppliedVersion(opts.Root)
@@ -93,4 +81,31 @@ func Run(opts RunOptions) error {
 			doHeart()
 		}
 	}
+}
+
+// handlePulledVersion runs AfterPull when versions differ, or EnsureADS when
+// already aligned (agent restart must still serve ADS to Envoy).
+func handlePulledVersion(opts RunOptions, ver string) {
+	if applied := LocalAppliedVersion(opts.Root); applied != "" && applied == ver {
+		fmt.Printf("本机已对齐版本 %s，跳过主机侧重复落地；确保本机热更新服务可用\n", ver)
+		if opts.EnsureADS != nil {
+			if err := opts.EnsureADS(opts.Root); err != nil {
+				fmt.Fprintf(os.Stderr, "本机热更新服务：%v\n", err)
+			}
+		}
+		return
+	}
+	if opts.AfterPull == nil {
+		fmt.Println("未配置本机应用钩子：已落盘，applied 未更新（需 HotApply 成功后才对齐）")
+		return
+	}
+	if err := opts.AfterPull(opts.Root, ver); err != nil {
+		fmt.Fprintf(os.Stderr, "本机应用：%v\n", err)
+		return
+	}
+	if err := MarkApplied(opts.Root, ver); err != nil {
+		fmt.Fprintf(os.Stderr, "记录已应用版本失败：%v\n", err)
+		return
+	}
+	fmt.Printf("本机已对齐版本 %s\n", ver)
 }

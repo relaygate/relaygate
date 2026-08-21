@@ -6,6 +6,17 @@
 
 ## [Unreleased]
 
+## [0.1.20] - 2026-08-21
+
+### Fixed
+
+- 节点 agent 重启后，若本机已对齐机群版本，仍会确保本机热更新（ADS）可用，避免 Envoy 失去 CDS/LDS
+- Panel systemd：`StartLimit*` 移入 `[Unit]`，兼容 systemd ≥250（如 CentOS Stream 10）
+
+### Changed
+
+- 抽取 `EnsureGatewayADS`，agent / CLI / Panel / 拉取落地共用同一套本机 ADS 启动与快照发布
+
 ## [0.1.19] - 2026-08-16
 
 ### Breaking

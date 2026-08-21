@@ -7,12 +7,9 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/user"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -30,13 +27,13 @@ const (
 
 // Node is one entry in the node registry (nodes.yaml).
 type Node struct {
-	Name             string   `yaml:"name" json:"name"`
-	Role             NodeRole `yaml:"role" json:"role"`
-	TokenHash        string   `yaml:"token_hash,omitempty" json:"-"`
-	AppliedVer       string   `yaml:"applied_version,omitempty" json:"applied_version,omitempty"`
-	LastHeartbeat    string   `yaml:"last_heartbeat,omitempty" json:"last_heartbeat,omitempty"`
-	SyncRequestedAt  string   `yaml:"sync_requested_at,omitempty" json:"sync_requested_at,omitempty"`
-	CreatedAt        string   `yaml:"created_at,omitempty" json:"created_at,omitempty"`
+	Name            string   `yaml:"name" json:"name"`
+	Role            NodeRole `yaml:"role" json:"role"`
+	TokenHash       string   `yaml:"token_hash,omitempty" json:"-"`
+	AppliedVer      string   `yaml:"applied_version,omitempty" json:"applied_version,omitempty"`
+	LastHeartbeat   string   `yaml:"last_heartbeat,omitempty" json:"last_heartbeat,omitempty"`
+	SyncRequestedAt string   `yaml:"sync_requested_at,omitempty" json:"sync_requested_at,omitempty"`
+	CreatedAt       string   `yaml:"created_at,omitempty" json:"created_at,omitempty"`
 }
 
 // Registry is the on-disk node name book under DataDir/nodes.yaml.
@@ -88,17 +85,7 @@ func saveRegistry(root string, reg *Registry) error {
 		return err
 	}
 	_ = os.Chmod(tmp, 0o660)
-	if st, err := os.Stat(path); err == nil {
-		if sys, ok := st.Sys().(*syscall.Stat_t); ok {
-			_ = os.Chown(tmp, int(sys.Uid), int(sys.Gid))
-		}
-	} else if os.Geteuid() == 0 {
-		if g, err := user.LookupGroup("relaygate"); err == nil {
-			if gid, err := strconv.Atoi(g.Gid); err == nil {
-				_ = os.Chown(tmp, 0, gid)
-			}
-		}
-	}
+	preserveRegistryOwner(path, tmp)
 	return os.Rename(tmp, path)
 }
 

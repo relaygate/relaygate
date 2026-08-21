@@ -20,7 +20,6 @@ import (
 	"github.com/relaygate/relaygate/core/render"
 	"github.com/relaygate/relaygate/core/resources"
 	"github.com/relaygate/relaygate/core/setup"
-	"github.com/relaygate/relaygate/core/xds"
 )
 
 // Version is injected from main via -ldflags or default.
@@ -892,7 +891,18 @@ func runAgent(args []string) int {
 				Stderr:  os.Stderr,
 			})
 		}
-		return exitErr(agent.Run(agent.RunOptions{Root: root, AfterPull: after}))
+		ensureADS := func(r string) error {
+			e, err := dataplane.LoadEnv(r)
+			if err != nil {
+				return err
+			}
+			return dataplane.EnsureGatewayADS(r, e)
+		}
+		return exitErr(agent.Run(agent.RunOptions{
+			Root:      root,
+			AfterPull: after,
+			EnsureADS: ensureADS,
+		}))
 	case "help", "-h", "--help":
 		fmt.Fprintln(os.Stderr, "usage: relaygate agent run|pull|install")
 		return 0
@@ -958,18 +968,7 @@ func runXDS(args []string) int {
 			fmt.Fprintln(os.Stderr, "热更新已关闭，无法启动本机热更新服务")
 			return 1
 		}
-		xds.SetDiskPublishHandler(func(nodeID string) (string, error) {
-			e, err := dataplane.LoadEnv(root)
-			if err != nil {
-				return "", err
-			}
-			srv := xds.Global().Server()
-			if srv == nil {
-				return "", fmt.Errorf("xds: ADS not running")
-			}
-			return dataplane.PublishSnapshotFromDisk(root, e, nodeID, srv.Publisher)
-		})
-		if err := dataplane.PublishInitialSnapshot(root, env); err != nil {
+		if err := dataplane.EnsureGatewayADS(root, env); err != nil {
 			return exitErr(err)
 		}
 		fmt.Printf("xDS ADS on 127.0.0.1:%s (node=%s); Ctrl+C 退出\n", env.XDSPort, env.GatewayName)
