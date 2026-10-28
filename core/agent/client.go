@@ -50,6 +50,35 @@ func LoadClientFromEnv() (*Client, error) {
 	}, nil
 }
 
+// pullStatusError turns a non-200 /api/agent/config response into an
+// actionable message. 404 means "nothing published yet" — reporting it as an
+// invalid token used to send operators chasing the wrong problem.
+func pullStatusError(status int, body []byte) error {
+	detail := strings.TrimSpace(string(body))
+	if len(detail) > 300 {
+		detail = detail[:300] + "…"
+	}
+	switch status {
+	case http.StatusUnauthorized:
+		if detail == "" {
+			detail = "未授权的代理令牌"
+		}
+		return fmt.Errorf("令牌无效或已被吊销（HTTP 401）：%s。请确认节点已接入且令牌未轮换", detail)
+	case http.StatusNotFound:
+		if detail == "" {
+			detail = "主控尚无已发布的配置版本"
+		}
+		return fmt.Errorf("拉取配置失败（HTTP 404）：%s。请先在主控执行 relaygate fleet publish 发布机群版本", detail)
+	case http.StatusServiceUnavailable:
+		return fmt.Errorf("主控暂时不可用（HTTP 503）：%s", detail)
+	default:
+		if detail == "" {
+			return fmt.Errorf("拉取配置失败（HTTP %d）", status)
+		}
+		return fmt.Errorf("拉取配置失败（HTTP %d）：%s", status, detail)
+	}
+}
+
 type versionResp struct {
 	Version string `json:"version"`
 	Body    string `json:"resources_yaml"`
@@ -71,7 +100,7 @@ func (c *Client) PullOnce(root string) (version string, err error) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("拉取配置失败（主控拒绝或令牌无效）。请确认节点已接入且令牌未吊销")
+		return "", pullStatusError(resp.StatusCode, body)
 	}
 	var vr versionResp
 	if err := json.Unmarshal(body, &vr); err != nil {
