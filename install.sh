@@ -701,9 +701,15 @@ Invoke_Product() {
   export RELAYGATE_INSTALL_DIR="$INSTALL_DIR" RELAYGATE_SECRETS_DIR="$SECRETS_DIR"
   export RELAYGATE_DATA_DIR="${RELAYGATE_DATA_DIR:-$INSTALL_DIR/data}"
   export NONINTERACTIVE PANEL_ENABLED GRAFANA_ENABLED
-  export GATEWAY_NAME="${GATEWAY_NAME:-}" GATEWAY_PUBLIC_IP="${GATEWAY_PUBLIC_IP:-}" GATEWAY_SSH_PORT="${GATEWAY_SSH_PORT:-}"
-  export APPLY_FIREWALL FIREWALL_CONFIRM="${FIREWALL_CONFIRM:-}"
-  export CONTROL_URL="${CONTROL_URL:-}" AGENT_TOKEN="${AGENT_TOKEN:-}" AGENT_TOKEN_FILE="${AGENT_TOKEN_FILE:-}"
+  # 只导出真正有值的身份/接入变量：空值出口会盖掉 .env，compose 的
+  # ${GATEWAY_NAME:?} 随即报 "required variable GATEWAY_NAME is missing"。
+  for _v in GATEWAY_NAME GATEWAY_PUBLIC_IP GATEWAY_SSH_PORT APPLY_FIREWALL FIREWALL_CONFIRM \
+            CONTROL_URL AGENT_TOKEN AGENT_TOKEN_FILE; do
+    if [[ -n "${!_v:-}" ]]; then
+      export "${_v?}"
+    fi
+  done
+  unset _v
 
   local setup_flags=(--noninteractive --sysctl)
   [[ "$ACTION" == "upgrade" ]] && setup_flags+=(--upgrade)
