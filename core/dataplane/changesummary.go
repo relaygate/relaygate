@@ -45,3 +45,57 @@ func BackupWithSummary(root string, w io.Writer) (stamp, backupDir string, summa
 	_ = os.WriteFile(filepath.Join(p.Backups, "latest"), []byte(stamp+"\n"), 0o644)
 	return stamp, backupDir, summary, nil
 }
+
+// DiscardBackup removes a backup directory written by an apply that then
+// failed, and rewinds the "latest" pointer to the previous successful backup.
+//
+// Reload decides whether anything changed by diffing resources.yaml against
+// the latest backup. If a failed apply leaves its own backup behind, that diff
+// becomes empty and every later reload silently reports "no change": the
+// gateway keeps running the old config while the UI says everything is fine.
+func DiscardBackup(root, stamp string) error {
+	if stamp == "" {
+		return nil
+	}
+	p := config.ResolvePaths(root)
+	if err := os.RemoveAll(filepath.Join(p.Backups, stamp)); err != nil {
+		return err
+	}
+	prev, err := latestBackupStamp(p.Backups, stamp)
+	if err != nil {
+		return err
+	}
+	latestPath := filepath.Join(p.Backups, "latest")
+	if prev == "" {
+		if err := os.Remove(latestPath); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	return os.WriteFile(latestPath, []byte(prev+"\n"), 0o644)
+}
+
+// latestBackupStamp returns the newest backup stamp that is not exclude.
+func latestBackupStamp(dir, exclude string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	best := ""
+	for _, e := range entries {
+		name := e.Name()
+		if !e.IsDir() || name == exclude || len(name) != len("20060102-150405") {
+			continue
+		}
+		if _, err := time.Parse("20060102-150405", name); err != nil {
+			continue
+		}
+		if name > best {
+			best = name
+		}
+	}
+	return best, nil
+}

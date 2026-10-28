@@ -50,7 +50,7 @@ func BootstrapMigrated(root string) bool {
 }
 
 // HotApplyTo publishes Envoy CDS+LDS via in-process ADS without docker restart.
-func HotApplyTo(root string, env Env, stdout, stderr io.Writer) error {
+func HotApplyTo(root string, env Env, stdout, stderr io.Writer) (err error) {
 	totalStart := time.Now()
 	stage := func(name string, fn func() error) error {
 		start := time.Now()
@@ -65,11 +65,19 @@ func HotApplyTo(root string, env Env, stdout, stderr io.Writer) error {
 		return nil
 	}
 
+	var backupStamp string
+	defer func() {
+		if err != nil {
+			discardFailedBackup(root, backupStamp, stdout)
+		}
+	}()
+
 	if err := stage("backup", func() error {
 		stamp, dir, _, err := BackupWithSummary(root, stdout)
 		if err != nil {
 			return err
 		}
+		backupStamp = stamp
 		logf(stdout, "backup stamp=%s dir=%s", stamp, dir)
 		return nil
 	}); err != nil {
@@ -156,11 +164,17 @@ func validateEnvoyFile(root string, env Env, yamlPath string, skipWarn bool) err
 		}
 		return fmt.Errorf("docker 不可用")
 	}
-	logsDir := filepath.Join(config.ResolvePaths(root).DataDir, "envoy", "logs")
-	if err := os.MkdirAll(logsDir, 0o777); err != nil {
-		return fmt.Errorf("创建 Envoy 日志目录: %w", err)
+	logsDir, err := os.MkdirTemp("", "relaygate-envoy-validate-")
+	if err != nil {
+		return fmt.Errorf("创建 Envoy 校验临时目录: %w", err)
 	}
-	err := RunCmd(root, "docker", "run", "--rm",
+	defer os.RemoveAll(logsDir)
+	// Envoy 容器以 uid 101 运行；真实 logs 目录里若存在 root 拥有的文件，
+	// 校验会因 access log 不可写而失败并中止整次 apply。校验用独立临时目录。
+	if err := os.Chmod(logsDir, 0o777); err != nil {
+		return fmt.Errorf("设置 Envoy 校验临时目录权限: %w", err)
+	}
+	err = RunCmd(root, "docker", "run", "--rm",
 		"-v", yamlPath+":/etc/envoy/envoy.yaml:ro",
 		"-v", logsDir+":/var/log/envoy",
 		env.EnvoyImage,

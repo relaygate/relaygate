@@ -77,7 +77,7 @@ func ReloadTo(root string, stdout, stderr io.Writer, opts ReloadOptions) error {
 
 // HardReloadTo is the classic drain → docker restart / force-recreate → ready path.
 // Kept as the permanent fallback for bootstrap/meta/image changes and when xDS is off.
-func HardReloadTo(root string, env Env, stdout, stderr io.Writer) error {
+func HardReloadTo(root string, env Env, stdout, stderr io.Writer) (err error) {
 	logf(stdout, "WARN: 将重启本机 Envoy，会断开本网关上全部现有连接")
 
 	totalStart := time.Now()
@@ -94,11 +94,19 @@ func HardReloadTo(root string, env Env, stdout, stderr io.Writer) error {
 		return nil
 	}
 
+	var backupStamp string
+	defer func() {
+		if err != nil {
+			discardFailedBackup(root, backupStamp, stdout)
+		}
+	}()
+
 	if err := stage("backup", func() error {
 		stamp, dir, _, err := BackupWithSummary(root, stdout)
 		if err != nil {
 			return err
 		}
+		backupStamp = stamp
 		logf(stdout, "backup stamp=%s dir=%s", stamp, dir)
 		return nil
 	}); err != nil {
@@ -159,6 +167,19 @@ func HardReloadTo(root string, env Env, stdout, stderr io.Writer) error {
 	logf(stdout, "Envoy reloaded and ready (%s) total=%s DRAIN_WAIT=%ds",
 		env.GatewayName, time.Since(totalStart).Round(time.Millisecond), env.DrainWait)
 	return nil
+}
+
+// discardFailedBackup rewinds the backup baseline after a failed apply so the
+// next reload still sees the pending change instead of skipping it silently.
+func discardFailedBackup(root, stamp string, w io.Writer) {
+	if stamp == "" {
+		return
+	}
+	if err := DiscardBackup(root, stamp); err != nil {
+		warnf("撤回本次失败备份 %s 失败: %v", stamp, err)
+		return
+	}
+	logf(w, "apply 未成功，已撤回本次备份 %s（下次 reload 仍以成功版本为基线）", stamp)
 }
 
 // ReloadCapture runs Reload and returns combined output.
