@@ -14,6 +14,7 @@ import (
 
 	"github.com/relaygate/relaygate/core/config"
 	"github.com/relaygate/relaygate/core/dataplane"
+	"github.com/relaygate/relaygate/core/resources"
 )
 
 // defaultAdminPassword is written when panel/grafana secret files are first created.
@@ -77,6 +78,9 @@ func Run(opt Options) error {
 		return err
 	}
 	if err := dataplane.SeedDefaults(opt.Root, opt.ResetDefaults); err != nil {
+		return err
+	}
+	if err := stampSeededGatewayIdentity(opt); err != nil {
 		return err
 	}
 	if opt.ApplySysctl {
@@ -143,6 +147,53 @@ func collectSettings(opt Options) (Options, error) {
 		opt.ImageTag = detectImageTag(opt.Root)
 	}
 	return opt, nil
+}
+
+// Template identity values shipped in packaging/shared/resources.example.yaml.
+const (
+	templateGatewayName    = "gateway-01"
+	templateGatewayPublic  = "203.0.113.10"
+	templateGatewaySSHPort = 22
+)
+
+// stampSeededGatewayIdentity copies the install identity (.env values) into
+// DataDir/resources.yaml when that file still carries the template identity.
+// Otherwise a fresh control keeps public_ip: 203.0.113.10 forever: diag, Panel
+// and dependency checks then reason about a placeholder address.
+//
+// Only template/empty values are replaced, so hand-edited identities survive
+// upgrades and re-running setup.
+func stampSeededGatewayIdentity(opt Options) error {
+	p := config.ResolvePaths(opt.Root)
+	res, err := resources.Load(p.Resources)
+	if err != nil {
+		// Seed skipped (template missing) or unreadable: leave apply/validate
+		// to report the real problem.
+		return nil
+	}
+	changed := false
+	if name := strings.TrimSpace(res.Gateway.Name); name == "" || name == templateGatewayName {
+		if opt.GatewayName != "" && res.Gateway.Name != opt.GatewayName {
+			res.Gateway.Name = opt.GatewayName
+			changed = true
+		}
+	}
+	if ip := strings.TrimSpace(res.Gateway.PublicIP); ip == "" || ip == templateGatewayPublic {
+		if opt.PublicIP != "" && res.Gateway.PublicIP != opt.PublicIP {
+			res.Gateway.PublicIP = opt.PublicIP
+			changed = true
+		}
+	}
+	if res.Gateway.SSHPort == 0 || res.Gateway.SSHPort == templateGatewaySSHPort {
+		if n, convErr := strconv.Atoi(opt.SSHPort); convErr == nil && n > 0 && res.Gateway.SSHPort != n {
+			res.Gateway.SSHPort = n
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return resources.Save(p.Resources, res)
 }
 
 func writeEnv(opt Options) error {
